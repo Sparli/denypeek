@@ -299,9 +299,15 @@ def grep_targets(part, cwd):
     return out
 
 
-def check_command(command, cwd, rules, deadline):
+def check_command(command, cwd, rules, deadline, depth=0):
     tokens, parts = split_tokens(command)
     for tok in tokens:
+        if depth < 3 and any(ch in tok for ch in " \t;|&<>$`"):
+            # a nested script: bash -c '...', sh -lc "...", eval "..."
+            reason = check_command(tok, cwd, rules, deadline, depth + 1)
+            if reason:
+                return reason
+            continue
         hits = path_hits(tok, cwd, rules)
         if hits:
             return f"the command names a secret file ({os.path.basename(hits[0])})"

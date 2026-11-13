@@ -1,0 +1,77 @@
+# DEMO is a throwaway home folder under /tmp, holding fake keys made for this run.
+# keyhush shows paths under --home as ~/...
+
+$ keyhush scan --home "$DEMO"
+keyhush scan: offline, nothing leaves this machine.
+Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.
+
+Possible secrets (4):
+  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  ghp_… (40 chars)  fp 6cfc996c
+  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 6812ee1d
+  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp be93f561
+  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 58d3b175
+
+Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.
+To scrub them from history: keyhush redact (keeps a backup).
+This is best-effort detection of known key shapes, not proof that this machine is clean.
+[exit code 1]
+
+$ keyhush guard install --home "$DEMO"
+keyhush guard installed:
+  Claude Code  ~/.claude/settings.json  updated
+  Codex CLI    ~/.codex/hooks.json  updated
+      note: Open Codex and run /hooks to trust the keyhush hook. Codex skips it until you do.
+      note: Hooks are on by default. If you turned them off, set `[features] hooks = true` in ~/.codex/config.toml.
+      note: Codex reads files through the shell, so the guard checks shell commands and patches.
+  Cursor       ~/.cursor/hooks.json  updated
+      note: Cursor's docs say terminal and MCP protection is not guaranteed; see the README limits.
+  Gemini CLI   ~/.gemini/settings.json  updated
+Secret-file patterns: ~/.keyhush/secretfiles
+Restart open agent sessions, then check it works: keyhush guard test
+[exit code 0]
+
+$ keyhush guard test --agent claude --agent cursor --home "$DEMO"
+agent        case                                 expected  result
+Claude Code  read .env                            blocked   blocked  ok
+Claude Code  cat .env                             blocked   blocked  ok
+Claude Code  grep -r KEY . (folder holds .env)    blocked   blocked  ok
+Claude Code  edit .dev.vars                       blocked   blocked  ok
+Claude Code  read ~/.ssh/id_rsa                   blocked   blocked  ok
+Claude Code  read .env.example                    allowed   allowed  ok
+Claude Code  read src/app.py                      allowed   allowed  ok
+Claude Code  ls                                   allowed   allowed  ok
+Claude Code  grep -r KEY src/ (no secret file)    allowed   allowed  ok
+Cursor       read .env                            blocked   blocked  ok
+Cursor       cat .env                             blocked   blocked  ok
+Cursor       grep -r KEY . (folder holds .env)    blocked   blocked  ok
+Cursor       edit .dev.vars                       blocked   blocked  ok
+Cursor       read ~/.ssh/id_rsa                   blocked   blocked  ok
+Cursor       read .env.example                    allowed   allowed  ok
+Cursor       read src/app.py                      allowed   allowed  ok
+Cursor       ls                                   allowed   allowed  ok
+Cursor       grep -r KEY src/ (no secret file)    allowed   allowed  ok
+
+All 18 cases behaved as expected: secret files blocked, others allowed.
+[exit code 0]
+
+$ keyhush redact --yes --home "$DEMO"
+keyhush will redact 3 possible secret(s) in 3 file(s).
+A backup of each file goes to ~/.keyhush/backups/ first. Cursor's database is not changed.
+
+Redacted 3 secret(s) in 3 file(s).
+  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl
+  ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl
+  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json
+
+Verified: a rescan of the changed files finds no known key shapes.
+
+Rotate these keys now (3). Redaction does not make a leaked key safe:
+  generic-api-key  ghp_… (40 chars)  fp 6cfc996c
+  aws-access-token  AKIA… (20 chars)  fp 6812ee1d
+  stripe-access-token  sk_l… (32 chars)  fp be93f561
+
+Backup: ~/.keyhush/backups/20261113T014420Z-bf9f31
+WARNING: the backup still holds the secrets. Check your history, then delete it with:
+  keyhush backups purge --yes
+To put everything back instead: keyhush undo
+[exit code 0]

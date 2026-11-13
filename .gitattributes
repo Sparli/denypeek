@@ -1,0 +1,10 @@
+# Keep line endings exactly as committed on every platform.
+# Git for Windows converts LF to CRLF on checkout by default, which changed the bytes (and the
+# SHA-256 check) of the pinned gitleaks file and would change file hashes in tests.
+* text=auto eol=lf
+
+# Upstream files kept byte-for-byte: never convert.
+tools/pinned/* -text
+
+# Binary assets
+*.png binary

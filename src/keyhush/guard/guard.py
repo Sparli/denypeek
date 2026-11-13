@@ -686,7 +686,63 @@ def is_agent_dir(path):
     return bool(path) and _norm(os.path.normpath(path)).rstrip("/") in agent_dirs()
 
 
+def _names_agent_dir(word, folders):
+    """True if the word, after braces and globs, names an agent settings folder (R3)."""
+    for variant in expand_braces(word):
+        for f in folders:
+            full = expand(variant, f)
+            if not full:
+                continue
+            if is_agent_dir(full):
+                return True
+            if any(ch in variant for ch in "*?["):
+                try:
+                    for n, match in enumerate(glob.iglob(full)):
+                        tick()
+                        if n >= MAX_GLOB_RESULTS:
+                            raise HookTimeout("a glob matches too many files to check")
+                        if is_agent_dir(match):
+                            return True
+                except (OSError, re.error):
+                    pass
+                folder, pattern = os.path.split(full)
+                try:
+                    names = os.listdir(folder) if not any(c in folder for c in "*?[") else []
+                except OSError:
+                    names = []
+                for n in names:  # glob skips hidden names for a leading *
+                    if fnmatch.fnmatchcase(n.lower(), pattern.lower()) and is_agent_dir(
+                        os.path.join(folder, n)
+                    ):
+                        return True
+    return False
+
+
+def _find_reaches_agent_dir(words, folders):
+    """find with -delete or -exec, starting at the home folder or above an agent folder."""
+    starts = []
+    for w in words[1:]:
+        if w.startswith("-") or w in ("!", "(", ")"):
+            break
+        starts.append(w)
+    starts = starts or ["."]
+    dirs = agent_dirs()
+    for st in starts:
+        for f in folders:
+            full = expand(st, f)
+            if not full:
+                continue
+            root = _norm(os.path.normpath(full)).rstrip("/")
+            if any(d == root or d.startswith(root + "/") for d in dirs):
+                return True
+    return False
+
+
 def shell_folder_problem(command, folders):
+    message = (
+        "the command may move, delete or change an agent's settings folder, which "
+        "would remove the keyhush hook; do that in your own terminal"
+    )
     for raw in SHELL_OPERATORS.split(command):
         text = REDIRECT_TARGET.sub(" ", raw)
         try:
@@ -697,15 +753,19 @@ def shell_folder_problem(command, folders):
             words = words[1:]
         if not words:
             continue
-        named = [w for w in words[1:] if any(is_agent_dir(expand(w, f)) for f in folders)]
+        verb = os.path.basename(words[0]).lower()
+        if verb == "find" and FIND_ACTIONS & set(words) and _find_reaches_agent_dir(words, folders):
+            return message
+        named = [w for w in words[1:] if _names_agent_dir(w, folders)]
         if not named:
             continue
-        verb = os.path.basename(words[0]).lower()
+        if verb == "git":
+            sub = next((w for w in words[1:] if not w.startswith("-")), "")
+            if sub not in GIT_READ:
+                return message
+            continue
         if verb not in DIR_READ_VERBS or (verb == "find" and FIND_ACTIONS & set(words)):
-            return (
-                "the command may move, delete or change an agent's settings folder, which "
-                "would remove the keyhush hook; do that in your own terminal"
-            )
+            return message
     return None
 
 

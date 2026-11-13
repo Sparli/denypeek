@@ -138,6 +138,9 @@ def redact(home: Home, include_active: bool = False) -> RedactResult:
                 Problem(p.path, "", f"not fully readable ({p.reason}); left as is")
             )
             files.pop(p.path)
+    for p in found.notes:
+        if "symlink" in p.reason:
+            result.skipped.append(Problem(p.path, "", "symlink leads outside the history folders"))
     result.planned_files = len(files)
     roots = home.history_roots()
     now = time.time()

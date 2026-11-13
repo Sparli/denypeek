@@ -6,10 +6,10 @@ keyhush scan: offline, nothing leaves this machine.
 Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.
 
 Possible secrets (4):
-  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  ghp_… (40 chars)  fp 6cfc996c
-  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 6812ee1d
-  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp be93f561
-  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 58d3b175
+  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  ghp_… (40 chars)  fp dfbaa0be
+  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a
+  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp a5d348c9
+  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 8315115c
 
 Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.
 To scrub them from history: keyhush redact (keeps a backup).
@@ -37,6 +37,7 @@ Claude Code  cat .env                             blocked   blocked  ok
 Claude Code  grep -r KEY . (folder holds .env)    blocked   blocked  ok
 Claude Code  edit .dev.vars                       blocked   blocked  ok
 Claude Code  read ~/.ssh/id_rsa                   blocked   blocked  ok
+Claude Code  overwrite ~/.keyhush/secretfiles     blocked   blocked  ok
 Claude Code  read .env.example                    allowed   allowed  ok
 Claude Code  read src/app.py                      allowed   allowed  ok
 Claude Code  ls                                   allowed   allowed  ok
@@ -46,12 +47,13 @@ Cursor       cat .env                             blocked   blocked  ok
 Cursor       grep -r KEY . (folder holds .env)    blocked   blocked  ok
 Cursor       edit .dev.vars                       blocked   blocked  ok
 Cursor       read ~/.ssh/id_rsa                   blocked   blocked  ok
+Cursor       overwrite ~/.keyhush/secretfiles     blocked   blocked  ok
 Cursor       read .env.example                    allowed   allowed  ok
 Cursor       read src/app.py                      allowed   allowed  ok
 Cursor       ls                                   allowed   allowed  ok
 Cursor       grep -r KEY src/ (no secret file)    allowed   allowed  ok
 
-All 18 cases behaved as expected: secret files blocked, others allowed.
+All 20 cases behaved as expected: secret files blocked, others allowed.
 [exit code 0]
 
 $ keyhush redact --yes --home "$DEMO"
@@ -66,11 +68,11 @@ Redacted 3 secret(s) in 3 file(s).
 Verified: a rescan of the changed files finds no known key shapes.
 
 Rotate these keys now (3). Redaction does not make a leaked key safe:
-  generic-api-key  ghp_… (40 chars)  fp 6cfc996c
-  aws-access-token  AKIA… (20 chars)  fp 6812ee1d
-  stripe-access-token  sk_l… (32 chars)  fp be93f561
+  generic-api-key  ghp_… (40 chars)  fp dfbaa0be
+  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a
+  stripe-access-token  sk_l… (32 chars)  fp a5d348c9
 
-Backup: ~/.keyhush/backups/20261113T014420Z-bf9f31
+Backup: ~/.keyhush/backups/20261113T022649Z-58b9cf
 WARNING: the backup still holds the secrets. Check your history, then delete it with:
   keyhush backups purge --yes
 To put everything back instead: keyhush undo

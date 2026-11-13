@@ -160,11 +160,11 @@ def main() -> int:
         ]
         for args in (
             ["scan"],
-            ["guard", "install", "--python", sys.executable],
+            ["guard", "install"],
             ["guard", "test", "--agent", "claude", "--agent", "cursor"],
             ["redact", "--yes"],
         ):
-            shown = " ".join(args).replace(f" --python {sys.executable}", "")
+            shown = " ".join(args)
             lines.append(f'$ keyhush {shown} --home "$DEMO"')
             lines += run(home, args).splitlines()
             lines.append("")

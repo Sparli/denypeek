@@ -686,6 +686,8 @@ def _ansi_c(match):
 def split_tokens(command):
     """Shell-ish tokens. Splits on operators, quotes and $IFS tricks. Never runs anything."""
     text = unicodedata.normalize("NFC", command)
+    # A backslash before a line break joins the lines: `cat .e\\<newline>nv` is `cat .env` (G7)
+    text = text.replace("\\\r\n", "").replace("\\\n", "")
     text = ANSI_C.sub(_ansi_c, text)
     text = windows_paths(text)
     text = text.replace('$"', '"')  # $"..." locale quoting is plain quoting here

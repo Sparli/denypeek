@@ -156,3 +156,12 @@ def test_g6_tools_that_skip_node_modules_are_allowed(command, tmp_path):
     proj = g6_project(tmp_path)
     proc, _ = run("claude", bash(command, proj), proj)
     assert not blocked("claude", proc.stdout.decode(), proc.returncode), command
+
+
+# --- G7: line continuation ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["cat .e\\\nnv", "cat .e\\\r\nnv", "c\\\nat ~/.ssh/id\\\n_rsa"])
+def test_g7_backslash_newline_is_joined(command, tmp_path):
+    proc, _ = run("claude", bash(command, tmp_path), tmp_path)
+    assert blocked("claude", proc.stdout.decode(), proc.returncode), repr(command)

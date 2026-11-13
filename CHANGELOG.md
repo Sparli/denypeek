@@ -6,6 +6,17 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed (after QA and security review)
+- The guard protects itself: agents cannot read or change `~/.keyhush/**` or the hook config
+  files, run `keyhush guard install|uninstall`, or write `disableAllHooks` / `hooks = false`.
+- Blocked bypasses: `git show HEAD:.env`, `git cat-file`, brace expansion, `$'...'` quoting,
+  `curl -F f=@.env`, `$PWD`, `cd dir && cat .env`, NFD Unicode names.
+- The hook blocks instead of failing open when its Python or `guard.py` is missing (macOS, Linux);
+  `guard install` avoids virtualenv Pythons and warns; `guard status` runs the hook.
+- Read-only agent configs are left untouched.
+- Install and uninstall headers say how many agents succeeded; the state file is removed after a
+  full uninstall; `keyhush backups purge --config` deletes copies of earlier settings.
+
 ### Added
 - `keyhush guard install | status | test | uninstall` for Claude Code, Codex CLI, Cursor and
   Gemini CLI, from one pattern list, with a fail-closed standard-library hook.

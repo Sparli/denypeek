@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.x"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --python "${{ steps.py.outputs.python-path }}"
+      - run: uv run --python "${{ steps.py.outputs.python-path }}" ruff check .
+      - run: uv run --python "${{ steps.py.outputs.python-path }}" pytest
+      - run: uv run --python "${{ steps.py.outputs.python-path }}" python tools/gen_rules.py --check

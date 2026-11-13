@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -18,8 +19,11 @@ def test_a3_one_finding_per_store_at_the_right_place(four_store_home, keys):
     code, out, _ = run_cli("scan", "--home", str(home))
     assert code == 1, out
     assert "Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1." in out
-    assert "~/.claude/projects/-work-app/s1.jsonl:2  github-pat" in out
-    assert "~/.codex/sessions/2026/11/13/rollout-1.jsonl:3  aws-access-token" in out
+    # Paths are shown in the platform's own form: forward slashes, or backslashes on Windows.
+    claude = str(Path("~", ".claude", "projects", "-work-app", "s1.jsonl"))
+    codex = str(Path("~", ".codex", "sessions", "2026", "11", "13", "rollout-1.jsonl"))
+    assert f"{claude}:2  github-pat" in out
+    assert f"{codex}:3  aws-access-token" in out
     assert "session-1.json:10  stripe-access-token" in out
     assert "state.vscdb:ItemTable row 2  slack-bot-token" in out
     for k in keys.values():

@@ -270,6 +270,7 @@ def expand(token, cwd):
         t = t.replace(var, home)
     for var in ("${PWD}", "$PWD"):
         t = t.replace(var, cwd)
+    t = HOME_VARS.sub(lambda _m: home.replace("\\", "/"), t)
     if t.startswith("~"):
         t = os.path.expanduser(t)
     if not os.path.isabs(t) and not re.match(r"^[A-Za-z]:[\\/]", t):
@@ -343,6 +344,31 @@ def folder_holds_secret(folder, rules, deadline):
     return False
 
 
+WINDOWS = sys.platform == "win32"
+# Windows-shaped paths: a drive (C:\\), a UNC share (\\\\server\\), or a home variable followed by a
+# backslash. Their backslashes are separators, not shell escapes.
+WIN_PATH = re.compile(
+    r"(?:\b[A-Za-z]:\\|\\\\[\w.$-]+\\|%[A-Za-z_]+%\\|\$\{?env:[A-Za-z_]+\}?\\)[^\s\"'|;&<>`()]*",
+    re.I,
+)
+HOME_VARS = re.compile(
+    r"%HOMEDRIVE%%HOMEPATH%|%USERPROFILE%|%HOME%|\$\{env:(?:USERPROFILE|HOME)\}|"
+    r"\$env:(?:USERPROFILE|HOME)\b",
+    re.I,
+)
+
+
+def windows_paths(text, windows=None):
+    """Turn Windows path separators into '/' before shell-style splitting.
+
+    On Windows (cmd and PowerShell) a backslash is never an escape, so all become '/'.
+    Elsewhere only Windows-shaped paths are rewritten; other backslashes stay escapes.
+    """
+    if WINDOWS if windows is None else windows:
+        return text.replace("\\", "/")
+    return WIN_PATH.sub(lambda m: m.group(0).replace("\\", "/"), text)
+
+
 ANSI_C = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
 
 
@@ -360,6 +386,7 @@ def split_tokens(command):
     """Shell-ish tokens. Splits on operators, quotes and $IFS tricks. Never runs anything."""
     text = unicodedata.normalize("NFC", command)
     text = ANSI_C.sub(_ansi_c, text)
+    text = windows_paths(text)
     text = text.replace('$"', '"')  # $"..." locale quoting is plain quoting here
     text = text.replace("${IFS}", " ").replace("$IFS", " ")
     text = re.sub(r"[<>]+&?\d*", " ", text)  # redirections: cat<.env, >out

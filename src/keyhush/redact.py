@@ -32,7 +32,7 @@ ACTIVE_SECONDS = 10 * 60
 @dataclass
 class Rotation:
     rule: str
-    preview: str
+    preview: Optional[str]
     length: int
     fingerprint: str
 
@@ -71,7 +71,7 @@ def _replace(text: str, hits, key: bytes, result: RedactResult):
     for h in sorted(hits, key=lambda h: h.start, reverse=True):
         fp = fingerprint(h.secret, key)
         new = new[: h.start] + marker(h.rule, fp) + new[h.end :]
-        result.rotate.setdefault(fp, Rotation(h.rule, preview(h.secret), len(h.secret), fp))
+        result.rotate.setdefault(fp, Rotation(h.rule, preview(h.rule, h.secret), len(h.secret), fp))
     return new
 
 

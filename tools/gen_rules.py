@@ -13,6 +13,8 @@ Go (RE2) to Python conversion:
 - POSIX classes such as `[[:alnum:]]` become explicit ranges.
 - `\\z` becomes `\\Z`.
 - Patterns are compiled with re.ASCII, because Go's `\\w`, `\\d`, `\\s` and `\\b` are ASCII.
+Each rule gets `prefixes`: the fixed literal starts of its secret (AKIA, ghp_, ...), found by
+parsing the regex. Previews show at most 4 characters of these, never of the secret itself.
 Literal allowlist entries that look like keys (gcp-api-key examples) are stored as SHA-256
 hashes, so no key-shaped literal is committed in this repo.
 """
@@ -22,6 +24,8 @@ from __future__ import annotations
 import hashlib
 import pprint
 import re
+import re._constants as _C  # Python 3.11+, like tomllib
+import re._parser as _parser
 import sys
 import warnings
 from pathlib import Path
@@ -145,6 +149,74 @@ def convert(rx: str) -> str:
         search_from = p + 1
 
 
+def _leading_literals(items, icase: bool) -> list[tuple[str, bool]]:
+    """Possible fixed literal starts of a parsed pattern, each with "stopped" (True when a
+    non-literal ended it). Zero-width `\\b` and `^` are skipped. A letter under (?i) ends a
+    literal, because its case is not fixed."""
+    cur = [("", False)]
+    for op, av in items:
+        if all(stopped for _, stopped in cur):
+            break
+        if op == _C.AT:
+            continue
+        if op == _C.LITERAL:
+            ch = chr(av)
+            kids = [("", True)] if icase and ch.lower() != ch.upper() else [(ch, False)]
+        elif op == _C.SUBPATTERN:
+            _, add, dele, sub = av
+            ic = (icase or bool(add & re.IGNORECASE)) and not dele & re.IGNORECASE
+            kids = _leading_literals(list(sub), ic)
+        elif op == _C.BRANCH:
+            kids = [k for alt in av[1] for k in _leading_literals(list(alt), icase)]
+        else:
+            kids = [("", True)]
+        cur = [
+            (s, True) if stopped else (s + t, c)
+            for s, stopped in cur
+            for t, c in ([("", True)] if stopped else kids)
+        ]
+    return cur
+
+
+def _capture_groups(items, want: int | None, out: list) -> None:
+    for op, av in items:
+        if op == _C.SUBPATTERN:
+            group, add, dele, sub = av
+            if group is not None and (want is None or group == want):
+                out.append((list(sub), add, dele))
+            _capture_groups(list(sub), want, out)
+        elif op == _C.BRANCH:
+            for alt in av[1]:
+                _capture_groups(list(alt), want, out)
+        elif op in (_C.MAX_REPEAT, _C.MIN_REPEAT):
+            _capture_groups(list(av[2]), want, out)
+        elif op in (_C.ASSERT, _C.ASSERT_NOT):
+            _capture_groups(list(av[1]), want, out)
+
+
+def fixed_prefixes(rx: str, secret_group: int) -> list[str]:
+    """The fixed public prefixes a secret of this rule always starts with (AKIA, ghp_, ...).
+    Empty when any way of matching the secret has no literal start: such a rule shows no
+    preview at all (spec section 3)."""
+    parsed = _parser.parse(rx, re.ASCII)
+    global_icase = bool(parsed.state.flags & re.IGNORECASE)
+    if secret_group == 0 and parsed.state.groups <= 1:
+        targets = [(list(parsed), 0, 0)]
+    else:
+        # The scanner takes `secret_group`, or else the first group that matched: any group
+        # may hold the secret, so every one of them must have a fixed start.
+        targets = []
+        _capture_groups(list(parsed), secret_group or None, targets)
+    found: set[str] = set()
+    for sub, add, dele in targets:
+        ic = (global_icase or bool(add & re.IGNORECASE)) and not dele & re.IGNORECASE
+        for s, _ in _leading_literals(sub, ic):
+            if not s:
+                return []
+            found.add(s)
+    return sorted(found)
+
+
 def compile_ok(rx: str) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -209,6 +281,7 @@ def build() -> str:
                 "keywords": [k.lower() for k in r.get("keywords", [])],
                 "entropy": r.get("entropy"),
                 "secret_group": r.get("secretGroup", 0),
+                "prefixes": fixed_prefixes(conv, r.get("secretGroup", 0)),
                 "allowlists": allow,
             }
         )

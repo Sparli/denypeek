@@ -1,8 +1,10 @@
-"""Text and JSON output. Only previews, lengths and fingerprints: never a full secret."""
+"""Text and JSON output. Only fixed-prefix previews, lengths and fingerprints: never a full
+secret, and no characters at all of a secret whose rule has no fixed prefix."""
 
 from __future__ import annotations
 
 import json
+from typing import Optional
 
 from . import __version__
 from .scan import ScanResult
@@ -48,6 +50,12 @@ def scan_json(result: ScanResult, home: Home) -> str:
     return json.dumps(data, indent=2, ensure_ascii=True)
 
 
+def shown_key(preview: Optional[str], length: int, fp: str) -> str:
+    """`AKIA… (20 chars)  fp 1a2b3c4d`; with no fixed prefix, no characters at all."""
+    lead = f"{preview} " if preview else ""
+    return f"{lead}({length} chars)  fp {fp}"
+
+
 def _loc(home: Home, path, where: str) -> str:
     shown = home.display(path)
     return f"{shown}:{safe_text(where)}" if where else shown
@@ -64,7 +72,7 @@ def scan_text(result: ScanResult, home: Home) -> str:
         for f in result.findings:
             out.append(
                 f"  {f.agent:<7} {_loc(home, f.path, f.line)}  {f.rule}  "
-                f"{f.preview} ({f.length} chars)  fp {f.fingerprint}"
+                f"{shown_key(f.preview, f.length, f.fingerprint)}"
             )
     if result.incomplete:
         out += ["", f"NOT fully checked ({len(result.incomplete)}). Secrets here may be missed:"]

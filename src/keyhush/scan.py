@@ -43,7 +43,7 @@ class Finding:
     path: Path
     line: str  # line number, or "<table> row <n>" for SQLite
     rule: str
-    preview: str
+    preview: Optional[str]  # fixed public prefix only; None for rules without one
     length: int
     fingerprint: str
 
@@ -188,8 +188,21 @@ def fingerprint(secret: str, key: bytes) -> str:
     return hmac.new(key, secret.encode(), hashlib.sha256).hexdigest()[:8]
 
 
-def preview(secret: str) -> str:
-    return secret[:4] + "…"
+@lru_cache(maxsize=1)
+def _prefixes() -> dict[str, list[str]]:
+    return {r["id"]: r["prefixes"] for r in R.RULES}
+
+
+def preview(rule: str, secret: str) -> Optional[str]:
+    """At most 4 characters of the rule's fixed public prefix (AKIA, ghp_, ...), or None.
+
+    Rules with no fixed prefix (generic-api-key and other keyword rules) show nothing, and a
+    preview never runs past the prefix into the secret itself (spec section 3).
+    """
+    matching = [p for p in _prefixes().get(rule, ()) if secret.startswith(p)]
+    if not matching:
+        return None
+    return max(matching, key=len)[:4] + "…"
 
 
 # --- readers -------------------------------------------------------------------------
@@ -349,7 +362,7 @@ def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
                     path=src.path,
                     line=where,
                     rule=hit.rule,
-                    preview=preview(hit.secret),
+                    preview=preview(hit.rule, hit.secret),
                     length=len(hit.secret),
                     fingerprint=fingerprint(hit.secret, key),
                 )

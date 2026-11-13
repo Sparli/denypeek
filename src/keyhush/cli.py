@@ -81,7 +81,7 @@ def cmd_redact(args) -> int:
             "Redaction does not make a leaked key safe:"
         )
         for r in res.rotate.values():
-            print(f"  {r.rule}  {r.preview} ({r.length} chars)  fp {r.fingerprint}")
+            print(f"  {r.rule}  {report.shown_key(r.preview, r.length, r.fingerprint)}")
     if res.backup:
         print(f"\nBackup: {home.display(res.backup.path)}")
         print(

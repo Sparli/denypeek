@@ -102,6 +102,7 @@ def test_no_key_shaped_literal_is_committed():
         # Generated regexes. One rule's pattern holds a fixed public prefix (base64 of
         # "bedrock.amazonaws.com"); literal example keys are stored as hashes (next test).
         REPO / "src" / "keyhush" / "rules.py",
+        REPO / ".gitleaks.toml",  # allowlists that same public prefix by exact match
     }
     for path in committed_files():
         if path in skip or not path.is_file() or path.suffix in (".lock",):

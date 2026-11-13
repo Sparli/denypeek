@@ -35,7 +35,7 @@ def run_guard(agent: str, payload, cwd: Path, python: str = sys.executable, raw:
     data = raw if raw is not None else json.dumps(payload).encode()
     start = time.monotonic()
     proc = subprocess.run(
-        [python, str(GUARD), "--agent", agent],
+        [python, str(GUARD), "--agent", agent, "--home", os.environ["HOME"]],
         input=data,
         capture_output=True,
         timeout=60,  # generous for loaded machines; A14 checks speed separately

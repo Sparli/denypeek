@@ -131,7 +131,10 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
         and (
             not USE_WRAPPER
             or not wrapper_path(home).exists()
-            or "-I -S" in wrapper_path(home).read_text(encoding="utf-8")
+            or all(
+                x in wrapper_path(home).read_text(encoding="utf-8")
+                for x in ("-I -S", "/usr/bin/env -i", "--home")
+            )
         ),
         "patterns": str(patterns_path(home)),
         "patterns_present": patterns_path(home).exists(),

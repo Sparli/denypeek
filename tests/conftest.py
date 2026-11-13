@@ -119,6 +119,11 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", no_network)
     monkeypatch.setattr(socket.socket, "__init__", no_network)
     monkeypatch.setattr(socket, "create_connection", no_network)
+    # The guard takes its home folder from --home or the account record, never from HOME (R1).
+    # In-process calls in tests use the fixture home; subprocess calls pass --home.
+    from keyhush.guard import guard as guard_module
+
+    monkeypatch.setattr(guard_module, "_home", [str(home)])
     _state["violations"].clear()
     _state["active"] = True
     yield home

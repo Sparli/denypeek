@@ -20,7 +20,7 @@ def run(agent, payload, cwd, raw=None):
     data = raw if raw is not None else json.dumps(payload).encode()
     start = time.monotonic()
     proc = subprocess.run(
-        [sys.executable, "-I", "-S", str(GUARD), "--agent", agent],
+        [sys.executable, "-I", "-S", str(GUARD), "--agent", agent, "--home", os.environ["HOME"]],
         input=data,
         capture_output=True,
         timeout=60,

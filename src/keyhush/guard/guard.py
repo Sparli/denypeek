@@ -106,7 +106,24 @@ GREP_NAMES = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "ugrep", "git"}
 # --- patterns ------------------------------------------------------------------------
 
 
+_home = [None]  # set from --home, which `guard install` writes into the hook command
+
+
 def home_dir():
+    """The user's real home folder: from --home, else the system account record.
+
+    Never from the HOME variable, which an agent may be able to set for the hook (R1).
+    Windows has no account record in the standard library, so there USERPROFILE is used.
+    """
+    if _home[0]:
+        return _home[0]
+    if os.name == "posix":
+        try:
+            import pwd
+
+            return pwd.getpwuid(os.getuid()).pw_dir
+        except (ImportError, KeyError):
+            pass
     return os.path.expanduser("~")
 
 
@@ -323,6 +340,23 @@ SETTINGS_NAMES = {
     ".gemini/settings.json": "gemini",
     ".cursor/hooks.json": "json",
 }
+HOOK_ENV_NAMES = {
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "PATH",
+    "DEVELOPER_DIR",
+    "SDKROOT",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "SHELL",
+    "BASH_ENV",
+    "ENV",
+}
 READ_VERBS = {
     "cat",
     "head",
@@ -437,6 +471,19 @@ def settings_problem(kind, text):
         return "the new settings file cannot be parsed, so it cannot be checked"
     if kind == "claude" and _find_key(data, "disableAllHooks"):
         return off
+    if kind == "claude" and isinstance(data, dict) and isinstance(data.get("env"), dict):
+        # A settings env block may reach the hook process (R1); these change what it runs.
+        risky = [
+            k
+            for k in data["env"]
+            if str(k).upper() in HOOK_ENV_NAMES or str(k).upper().startswith("PYTHON")
+        ]
+        if risky:
+            return (
+                "the change would set "
+                + ", ".join(sorted(map(str, risky)))
+                + " for the agent, which could change how the keyhush hook runs"
+            )
     if kind == "gemini" and isinstance(data, dict):
         cfg = data.get("hooksConfig")
         if isinstance(cfg, dict):
@@ -629,8 +676,10 @@ def expand(token, cwd):
     for var in ("${PWD}", "$PWD"):
         t = t.replace(var, cwd)
     t = HOME_VARS.sub(lambda _m: home.replace("\\", "/"), t)
-    if t.startswith("~"):
-        t = os.path.expanduser(t)
+    if t == "~" or t.startswith(("~/", "~\\")):
+        t = home + t[1:]
+    elif t.startswith("~"):
+        t = os.path.expanduser(t)  # ~otheruser
     if not os.path.isabs(t) and not re.match(r"^[A-Za-z]:[\\/]", t):
         t = os.path.join(cwd, t)
     return os.path.normpath(t)
@@ -1109,6 +1158,10 @@ def fail_closed(agent, why):
 
 def run(argv, stdin_bytes):
     agent = "claude"
+    if "--home" in argv:
+        i = argv.index("--home")
+        if i + 1 < len(argv) and argv[i + 1]:
+            _home[0] = argv[i + 1]
     if "--agent" in argv:
         i = argv.index("--agent")
         if i + 1 < len(argv):

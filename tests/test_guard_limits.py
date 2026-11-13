@@ -20,7 +20,7 @@ def run(agent, payload, cwd, raw=None):
     data = raw if raw is not None else json.dumps(payload).encode()
     start = time.monotonic()
     proc = subprocess.run(
-        [sys.executable, "-I", "-S", str(GUARD), "--agent", agent],
+        [sys.executable, "-I", "-S", str(GUARD), "--agent", agent, "--home", os.environ["HOME"]],
         input=data,
         capture_output=True,
         timeout=60,
@@ -111,7 +111,8 @@ def test_g2_watchdog_denies_a_stuck_check(use_signals, tmp_path):
         "        time.sleep(0.01)\n"
         "guard.decide = stuck\n"
         f"guard.start_watchdog('claude', use_signals={use_signals})\n"
-        "out, code, msg = guard.run(['--agent', 'claude'], b'{\"tool_name\": \"Read\"}')\n"
+        f"out, code, msg = guard.run(['--agent', 'claude', '--home', {str(tmp_path)!r}], "
+        'b\'{"tool_name": "Read"}\')\n'
         "sys.stdout.write(out)\n"
         "sys.exit(code)\n"
     )

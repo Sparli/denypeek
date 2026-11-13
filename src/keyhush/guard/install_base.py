@@ -78,17 +78,21 @@ WRAPPER = """#!/bin/sh
 # or guard.py is missing, if Python fails, or if the hook gives no answer.
 PY={py}
 GUARD={guard}
-# Nothing from the environment may change what Python loads (G1).
-unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE PYTHONINSPECT PYTHONEXECUTABLE \
-  PYTHONWARNINGS PYTHONSAFEPATH PYTHONPLATLIBDIR PYTHONNOUSERSITE
+KHOME={home}
 if [ ! -x "$PY" ] || [ ! -f "$GUARD" ]; then
-  echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \
+  echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \\
 Fix it in your own terminal: keyhush guard status (or keyhush guard uninstall)." >&2
   exit 2
 fi
-# -I: isolated (ignores PYTHON* variables, the user site folder and the script's folder).
-# -S: no site module, so no site-packages and no .pth files. The hook needs only the stdlib.
-OUT=$("$PY" -I -S "$GUARD" "$@")
+# Start Python from a clean, fixed environment (R1): nothing an agent can set (PYTHONPATH,
+# HOME, DEVELOPER_DIR, LD_PRELOAD ...) reaches it. Only the two config-folder variables pass,
+# and they can only add protected folders. The home folder is fixed at install time.
+# -I: isolated mode. -S: no site module, so no site-packages and no .pth files.
+E1=; E2=
+[ -n "${{CLAUDE_CONFIG_DIR:-}}" ] && E1="CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"
+[ -n "${{CODEX_HOME:-}}" ] && E2="CODEX_HOME=$CODEX_HOME"
+OUT=$(/usr/bin/env -i HOME="$KHOME" PATH=/usr/bin:/bin ${{E1:+"$E1"}} ${{E2:+"$E2"}} \\
+  "$PY" -I -S "$GUARD" --home "$KHOME" "$@")
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
   echo "keyhush guard failed (exit $rc). Blocked to be safe. Run: keyhush guard status" >&2
@@ -98,7 +102,7 @@ if [ "$rc" -eq 0 ] && [ -z "$OUT" ]; then
   echo "keyhush guard gave no answer. Blocked to be safe. Run: keyhush guard status" >&2
   exit 2
 fi
-printf '%s\n' "$OUT"
+printf '%s\\n' "$OUT"
 exit "$rc"
 """
 
@@ -108,7 +112,9 @@ def _sh_quote(value: str) -> str:
 
 
 def write_wrapper(home: Home, python: str) -> None:
-    text = WRAPPER.format(py=_sh_quote(python), guard=_sh_quote(str(guard_path(home))))
+    text = WRAPPER.format(
+        py=_sh_quote(python), guard=_sh_quote(str(guard_path(home))), home=_sh_quote(str(home.root))
+    )
     atomic_write(wrapper_path(home), text.encode(), mode=0o600)
 
 
@@ -221,6 +227,7 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
     with a warning, because deleting that folder would break the guard.
     """
     if explicit:
+        explicit = resolve_launcher(explicit)
         why = _fragile(explicit)
         if why:
             return explicit, f"the hook's Python {explicit} may disappear: {why}"
@@ -231,7 +238,7 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
     usable = [c for c in dict.fromkeys(candidates) if c and not _fragile(c) and _works(c)]
     for c in usable:  # first choice: one the user cannot modify
         if not writable_parts(c):
-            return c, None
+            return resolve_launcher(c), None
     if usable:
         return usable[0], _writable_warning(usable[0])
     if sys.executable and _works(sys.executable):
@@ -242,6 +249,28 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
             "with --python /path/to/python3."
         )
     raise ConfigError("no working Python 3.9+ found; pass --python /path/to/python3")
+
+
+def resolve_launcher(python: str) -> str:
+    """macOS /usr/bin/python3 is the xcrun launcher, which honours DEVELOPER_DIR (R1). Use the
+    root-owned interpreter it starts instead. `guard status` reports it missing if an Xcode or
+    Command Line Tools update moves it, and `guard install` picks the new one."""
+    if sys.platform != "darwin" or os.path.realpath(python) != "/usr/bin/python3":
+        return python
+    try:
+        proc = subprocess.run(
+            [python, "-I", "-S", "-c", "import os, sys; print(os.path.realpath(sys.executable))"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env={"PATH": "/usr/bin:/bin"},
+        )
+        real = proc.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return python
+    if real and os.path.isfile(real) and os.stat(real).st_uid == 0 and _works(real):
+        return real
+    return python
 
 
 def _writable_warning(python: str) -> Optional[str]:
@@ -258,7 +287,7 @@ def _writable_warning(python: str) -> Optional[str]:
 def hook_command(python: str, home: Home, agent: str) -> str:
     if USE_WRAPPER:
         return f'/bin/sh "{wrapper_path(home)}" --agent {agent}'
-    return f'"{python}" -I -S "{guard_path(home)}" --agent {agent}'
+    return f'"{python}" -I -S "{guard_path(home)}" --home "{home.root}" --agent {agent}'
 
 
 def hook_python(command: str, home: Home) -> Optional[str]:

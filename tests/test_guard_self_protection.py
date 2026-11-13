@@ -79,7 +79,7 @@ def run(agent: str, payload: dict, cwd: Path, home: Path):
     env.pop("CLAUDE_CONFIG_DIR", None)
     env.pop("CODEX_HOME", None)
     proc = subprocess.run(
-        [sys.executable, str(GUARD), "--agent", agent],
+        [sys.executable, str(GUARD), "--agent", agent, "--home", str(home)],
         input=json.dumps(payload).encode(),
         capture_output=True,
         timeout=60,
@@ -163,7 +163,7 @@ def test_custom_config_dirs_are_protected(project, isolated, tmp_path):
     payload = event("claude", "edit", str(custom / "settings.json"), project)
     env = {**os.environ, "HOME": str(isolated), "CLAUDE_CONFIG_DIR": str(custom)}
     proc = subprocess.run(
-        [sys.executable, str(GUARD), "--agent", "claude"],
+        [sys.executable, str(GUARD), "--agent", "claude", "--home", str(isolated)],
         input=json.dumps(payload).encode(),
         capture_output=True,
         timeout=60,

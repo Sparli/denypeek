@@ -579,7 +579,8 @@ def strings_in(value, key=None):
 
 
 def decide(event, rules):
-    """Return a reason string to deny, or None to allow."""
+    """Return a reason string to deny, or None to allow. Raises HookTimeout when out of time."""
+    _deadline[0] = time.monotonic() + HOOK_SECONDS
     deadline = time.monotonic() + WALK_SECONDS
     cwd = (
         event.get("cwd")
@@ -697,7 +698,6 @@ def run(argv, stdin_bytes):
         i = argv.index("--agent")
         if i + 1 < len(argv):
             agent = argv[i + 1]
-    _deadline[0] = time.monotonic() + HOOK_SECONDS
     if agent not in AGENTS:
         return fail_closed("claude", f"unknown agent {agent!r}")
     if len(stdin_bytes) > MAX_INPUT:

@@ -24,8 +24,9 @@ keeps a backup and proves the result with a rescan. `keyhush guard install` stop
 `.env` read, in all four agents, from one pattern list.
 
 > **Status: v0.1.0, not released.** Guard, scan, redact and undo work and are tested on fixture
-> homes on macOS (CI on Linux and Windows has not run yet). **None of the four agents is live-tested yet**: the hooks follow each
-> vendor's documented format, but nobody has run them inside a real Claude Code, Codex CLI,
+> homes on macOS; CI results on Linux and Windows are not confirmed yet. **None of the four
+> agents is live-tested yet**: the hooks follow each vendor's documented format, but nobody has
+> run them inside a real Claude Code, Codex CLI,
 > Cursor or Gemini CLI session. Not on PyPI. Detection is best effort: a clean scan is not proof
 > that a machine is clean.
 

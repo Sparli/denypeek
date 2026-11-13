@@ -26,8 +26,9 @@ def installed_run(home: Path, proj: Path, case: str, extra_env: dict):
     command = ours_commands(SPECS["claude"], h)[0]
     payload = sample_inputs("claude", proj, h)[case]
     env = {**os.environ, "HOME": str(home), **extra_env}
+    argv = command if os.name == "nt" else shlex.split(command)  # the platform's own form
     return subprocess.run(
-        shlex.split(command),
+        argv,
         input=json.dumps(payload).encode(),
         capture_output=True,
         timeout=60,
@@ -46,7 +47,6 @@ def proj(tmp_path):
     return p
 
 
-@posix_only
 def test_pythonpath_cannot_hijack_the_hook(isolated, tmp_path, proj):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
     evil = tmp_path / "evil"
@@ -58,7 +58,6 @@ def test_pythonpath_cannot_hijack_the_hook(isolated, tmp_path, proj):
         assert blocked("claude", proc.stdout.decode(), proc.returncode), var
 
 
-@posix_only
 def test_user_site_cannot_hijack_the_hook(isolated, proj):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
     code = "import site, sys; print(site.getusersitepackages())"

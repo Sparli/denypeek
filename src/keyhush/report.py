@@ -38,7 +38,9 @@ def scan_json(result: ScanResult, home: Home) -> str:
         "incomplete": [
             {"file": str(p.path), "where": p.where, "reason": p.reason} for p in result.incomplete
         ],
-        "notes": [{"file": str(p.path), "where": p.where, "reason": p.reason} for p in result.notes],
+        "notes": [
+            {"file": str(p.path), "where": p.where, "reason": p.reason} for p in result.notes
+        ],
         "disclaimer": NOT_PROOF,
     }
     return json.dumps(data, indent=2, ensure_ascii=False)

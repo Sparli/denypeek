@@ -56,7 +56,9 @@ def resolve_home(home: Optional[str] = None, environ: Optional[dict] = None) -> 
         app_dirs = _cursor_app_dirs(root, None)
     else:
         root = Path.home()
-        claude_dir = Path(env["CLAUDE_CONFIG_DIR"]) if env.get("CLAUDE_CONFIG_DIR") else root / ".claude"
+        claude_dir = (
+            Path(env["CLAUDE_CONFIG_DIR"]) if env.get("CLAUDE_CONFIG_DIR") else root / ".claude"
+        )
         codex_dir = Path(env["CODEX_HOME"]) if env.get("CODEX_HOME") else root / ".codex"
         app_dirs = _cursor_app_dirs(root, env.get("APPDATA"))
     return Home(

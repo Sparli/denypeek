@@ -70,8 +70,17 @@ def new_set(home: Home) -> BackupSet:
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = backups_dir(home) / f"{stamp}-{secrets.token_hex(3)}"
     os.mkdir(str(path), 0o700)
-    bs = BackupSet(path, {"tool": "keyhush", "version": __version__, "created": stamp,
-                          "home": str(home.root), "undone": False, "files": []})
+    bs = BackupSet(
+        path,
+        {
+            "tool": "keyhush",
+            "version": __version__,
+            "created": stamp,
+            "home": str(home.root),
+            "undone": False,
+            "files": [],
+        },
+    )
     bs.save()
     return bs
 

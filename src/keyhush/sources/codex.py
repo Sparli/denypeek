@@ -24,7 +24,9 @@ def roots(home: Home) -> list[Path]:
 def find(home: Home, errors: list) -> list[Source]:
     out = []
     for sub in (SESSIONS, ARCHIVED):
-        out += [Source("codex", p, "jsonl") for p in walk(home.codex_dir / sub, (".jsonl",), errors)]
+        out += [
+            Source("codex", p, "jsonl") for p in walk(home.codex_dir / sub, (".jsonl",), errors)
+        ]
     hist = home.codex_dir / HISTORY
     if hist.is_file() or hist.is_symlink():
         out.append(Source("codex", hist, "jsonl"))

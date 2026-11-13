@@ -90,7 +90,11 @@ def compiled_rules() -> list[dict]:
 
 
 def _compile_allow(a: dict) -> dict:
-    return {**a, "res": [re.compile(x, re.ASCII) for x in a["regexes"]], "hashset": set(a["hashes"])}
+    return {
+        **a,
+        "res": [re.compile(x, re.ASCII) for x in a["regexes"]],
+        "hashset": set(a["hashes"]),
+    }
 
 
 @lru_cache(maxsize=1)
@@ -202,10 +206,14 @@ def scan_text_lines(data: bytes, path: Path, kind: str, result: ScanResult):
         try:
             json.loads(text)
         except ValueError as exc:
-            result.incomplete.append(Problem(path, "", f"broken JSON ({exc.msg}, line {exc.lineno})"))
+            result.incomplete.append(
+                Problem(path, "", f"broken JSON ({exc.msg}, line {exc.lineno})")
+            )
         for sep in LINE_SEPARATORS:
             if sep in text:
-                result.notes.append(Problem(path, "", f"contains U+{ord(sep):04X}; read as one record"))
+                result.notes.append(
+                    Problem(path, "", f"contains U+{ord(sep):04X}; read as one record")
+                )
         for hit in find_secrets(text):
             yield str(text.count("\n", 0, hit.start) + 1), hit
         return
@@ -216,7 +224,9 @@ def scan_text_lines(data: bytes, path: Path, kind: str, result: ScanResult):
         try:
             line = raw.decode("utf-8")
         except UnicodeDecodeError:
-            result.incomplete.append(Problem(path, str(n), "not valid UTF-8; scanned with replacement"))
+            result.incomplete.append(
+                Problem(path, str(n), "not valid UTF-8; scanned with replacement")
+            )
             line = raw.decode("utf-8", errors="replace")
         try:
             json.loads(line)
@@ -241,7 +251,9 @@ def scan_sqlite(path: Path, result: ScanResult):
         return
     try:
         try:
-            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            tables = {
+                r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
         except sqlite3.Error as exc:
             result.incomplete.append(Problem(path, "", f"cannot read database: {exc}"))
             return
@@ -255,7 +267,11 @@ def scan_sqlite(path: Path, result: ScanResult):
                 for rowid, value in rows:
                     if value is None:
                         continue
-                    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+                    text = (
+                        value.decode("utf-8", errors="replace")
+                        if isinstance(value, bytes)
+                        else str(value)
+                    )
                     for hit in find_secrets(text):
                         yield f"{table} row {rowid}", hit
             except sqlite3.Error as exc:
@@ -285,7 +301,9 @@ def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
         if kinds and src.kind not in kinds:
             continue
         if src.path.is_symlink() and not inside(src.path, allowed_roots):
-            result.notes.append(Problem(src.path, "", "symlink to outside the history folders; skipped"))
+            result.notes.append(
+                Problem(src.path, "", "symlink to outside the history folders; skipped")
+            )
             continue
         result.files.append(src)
         if src.kind == "sqlite":
@@ -294,7 +312,9 @@ def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
             try:
                 data = src.path.read_bytes()
             except OSError as exc:
-                result.incomplete.append(Problem(src.path, "", f"cannot read: {exc.strerror or exc}"))
+                result.incomplete.append(
+                    Problem(src.path, "", f"cannot read: {exc.strerror or exc}")
+                )
                 continue
             items = scan_text_lines(data, src.path, src.kind, result)
         for where, hit in items:

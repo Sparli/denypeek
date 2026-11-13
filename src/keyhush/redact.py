@@ -23,7 +23,7 @@ from typing import Optional
 
 from . import backups
 from .fsutil import atomic_write
-from .scan import Problem, fingerprint, find_secrets, inside, preview, salt, scan
+from .scan import Problem, find_secrets, fingerprint, inside, preview, salt, scan
 from .sources import Home
 
 ACTIVE_SECONDS = 10 * 60
@@ -99,7 +99,11 @@ def redact_bytes(data: bytes, kind: str, path: Path, key: bytes, result: RedactR
             continue
         new = _replace(line, hits, key, result)
         if not _valid_json(new):
-            why = "line is not valid JSON" if not _valid_json(line) else "redaction would break the JSON"
+            why = (
+                "line is not valid JSON"
+                if not _valid_json(line)
+                else "redaction would break the JSON"
+            )
             result.skipped.append(Problem(path, str(i + 1), f"{why}; left as is"))
             continue
         lines[i] = new.encode("utf-8")
@@ -130,7 +134,9 @@ def redact(home: Home, include_active: bool = False) -> RedactResult:
     kinds = {s.path: s.kind for s in found.files}
     for p in found.incomplete:
         if p.path in files and not p.where:
-            result.skipped.append(Problem(p.path, "", f"not fully readable ({p.reason}); left as is"))
+            result.skipped.append(
+                Problem(p.path, "", f"not fully readable ({p.reason}); left as is")
+            )
             files.pop(p.path)
     result.planned_files = len(files)
     roots = home.history_roots()
@@ -173,7 +179,9 @@ def redact(home: Home, include_active: bool = False) -> RedactResult:
                 continue
             for hit in find_secrets(unit):
                 where = "" if kinds[path] == "json" else str(n)
-                result.leftover.append(Problem(path, where, f"{hit.rule} still present after redaction"))
+                result.leftover.append(
+                    Problem(path, where, f"{hit.rule} still present after redaction")
+                )
     return result
 
 

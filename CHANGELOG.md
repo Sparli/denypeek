@@ -6,6 +6,16 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed (security re-check of the guard, R1 to R7)
+- The hook starts from a clean environment with a fixed home folder (`env -i`, `--home`), and on
+  macOS from the real interpreter rather than the `xcrun` launcher; settings that set
+  hook-relevant variables are denied.
+- Project agent settings folders are protected as copy, move, link and extract targets; `git`
+  counts as read-only only for read subcommands; JSON-escaped hooks-off text is caught.
+- Agent folders cannot be deleted through globs, braces or `find -delete` from the home folder.
+- Variable expansion is capped and denied past 100,000 characters.
+- README states what the guard is and is not, and lists the remaining known misses.
+
 ### Fixed (security review of the guard, G1 to G14)
 - The hook's Python runs isolated (`-I -S`, `PYTHON*` cleared); the installer prefers a
   root-owned Python and warns about one the user can modify; user Python folders are protected.

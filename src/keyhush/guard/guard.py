@@ -537,6 +537,70 @@ def shell_settings_problem(command, folders):
     return None
 
 
+# --- the agent folders that hold the hook settings (QA pass 2) -------------------------
+# Moving, deleting or rewriting ~/.claude (and friends) removes the hook with it, so shell
+# commands that name one of these folders may only read it.
+DIR_READ_VERBS = READ_VERBS | {
+    "du",
+    "tree",
+    "cd",
+    "pushd",
+    "find",
+    "echo",
+    "open",
+    "realpath",
+    "readlink",
+    "dirname",
+    "basename",
+    "test",
+    "[",
+}
+FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"}
+
+
+def agent_dirs():
+    home = home_dir()
+    dirs = [os.path.join(home, n) for n in (".claude", ".codex", ".cursor", ".gemini")]
+    for var in ("CLAUDE_CONFIG_DIR", "CODEX_HOME"):
+        if os.environ.get(var):
+            dirs.append(os.environ[var])
+    out = set()
+    for d in dirs:
+        out.add(_norm(os.path.normpath(d)).rstrip("/"))
+        try:
+            out.add(_norm(os.path.realpath(d)).rstrip("/"))
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def is_agent_dir(path):
+    return bool(path) and _norm(os.path.normpath(path)).rstrip("/") in agent_dirs()
+
+
+def shell_folder_problem(command, folders):
+    for raw in SHELL_OPERATORS.split(command):
+        text = REDIRECT_TARGET.sub(" ", raw)
+        try:
+            words = shlex.split(text, posix=True)
+        except ValueError:
+            words = text.split()
+        while words and "=" in words[0] and not words[0].startswith("-"):
+            words = words[1:]
+        if not words:
+            continue
+        named = [w for w in words[1:] if any(is_agent_dir(expand(w, f)) for f in folders)]
+        if not named:
+            continue
+        verb = os.path.basename(words[0]).lower()
+        if verb not in DIR_READ_VERBS or (verb == "find" and FIND_ACTIONS & set(words)):
+            return (
+                "the command may move, delete or change an agent's settings folder, which "
+                "would remove the keyhush hook; do that in your own terminal"
+            )
+    return None
+
+
 def blocked_path(path, rules):
     return is_protected(path) or is_secret(path, rules)
 
@@ -901,7 +965,9 @@ def decide(event, rules):
             reason = check_command(s, cwd, rules, deadline, extra=workdirs)
             if not reason:
                 folders = [cwd] + workdirs + cd_targets(SHELL_OPERATORS.split(s), cwd)
-                reason = shell_settings_problem(windows_paths(s), folders)
+                reason = shell_settings_problem(windows_paths(s), folders) or shell_folder_problem(
+                    windows_paths(s), folders
+                )
             if reason:
                 return reason
             continue
@@ -921,6 +987,12 @@ def decide(event, rules):
             hits = path_hits(s, folder, rules)
             if hits:
                 return reason_for(hits[0], "uses")
+            if (
+                is_path_key(key)
+                and is_agent_dir(expand(s, folder))
+                and any(w in tool.lower() for w in ("delete", "remove", "move", "rename"))
+            ):
+                return "deleting or moving an agent's settings folder would remove the hook"
             if is_path_key(key):
                 problem = settings_edit_problem(expand(s, folder) or "", tool_input)
                 if problem:

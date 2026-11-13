@@ -248,3 +248,12 @@ def run_cli(*args: str) -> tuple[int, str, str]:
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = main(list(args))
     return code, out.getvalue(), err.getvalue()
+
+
+def symlink_or_skip(link: Path, target: Path) -> None:
+    """Create a symlink, or skip the test where the OS refuses (Windows without the right)."""
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create symlinks here: {exc}")

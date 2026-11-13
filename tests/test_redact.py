@@ -116,11 +116,12 @@ def test_a9_recent_file_and_outside_symlink_are_skipped(isolated, tmp_path):
     recent = write(
         home / ".claude/projects/p/recent.jsonl", jl({"t": fake_github()}), mtime=time.time() - 60
     )
-    linked = False
-    if sys.platform != "win32":
-        outside = write(tmp_path / "outside/other.jsonl", jl({"t": fake_github()}))
+    outside = write(tmp_path / "outside/other.jsonl", jl({"t": fake_github()}))
+    try:
         (home / ".claude/projects/p/link.jsonl").symlink_to(outside)
         linked = True
+    except (OSError, NotImplementedError):  # Windows without the symlink right
+        linked = False
     original = recent.read_bytes()
     code, out, _ = run_cli("redact", "--home", str(home), "--yes")
     assert code == 1, out

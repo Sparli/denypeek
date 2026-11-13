@@ -15,6 +15,8 @@ import pytest
 from keyhush.guard import ALLOW_CASES, DENY_CASES, blocked, sample_inputs
 from keyhush.sources import resolve_home
 
+from .conftest import symlink_or_skip
+
 GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
 AGENTS = ["claude", "codex", "cursor", "gemini"]
 
@@ -153,9 +155,8 @@ def test_normal_commands_are_allowed(command, project):
     assert not blocked("claude", proc.stdout.decode(), proc.returncode), command
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need extra rights on Windows")
 def test_symlink_to_secret_file_is_blocked(project):
-    (project / "notes.txt").symlink_to(project / ".env")
+    symlink_or_skip(project / "notes.txt", project / ".env")
     payload = {
         "cwd": str(project),
         "hook_event_name": "PreToolUse",

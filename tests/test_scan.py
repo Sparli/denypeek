@@ -7,11 +7,9 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
-
 from keyhush.scan import find_secrets
 
-from .conftest import fake_adobe, fake_github, jl, run_cli, write
+from .conftest import fake_adobe, fake_github, jl, run_cli, symlink_or_skip, write
 
 
 def test_a3_one_finding_per_store_at_the_right_place(four_store_home, keys):
@@ -113,12 +111,9 @@ def test_cursor_db_opened_read_only_and_wal_untouched(isolated, keys):
     assert not db.with_name(db.name + "-shm").exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need extra rights on Windows")
 def test_scan_skips_symlink_leading_outside(isolated, tmp_path):
     outside = write(tmp_path / "outside/secret.jsonl", jl({"t": fake_github()}))
-    link = isolated / ".claude/projects/p/link.jsonl"
-    link.parent.mkdir(parents=True)
-    link.symlink_to(outside)
+    symlink_or_skip(isolated / ".claude/projects/p/link.jsonl", outside)
     code, out, _ = run_cli("scan", "--home", str(isolated))
     assert code == 0
     assert "symlink to outside the history folders; skipped" in out

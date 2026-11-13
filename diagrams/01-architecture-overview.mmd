@@ -23,7 +23,7 @@ flowchart LR
     SCAN --> SALT[("~/.keyhush/salt<br/>fingerprint key")]
 
     CLI -->|guard install, uninstall| INST["guard/install_*.py"]
-    INST -->|copy| GP["~/.keyhush/guard.py<br/>stdlib only"]
+    INST -->|"copy, and write the wrapper"| GP["~/.keyhush/guard.sh wrapper<br/>runs guard.py, stdlib only"]
     INST -->|"default list if missing"| PAT[("~/.keyhush/secretfiles")]
     INST -->|"backup, merge, atomic write"| CFG
     INST --> CB[("~/.keyhush/config-backups/<br/>~/.keyhush/guard-state.json")]
@@ -35,3 +35,4 @@ flowchart LR
     end
     CFG -.->|"agent runs the hook<br/>before each tool call"| GP
     PAT --> GP
+    GP -.->|"denies any agent access"| PROT["~/.keyhush/** and the<br/>hook config files"]

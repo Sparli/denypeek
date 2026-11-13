@@ -74,19 +74,34 @@ def test_cursor_delete_tool_on_agent_folder_is_denied(rules, tmp_path, isolated)
 # --- R3: through globs and find ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("command", [
-    "rm -rf ~/.cl*", "rm -rf ~/.c?aude", "mv ~/.[c]laude /tmp/x", "rm -rf ~/.{claude,codex}",
-    "find ~ -maxdepth 1 -name .claude -exec rm -rf {} +", "find ~ -name '.c*' -delete",
-    "find $HOME -maxdepth 1 -type d -name '.gemini' -delete", "git rm -r ~/.claude",
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -rf ~/.cl*",
+        "rm -rf ~/.c?aude",
+        "mv ~/.[c]laude /tmp/x",
+        "rm -rf ~/.{claude,codex}",
+        "find ~ -maxdepth 1 -name .claude -exec rm -rf {} +",
+        "find ~ -name '.c*' -delete",
+        "find $HOME -maxdepth 1 -type d -name '.gemini' -delete",
+        "git rm -r ~/.claude",
+    ],
+)
 def test_r3_agent_folders_through_globs_and_find_are_denied(command, rules, tmp_path, isolated):
     for d in (".claude", ".codex", ".gemini", ".cursor"):
         (isolated / d).mkdir(exist_ok=True)
     assert g.decide(shell(command, tmp_path), rules), command
 
 
-@pytest.mark.parametrize("command", ["ls -d ~/.c*", "find ~ -maxdepth 1 -name '.c*'",
-                                     "rm -rf build/*", "find build -name '*.o' -delete"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "ls -d ~/.c*",
+        "find ~ -maxdepth 1 -name '.c*'",
+        "rm -rf build/*",
+        "find build -name '*.o' -delete",
+    ],
+)
 def test_r3_harmless_globs_and_find_are_allowed(command, rules, tmp_path, isolated):
     for d in (".claude", ".codex"):
         (isolated / d).mkdir(exist_ok=True)

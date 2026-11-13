@@ -239,7 +239,7 @@ flowchart TD
 You need Python 3.9 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
-git clone <repository address> keyhush && cd keyhush
+git clone https://github.com/Sparli/keyhush.git && cd keyhush
 ```
 
 ```bash
@@ -259,8 +259,10 @@ uv run keyhush guard install
 uv run keyhush guard test
 ```
 
-Once keyhush is on PyPI, `uvx keyhush scan` will work without cloning. Until then:
-`uvx --from git+<repository address> keyhush scan`.
+Once keyhush is on PyPI, `uvx keyhush scan` will work without cloning. Until then, pin the
+release tag so you run the version you reviewed:
+`uvx --from git+https://github.com/Sparli/keyhush@v0.1.0 keyhush scan` (works once v0.1.0 is
+tagged and the repository is public).
 
 ### Example run
 

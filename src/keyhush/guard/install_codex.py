@@ -1,6 +1,6 @@
 """Codex CLI: ~/.codex/hooks.json, hooks.PreToolUse for Bash and apply_patch.
 
-Docs: https://developers.openai.com/codex/hooks (redirects to learn.chatgpt.com/docs/hooks).
+Docs: https://learn.chatgpt.com/docs/hooks.
 - Deny with hookSpecificOutput.permissionDecision "deny", or exit 2.
 - Hooks are on by default; `[features] hooks = false` in config.toml turns them off.
 - Codex skips a new or changed hook until the user trusts it with /hooks.

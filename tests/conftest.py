@@ -47,6 +47,8 @@ ALLOWED_UNDER_HOME = [
         tempfile.gettempdir(),
         os.path.join(_real_home(), ".local", "share", "uv"),
         os.path.join(_real_home(), ".cache", "uv"),
+        # Python's own bytecode cache (Apple's system Python puts it under ~/Library/Caches)
+        getattr(sys, "pycache_prefix", None) or str(REPO),
     }
 ]
 _state = {"active": False, "violations": []}

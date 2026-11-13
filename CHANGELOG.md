@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed (security review of scan and redact, S1)
+- `scan`, `scan --json` and redact's rotate list no longer show the first four characters of
+  every secret. A preview now shows at most four characters of a rule's fixed public prefix
+  (`AKIA…`, `ghp_…`, `hf_…`) and nothing for rules without one, such as `generic-api-key`
+  (JSON `"preview": null`). The prefixes are derived from each rule's regex in
+  `tools/gen_rules.py` and stored in `rules.py`.
+
 ### Fixed (security final check of the guard, F1)
 - The hook command starts with `/usr/bin/env -i`, so exported shell functions and variables
   cannot change the wrapper; project settings that set `BASH_FUNC_*`, `BASH_ENV`, `SHELLOPTS`,

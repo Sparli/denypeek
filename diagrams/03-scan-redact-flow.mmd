@@ -5,7 +5,7 @@ flowchart TD
         S2 -->|no| S3["Read: JSONL split on newline only,<br/>JSON whole, SQLite known tables"]
         S3 -->|"bad UTF-8, broken JSON,<br/>no permission"| SI["Listed as NOT fully checked"]
         S3 --> S4["Rules: keyword prefilter, regex,<br/>entropy, allowlists, dedupe"]
-        S4 --> S5["Finding: rule, file, line,<br/>first 4 chars, length,<br/>HMAC fingerprint"]
+        S4 --> S5["Finding: rule, file, line,<br/>fixed prefix if any, length,<br/>HMAC fingerprint"]
         S5 & SI --> S6{"Exit code"}
         S6 -->|"anything unread"| X2["2"]
         S6 -->|findings| X1["1"]

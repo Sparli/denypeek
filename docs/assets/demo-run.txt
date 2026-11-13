@@ -6,10 +6,10 @@ keyhush scan: offline, nothing leaves this machine.
 Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.
 
 Possible secrets (4):
-  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  ghp_… (40 chars)  fp dfbaa0be
-  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a
-  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp a5d348c9
-  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 8315115c
+  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp 5fe7f801
+  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 150e1bc8
+  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp c87ce7f5
+  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp e90519d3
 
 Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.
 To scrub them from history: keyhush redact (keeps a backup).
@@ -68,11 +68,11 @@ Redacted 3 secret(s) in 3 file(s).
 Verified: a rescan of the changed files finds no known key shapes.
 
 Rotate these keys now (3). Redaction does not make a leaked key safe:
-  generic-api-key  ghp_… (40 chars)  fp dfbaa0be
-  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a
-  stripe-access-token  sk_l… (32 chars)  fp a5d348c9
+  generic-api-key  (40 chars)  fp 5fe7f801
+  aws-access-token  AKIA… (20 chars)  fp 150e1bc8
+  stripe-access-token  sk_l… (32 chars)  fp c87ce7f5
 
-Backup: ~/.keyhush/backups/20261113T022649Z-58b9cf
+Backup: ~/.keyhush/backups/20261113T234807Z-947456
 WARNING: the backup still holds the secrets. Check your history, then delete it with:
   keyhush backups purge --yes
 To put everything back instead: keyhush undo

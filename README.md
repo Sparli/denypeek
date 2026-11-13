@@ -239,7 +239,7 @@ flowchart TD
         S2 -->|no| S3["Read: JSONL split on newline only,<br/>JSON whole, SQLite known tables"]
         S3 -->|"bad UTF-8, broken JSON,<br/>no permission"| SI["Listed as NOT fully checked"]
         S3 --> S4["Rules: keyword prefilter, regex,<br/>entropy, allowlists, dedupe"]
-        S4 --> S5["Finding: rule, file, line,<br/>first 4 chars, length,<br/>HMAC fingerprint"]
+        S4 --> S5["Finding: rule, file, line,<br/>fixed prefix if any, length,<br/>HMAC fingerprint"]
         S5 & SI --> S6{"Exit code"}
         S6 -->|"anything unread"| X2["2"]
         S6 -->|findings| X1["1"]
@@ -312,7 +312,7 @@ fake keys made at run time and runs the commands against it
 
 | Command | What it does |
 |---|---|
-| `keyhush scan [--json]` | Read-only scan of agent history. Shows rule, file, line, first four characters, length and a fingerprint. |
+| `keyhush scan [--json]` | Read-only scan of agent history. Shows rule, file, line, length and a fingerprint, plus up to four characters of a fixed public prefix such as `AKIA` (none for rules without one, such as `generic-api-key`). |
 | `keyhush redact [--yes] [--include-active]` | Replaces each found key with `[REDACTED:<rule>:<fingerprint>]` in JSONL and JSON history, after a backup. Then rescans. |
 | `keyhush undo [--set NAME]` | Restores the files changed by the last redact, byte for byte. |
 | `keyhush backups list` / `purge --yes` | Lists or deletes redact backups. They still hold the keys. `purge --config` deletes the copies of agent settings that `guard install` made instead. |
@@ -558,7 +558,8 @@ in-place `.bak` files.
   from community sources, not vendor docs. Windows paths are unverified. Windows is tested on
   fixtures in CI only.
 - **Labels:** when a generic rule and a specific rule match the same text, the generic label can
-  win. The example run shows a GitHub token labelled `generic-api-key`. The key is still found.
+  win. The example run shows a GitHub token labelled `generic-api-key`. The key is still found, but
+  it is shown without its `ghp_` prefix, because generic rules show no characters.
 - **Speed:** very long history lines packed with key-like words scan slowly, about 7 seconds per
   400 KB in our worst-case test.
 - **Windows file permissions:** keyhush sets owner-only modes on its backups and salt, which

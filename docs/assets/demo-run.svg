@@ -11,10 +11,10 @@
 <text x="16" y="146" fill="#e6edf3">Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.</text>
 <text x="16" y="164" fill="#e6edf3"></text>
 <text x="16" y="182" fill="#e6edf3">Possible secrets (4):</text>
-<text x="16" y="200" fill="#e6edf3">  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  ghp_… (40 chars)  fp dfbaa0be</text>
-<text x="16" y="218" fill="#e6edf3">  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a</text>
-<text x="16" y="236" fill="#e6edf3">  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp a5d348c9</text>
-<text x="16" y="254" fill="#e6edf3">  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 8315115c</text>
+<text x="16" y="200" fill="#e6edf3">  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp 5fe7f801</text>
+<text x="16" y="218" fill="#e6edf3">  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 150e1bc8</text>
+<text x="16" y="236" fill="#e6edf3">  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp c87ce7f5</text>
+<text x="16" y="254" fill="#e6edf3">  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp e90519d3</text>
 <text x="16" y="272" fill="#e6edf3"></text>
 <text x="16" y="290" fill="#e6edf3">Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.</text>
 <text x="16" y="308" fill="#e6edf3">To scrub them from history: keyhush redact (keeps a backup).</text>
@@ -73,11 +73,11 @@
 <text x="16" y="1262" fill="#e6edf3">Verified: a rescan of the changed files finds no known key shapes.</text>
 <text x="16" y="1280" fill="#e6edf3"></text>
 <text x="16" y="1298" fill="#e6edf3">Rotate these keys now (3). Redaction does not make a leaked key safe:</text>
-<text x="16" y="1316" fill="#e6edf3">  generic-api-key  ghp_… (40 chars)  fp dfbaa0be</text>
-<text x="16" y="1334" fill="#e6edf3">  aws-access-token  AKIA… (20 chars)  fp 27f5ca3a</text>
-<text x="16" y="1352" fill="#e6edf3">  stripe-access-token  sk_l… (32 chars)  fp a5d348c9</text>
+<text x="16" y="1316" fill="#e6edf3">  generic-api-key  (40 chars)  fp 5fe7f801</text>
+<text x="16" y="1334" fill="#e6edf3">  aws-access-token  AKIA… (20 chars)  fp 150e1bc8</text>
+<text x="16" y="1352" fill="#e6edf3">  stripe-access-token  sk_l… (32 chars)  fp c87ce7f5</text>
 <text x="16" y="1370" fill="#e6edf3"></text>
-<text x="16" y="1388" fill="#e6edf3">Backup: ~/.keyhush/backups/20261113T022649Z-58b9cf</text>
+<text x="16" y="1388" fill="#e6edf3">Backup: ~/.keyhush/backups/20261113T234807Z-947456</text>
 <text x="16" y="1406" fill="#ffa657">WARNING: the backup still holds the secrets. Check your history, then delete it with:</text>
 <text x="16" y="1424" fill="#e6edf3">  keyhush backups purge --yes</text>
 <text x="16" y="1442" fill="#e6edf3">To put everything back instead: keyhush undo</text>

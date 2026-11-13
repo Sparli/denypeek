@@ -9,8 +9,11 @@
   is only checked with stat(); if it is not empty the database is reported as not fully scanned,
   exit 2), reading only known
   tables with fixed SQL.
-- Output shows rule, file, line, first four characters, length and an 8-character HMAC fingerprint
-  keyed by a random per-machine salt. Never the full secret.
+- Output shows rule, file, line, length and an 8-character HMAC fingerprint keyed by a random
+  per-machine salt. A preview of at most four characters is shown only for rules whose secret
+  starts with a fixed public prefix (`AKIA`, `ghp_`), and only from that prefix; other rules show
+  none (JSON `"preview": null`). The prefixes are derived from each rule's regex by
+  `tools/gen_rules.py`. Never the full secret.
 - **No silent skips:** every unreadable file or line is listed and makes the exit code 2.
   Exit 0 means nothing found, 1 means findings.
 

@@ -160,20 +160,25 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
             "user_email": None,
             "transcript_path": None,
         }
-        reads = lambda f: {
-            **cbase,
-            "hook_event_name": "beforeReadFile",
-            "file_path": f,  # noqa: E731
-            "content": "",
-            "attachments": [],
-        }
-        sh = lambda c: {
-            **cbase,
-            "hook_event_name": "beforeShellExecution",
-            "command": c,  # noqa: E731
-            "cwd": str(proj),
-            "sandbox": False,
-        }
+
+        def reads(f):
+            return {
+                **cbase,
+                "hook_event_name": "beforeReadFile",
+                "file_path": f,
+                "content": "",
+                "attachments": [],
+            }
+
+        def sh(c):
+            return {
+                **cbase,
+                "hook_event_name": "beforeShellExecution",
+                "command": c,
+                "cwd": str(proj),
+                "sandbox": False,
+            }
+
         edit = {
             **cbase,
             "hook_event_name": "preToolUse",

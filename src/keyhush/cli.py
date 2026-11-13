@@ -77,7 +77,8 @@ def cmd_redact(args) -> int:
         print("\nVerified: a rescan of the changed files finds no known key shapes.")
     if res.rotate:
         print(
-            f"\nRotate these keys now ({len(res.rotate)}). Redaction does not make a leaked key safe:"
+            f"\nRotate these keys now ({len(res.rotate)}). "
+            "Redaction does not make a leaked key safe:"
         )
         for r in res.rotate.values():
             print(f"  {r.rule}  {r.preview} ({r.length} chars)  fp {r.fingerprint}")
@@ -121,7 +122,8 @@ def cmd_backups_list(args) -> int:
             else ("broken" if bs.manifest.get("broken") else "active")
         )
         print(
-            f"{bs.name}  {len(bs.manifest.get('files', []))} file(s)  {size_of(bs.path)} bytes  {state}"
+            f"{bs.name}  {len(bs.manifest.get('files', []))} file(s)  "
+            f"{size_of(bs.path)} bytes  {state}"
         )
     print("These backups still hold the secrets. Delete them with: keyhush backups purge --yes")
     return 0
@@ -136,7 +138,8 @@ def cmd_backups_purge(args) -> int:
         print("No backups to delete.")
         return 0
     print(
-        f"This deletes {len(sets)} backup set(s) under {home.display(home.keyhush_dir / 'backups')}."
+        f"This deletes {len(sets)} backup set(s) under "
+        f"{home.display(home.keyhush_dir / 'backups')}."
     )
     print("After this, `keyhush undo` cannot restore those files.")
     if not _confirm(args, "Delete them?"):

@@ -23,9 +23,10 @@ import hashlib
 import pprint
 import re
 import sys
-import tomllib
 import warnings
 from pathlib import Path
+
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "pinned" / "gitleaks.toml"

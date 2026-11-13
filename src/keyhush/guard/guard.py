@@ -96,6 +96,7 @@ secrets.yaml
 AGENTS = ("claude", "codex", "cursor", "gemini")
 SHELL_KEYS = ("command", "cmd", "script")
 GREP_TOOLS = {"Grep", "grep_search", "search_file_content"}
+MANY_FILE_TOOLS = {"read_many_files"}
 SHELL_OPERATORS = re.compile(r"\|\||&&|;|\||&|\n|\(|\)|`|\$\(")
 GREP_NAMES = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "ugrep", "git"}
 
@@ -912,6 +913,8 @@ def decide(event, rules):
                 return "a path contains a line break, so it cannot be checked"
         elif not s or "\n" in s or len(s) > MAX_PATH:
             continue  # file contents and other free text, not a path
+        if not s and tool in MANY_FILE_TOOLS:
+            s = "."  # an empty include may mean "everything"
         if not s:
             continue
         for folder in [cwd] + workdirs:
@@ -922,6 +925,16 @@ def decide(event, rules):
                 problem = settings_edit_problem(expand(s, folder) or "", tool_input)
                 if problem:
                     return problem
+        if tool in MANY_FILE_TOOLS:
+            # Gemini read_many_files reads whole folders and recursive globs (G8)
+            base = s.split("**", 1)[0] if "**" in s else s
+            folder = expand(base or ".", cwd)
+            if folder and os.path.isdir(folder):
+                try:
+                    if folder_holds_secret(folder, rules, deadline):
+                        return f"reading many files under {folder}, which holds a secret file"
+                except TimeoutError:
+                    return f"reading many files under {folder}: too many to check; narrow it"
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and os.path.isdir(folder):

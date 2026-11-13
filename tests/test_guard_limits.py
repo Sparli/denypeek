@@ -165,3 +165,31 @@ def test_g6_tools_that_skip_node_modules_are_allowed(command, tmp_path):
 def test_g7_backslash_newline_is_joined(command, tmp_path):
     proc, _ = run("claude", bash(command, tmp_path), tmp_path)
     assert blocked("claude", proc.stdout.decode(), proc.returncode), repr(command)
+
+
+# --- G8: Gemini read_many_files -----------------------------------------------------------
+
+
+def gemini_many(include, cwd):
+    return {
+        "cwd": str(cwd),
+        "hook_event_name": "BeforeTool",
+        "tool_name": "read_many_files",
+        "tool_input": {"include": include},
+    }
+
+
+@pytest.mark.parametrize("include", [["."], ["**/*"], ["src", "**/*.txt"], [""]])
+def test_g8_read_many_files_over_a_folder_with_secrets_is_denied(include, tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / ".env").write_text("PLACEHOLDER=1\n")
+    proc, _ = run("gemini", gemini_many(include, tmp_path), tmp_path)
+    assert blocked("gemini", proc.stdout.decode(), proc.returncode), include
+
+
+def test_g8_read_many_files_without_secrets_is_allowed(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x\n")
+    (tmp_path / ".env").write_text("PLACEHOLDER=1\n")
+    proc, _ = run("gemini", gemini_many(["src/**/*.py", "README.md"], tmp_path), tmp_path)
+    assert not blocked("gemini", proc.stdout.decode(), proc.returncode)

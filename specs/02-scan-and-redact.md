@@ -5,7 +5,9 @@
   with its source in a comment. `--home DIR` replaces the home folder and ignores
   `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, so a fixture home cannot reach the real one.
 - JSONL is split on `\n` only (U+2028 inside a JSON string is valid and does not end a line).
-  JSON files are read whole. Cursor's SQLite is opened `mode=ro&immutable=1`, reading only known
+  JSON files are read whole. Cursor's SQLite is opened `mode=ro&immutable=1` (the `-wal` file
+  is only checked with stat(); if it is not empty the database is reported as not fully scanned,
+  exit 2), reading only known
   tables with fixed SQL.
 - Output shows rule, file, line, first four characters, length and an 8-character HMAC fingerprint
   keyed by a random per-machine salt. Never the full secret.

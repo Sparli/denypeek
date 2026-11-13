@@ -379,7 +379,9 @@ include `.env`, `.env.*` (but not `.env.example`, `.env.sample` or `.env.templat
 | Cursor | `state.vscdb` under Cursor's app folder (macOS, Linux, Windows), `~/.cursor/chats/**/store.db` | SQLite, read-only | **[unverified]** community sources |
 
 Cursor's database is opened in immutable read-only mode: no locks, no journal, and the `-wal` file
-is never touched. Every file or line that could not be read (broken JSON, bad UTF-8, no
+is never opened. That mode does not see recent changes still in Cursor's `-wal` file, so if that
+file is not empty the database is listed as not fully scanned (exit code 2). Close Cursor, which
+folds those changes into the main file, and scan again. Every file or line that could not be read (broken JSON, bad UTF-8, no
 permission) is listed, and the exit code is 2. A line holding a U+2028 character is read as one
 line, not split, and noted. Fingerprints are a keyed hash with a random per-machine salt in
 `~/.keyhush/salt`, so a short key cannot be worked back from its fingerprint.

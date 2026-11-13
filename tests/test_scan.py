@@ -106,7 +106,8 @@ def test_cursor_db_opened_read_only_and_wal_untouched(isolated, keys):
     wal.write_bytes(b"not a real wal")
     before = (db.read_bytes(), wal.read_bytes(), db.stat().st_mtime)
     code, out, _ = run_cli("scan", "--home", str(isolated))
-    assert code == 1 and "slack-bot-token" in out
+    # the main file is scanned; the non-empty -wal is reported as not read (exit 2)
+    assert code == 2 and "slack-bot-token" in out and "state.vscdb-wal" in out
     assert (db.read_bytes(), wal.read_bytes(), db.stat().st_mtime) == before
     assert not db.with_name(db.name + "-shm").exists()
 
@@ -117,3 +118,42 @@ def test_scan_skips_symlink_leading_outside(isolated, tmp_path):
     code, out, _ = run_cli("scan", "--home", str(isolated))
     assert code == 0
     assert "symlink to outside the history folders; skipped" in out
+
+
+def test_cursor_wal_data_is_reported_not_silently_missed(isolated, keys, tmp_path):
+    """A key only in state.vscdb-wal: the scan must say it did not read that file (exit 2), and
+    must not touch the database, the -wal or create a -shm."""
+    import hashlib
+    import shutil
+    import sqlite3
+
+    src = tmp_path / "live" / "state.vscdb"
+    src.parent.mkdir()
+    conn = sqlite3.connect(str(src))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("CREATE TABLE ItemTable (key TEXT, value BLOB)")
+    conn.commit()
+    conn.execute("INSERT INTO ItemTable VALUES (?, ?)", ("k", f"slack {keys['cursor']}".encode()))
+    conn.commit()
+    dest = isolated / "Library/Application Support/Cursor/User/globalStorage"
+    dest.mkdir(parents=True)
+    shutil.copy(src, dest / "state.vscdb")
+    shutil.copy(str(src) + "-wal", dest / "state.vscdb-wal")
+    conn.close()
+    db, wal = dest / "state.vscdb", dest / "state.vscdb-wal"
+    assert wal.stat().st_size > 0
+
+    def digest(p):
+        return hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns
+
+    before = (digest(db), digest(wal))
+    code, out, _ = run_cli("scan", "--home", str(isolated))
+    assert code == 2, out
+    assert "state.vscdb-wal" in out and "not read" in out
+    assert (digest(db), digest(wal)) == before
+    assert not (dest / "state.vscdb-shm").exists()
+    code, out, _ = run_cli("scan", "--home", str(isolated), "--json")
+    data = json.loads(out)
+    assert data["complete"] is False
+    assert any(p["file"].endswith("state.vscdb-wal") for p in data["incomplete"])

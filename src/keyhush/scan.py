@@ -242,7 +242,30 @@ def scan_text_lines(data: bytes, path: Path, kind: str, result: ScanResult):
 
 
 def scan_sqlite(path: Path, result: ScanResult):
-    """Read-only, immutable open: no locks, no journal, never touches the -wal file."""
+    """Read-only, immutable open: no locks, no journal, never touches the -wal file.
+
+    immutable=1 also means SQLite ignores the write-ahead log, so recent changes still in
+    `<db>-wal` are not read. That file is only checked with stat(), never opened: if it is not
+    empty, the database is reported as not fully scanned (exit code 2), so a scan never reports
+    less than it read without saying so.
+    """
+    wal = Path(str(path) + "-wal")
+    try:
+        wal_size = os.stat(wal).st_size
+    except FileNotFoundError:
+        wal_size = 0
+    except OSError as exc:
+        wal_size = -1
+        result.incomplete.append(Problem(wal, "", f"cannot check this file: {exc.strerror or exc}"))
+    if wal_size > 0:
+        result.incomplete.append(
+            Problem(
+                wal,
+                "",
+                f"{wal_size} bytes not read: recent changes may be here and not yet in the main "
+                "database. Close Cursor (it then folds them in) and scan again",
+            )
+        )
     uri = Path(path).absolute().as_uri() + "?mode=ro&immutable=1"
     try:
         conn = sqlite3.connect(uri, uri=True)

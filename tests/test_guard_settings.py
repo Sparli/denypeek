@@ -158,3 +158,47 @@ def test_g5_user_settings_protected_in_both_locations(rules, tmp_path, monkeypat
             "tool_input": {"command": f"cat {path}"},
         }
         assert g.decide(event, rules), path
+
+
+# --- R2: writes that do not name the settings file ---------------------------------------
+
+
+@pytest.mark.parametrize("command", [
+    "cp notes/s.json .claude/",
+    "cp notes/s.json .claude",
+    "git mv notes/s.json .claude/settings.json",
+    "git checkout -- .claude/settings.json",
+    "dd if=notes/s.json of=.claude/settings.json",
+    "mv newconf .claude",
+    "tar xf conf.tar -C .claude",
+    "unzip conf.zip -d .codex",
+    "install -m 644 notes/s.json .claude/settings.local.json",
+    "rsync -a notes/ .gemini/",
+    "ln -sf ../notes/s.json .claude/settings.json",
+    "cp -r tmpl/.claude sub/",
+])
+def test_r2_writes_into_project_settings_folders_are_denied(command, rules, tmp_path):
+    for d in (".claude", ".codex", ".gemini", "notes", "sub", "tmpl/.claude"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+    event = {"cwd": str(tmp_path), "hook_event_name": "PreToolUse", "tool_name": "Bash",
+             "tool_input": {"command": command}}
+    assert g.decide(event, rules), command
+
+
+@pytest.mark.parametrize("command", [
+    "cp cmd.md .claude/commands/", "mkdir -p .claude/commands", "git status",
+    "git diff .claude/settings.json", "git log -p .claude/settings.json",
+    "echo hi > .claude/commands/hi.md", "ls .claude", "cat .codex/config.toml",
+])
+def test_r2_normal_work_in_project_settings_folders_is_allowed(command, rules, tmp_path):
+    (tmp_path / ".claude" / "commands").mkdir(parents=True)
+    event = {"cwd": str(tmp_path), "hook_event_name": "PreToolUse", "tool_name": "Bash",
+             "tool_input": {"command": command}}
+    assert g.decide(event, rules) is None, command
+
+
+def test_r2_escaped_hooks_off_text_is_denied_anywhere(rules, tmp_path):
+    event = {"cwd": str(tmp_path), "hook_event_name": "PreToolUse", "tool_name": "Write",
+             "tool_input": {"file_path": str(tmp_path / "notes" / "s.json"),
+                            "content": '{"disable\\u0041llHooks": true}'}}
+    assert g.decide(event, rules)

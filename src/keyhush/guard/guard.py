@@ -325,8 +325,17 @@ OFF_SWITCH = re.compile(
 )
 
 
+JSON_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
 def switches_hooks_off(text):
-    return bool(OFF_SWITCH.search(text))
+    if OFF_SWITCH.search(text):
+        return True
+    # A JSON file decodes \u0041 to A, so check the unescaped text as well (R2).
+    if "\\u" in text:
+        decoded = JSON_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), text)
+        return bool(OFF_SWITCH.search(decoded))
+    return False
 
 
 # --- agent settings files anywhere (G5) ---------------------------------------------------
@@ -562,8 +571,37 @@ def patch_settings_problem(text, cwd):
     return finish()
 
 
+AGENT_FOLDER_NAMES = {".claude", ".codex", ".gemini", ".cursor"}
+GIT_READ = {
+    "status",
+    "log",
+    "diff",
+    "show",
+    "grep",
+    "ls-files",
+    "blame",
+    "rev-parse",
+    "cat-file",
+    "describe",
+    "shortlog",
+    "whatchanged",
+    "ls-tree",
+}
+IN_PLACE_EDITORS = {"sed", "gsed", "perl", "ruby"}
+
+
+def is_agent_folder(path):
+    """A project-level (or user-level) agent settings folder itself, such as proj/.claude."""
+    return (
+        bool(path)
+        and os.path.basename(_norm(os.path.normpath(path)).rstrip("/")) in AGENT_FOLDER_NAMES
+    )
+
+
 def shell_settings_problem(command, folders):
-    """Shell commands may read project settings files but not write them."""
+    """Shell commands may read agent settings files but not write them, and may not use an
+    agent settings folder itself as the source or target of a change (R2): `cp x .claude/`,
+    `mv dir .claude`, `tar -C .claude`, `dd of=.claude/settings.json`."""
     for raw in SHELL_OPERATORS.split(command):
         for target in REDIRECT_TARGET.findall(raw):
             if any(settings_kind(expand(target, f) or "") for f in folders):
@@ -577,12 +615,33 @@ def shell_settings_problem(command, folders):
             words = words[1:]
         if not words:
             continue
-        names = [w for w in words[1:] if any(settings_kind(expand(w, f) or "") for f in folders)]
-        if not names:
+        args = []
+        for w in words[1:]:
+            args.append(w)
+            if "=" in w:  # dd of=..., --target-directory=...
+                args.append(w.split("=", 1)[1])
+        files = [w for w in args if any(settings_kind(expand(w, f) or "") for f in folders)]
+        dirs = [w for w in args if any(is_agent_folder(expand(w, f)) for f in folders)]
+        if not files and not dirs:
             continue
         verb = os.path.basename(words[0]).lower()
-        if verb not in READ_VERBS or "-i" in words or any(w.startswith("-i") for w in words):
-            return "the command may change an agent settings file; edit it in your own terminal"
+        if verb == "git":
+            sub = next((w for w in words[1:] if not w.startswith("-")), "")
+            read_only = sub in GIT_READ
+        else:
+            folder_only = bool(dirs) and not files
+            read_only = verb in READ_VERBS or (
+                folder_only
+                and (verb == "mkdir" or verb in DIR_READ_VERBS)
+                and not (verb == "find" and FIND_ACTIONS & set(words))
+            )
+        if verb in IN_PLACE_EDITORS and any(w.startswith("-i") or w == "--in-place" for w in words):
+            read_only = False
+        if not read_only:
+            return (
+                "the command may change an agent settings file or folder; "
+                "edit it in your own terminal"
+            )
     return None
 
 

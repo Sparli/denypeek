@@ -235,6 +235,16 @@ def is_protected(path):
     return False
 
 
+# Settings that switch every hook off, so the guard with them. A project's own
+# .claude/settings.json can set disableAllHooks over the user's settings (Claude Code hooks
+# docs), and `[features] hooks = false` in any Codex config.toml turns Codex hooks off.
+OFF_SWITCH = re.compile(r"disableAllHooks|^[+\s]*(?:codex_)?hooks\s*=\s*false\b", re.I | re.M)
+
+
+def switches_hooks_off(text):
+    return bool(OFF_SWITCH.search(text))
+
+
 def blocked_path(path, rules):
     return is_protected(path) or is_secret(path, rules)
 
@@ -511,6 +521,11 @@ def decide(event, rules):
         else {k: v for k, v in event.items() if k in ("file_path", "command", "attachments")}
     )
     for key, s in strings_in(scope):
+        if switches_hooks_off(s[:1_000_000]):
+            return (
+                "the call would switch agent hooks off (disableAllHooks or hooks = false), "
+                "which would disable keyhush; change hook settings in your own terminal"
+            )
         if len(s) > 100_000:
             continue
         if key in SHELL_KEYS:

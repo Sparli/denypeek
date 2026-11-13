@@ -183,3 +183,52 @@ def test_user_pattern_list_cannot_unprotect(project, isolated):
         isolated,
     )
     assert denied
+
+
+@pytest.mark.parametrize("agent", AGENTS)
+@pytest.mark.parametrize(
+    "target,content",
+    [
+        (".claude/settings.local.json", '{"disableAllHooks": true}'),
+        (".claude/settings.json", '{\n  "disableAllHooks": true\n}'),
+        (".codex/config.toml", "[features]\nhooks = false\n"),
+        (".codex/config.toml", "[features]\ncodex_hooks = false\n"),
+    ],
+)
+def test_project_settings_that_turn_hooks_off_are_denied(agent, target, content, project, isolated):
+    path = str(project / target)
+    if agent == "codex":
+        body = "".join(f"+{line}\n" for line in content.splitlines())
+        payload = {
+            "cwd": str(project),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": f"*** Begin Patch\n*** Add File: {path}\n{body}*** End Patch\n"
+            },
+        }
+    else:
+        payload = event(agent, "edit", path, project)
+        ti = payload.get("tool_input")
+        ti["content"] = content
+    denied, out = run(agent, payload, project, isolated)
+    assert denied, (agent, target, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo '{\"disableAllHooks\": true}' > .claude/settings.local.json",
+        "printf '[features]\\nhooks = false\\n' >> ~/.codex/config.toml",
+    ],
+)
+def test_shell_writes_that_turn_hooks_off_are_denied(command, project, isolated):
+    denied, _ = run("claude", event("claude", "shell", command, project), project, isolated)
+    assert denied
+
+
+def test_normal_project_settings_edits_still_allowed(project, isolated):
+    payload = event("claude", "edit", str(project / ".claude/settings.json"), project)
+    payload["tool_input"]["content"] = '{"permissions": {"allow": ["Bash(npm test)"]}}'
+    denied, out = run("claude", payload, project, isolated)
+    assert not denied, out

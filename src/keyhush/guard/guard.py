@@ -27,6 +27,21 @@ import time
 import unicodedata
 
 GUARD_VERSION = "0.1.0"
+HOOK_SECONDS = 2.5  # the whole decision; past this the call is denied (agents wait about 10 s)
+MAX_TOKENS = 5000  # words in one shell command
+MAX_GLOB_RESULTS = 2000  # paths one glob may expand to
+_deadline = [float("inf")]
+
+
+class HookTimeout(Exception):
+    """The hook ran out of time; the call is denied."""
+
+
+def tick():
+    if time.monotonic() > _deadline[0]:
+        raise HookTimeout("took too long to check")
+
+
 MAX_INPUT = 4_000_000  # bytes; bigger hook inputs are blocked, not parsed
 WALK_LIMIT = 20_000  # entries checked when a grep targets a folder
 WALK_SECONDS = 0.4
@@ -267,7 +282,10 @@ def is_protected(path):
 # Settings that switch every hook off, so the guard with them. A project's own
 # .claude/settings.json can set disableAllHooks over the user's settings (Claude Code hooks
 # docs), and `[features] hooks = false` in any Codex config.toml turns Codex hooks off.
-OFF_SWITCH = re.compile(r"disableAllHooks|^[+\s]*(?:codex_)?hooks\s*=\s*false\b", re.I | re.M)
+# [+ \t]*, not [+\s]*: \s crosses newlines and made this quadratic in line count (G2).
+OFF_SWITCH = re.compile(
+    r"disableAllHooks|^[+ \t]*(?:codex_)?hooks[ \t]*=[ \t]*false\b", re.I | re.M
+)
 
 
 def switches_hooks_off(text):
@@ -324,6 +342,7 @@ def expand_braces(word, limit=256):
         return [word]
     out = []
     for alt in m.group(1).split(","):
+        tick()
         for w in expand_braces(word[: m.start()] + alt + word[m.end() :], limit):
             out.append(w)
             if len(out) >= limit:
@@ -341,7 +360,11 @@ def _path_hits(token, cwd, rules):
     if any(ch in token for ch in "*?["):
         candidates = []
         try:
-            candidates += glob.glob(full)
+            for n, match in enumerate(glob.iglob(full)):
+                tick()
+                if n >= MAX_GLOB_RESULTS:
+                    raise HookTimeout("a glob matches too many files to check")
+                candidates.append(match)
         except (OSError, re.error):
             pass
         # glob skips hidden files for `*`; check names in the folder directly too.
@@ -507,7 +530,10 @@ def check_command(command, cwd, rules, deadline, depth=0):
     # `cd dir && cat .env`: relative paths are checked against every folder the command
     # changes into, as well as the starting one.
     folders = [cwd] + cd_targets(parts, cwd)
+    if len(tokens) > MAX_TOKENS:
+        raise HookTimeout("the command has too many words to check")
     for tok in tokens:
+        tick()
         if depth < 3 and any(ch in tok for ch in " \t;|&<>$`"):
             # a nested script: bash -c '...', sh -lc "...", eval "..."
             reason = check_command(tok, cwd, rules, deadline, depth + 1)
@@ -577,6 +603,7 @@ def decide(event, rules):
         else {k: v for k, v in event.items() if k in ("file_path", "command", "attachments")}
     )
     for key, s in strings_in(scope):
+        tick()
         if switches_hooks_off(s[:1_000_000]):
             return (
                 "the call would switch agent hooks off (disableAllHooks or hooks = false), "
@@ -670,6 +697,7 @@ def run(argv, stdin_bytes):
         i = argv.index("--agent")
         if i + 1 < len(argv):
             agent = argv[i + 1]
+    _deadline[0] = time.monotonic() + HOOK_SECONDS
     if agent not in AGENTS:
         return fail_closed("claude", f"unknown agent {agent!r}")
     if len(stdin_bytes) > MAX_INPUT:
@@ -683,7 +711,10 @@ def run(argv, stdin_bytes):
     if not isinstance(event, dict):
         return fail_closed(agent, "hook input is not a JSON object")
     rules = load_patterns()
-    reason = decide(event, rules)
+    try:
+        reason = decide(event, rules)
+    except HookTimeout as exc:
+        return fail_closed(agent, str(exc))
     if reason:
         out, code = deny_output(agent, event.get("hook_event_name"), reason)
         return out, code, reason
@@ -691,8 +722,58 @@ def run(argv, stdin_bytes):
     return out, code, ""
 
 
+def start_watchdog(agent):
+    """A last resort if the decision itself gets stuck: deny before the agent's timeout.
+
+    POSIX: an interval timer raises HookTimeout in Python code, and a CPU limit kills a run
+    stuck inside C code (the wrapper turns that exit into a block). Windows: a timer thread
+    writes a denial and exits 2.
+    """
+    limit = HOOK_SECONDS + 0.5
+    try:
+        import signal
+
+        if hasattr(signal, "setitimer"):
+
+            def on_alarm(_signum, _frame):
+                raise HookTimeout("took too long to check")
+
+            signal.signal(signal.SIGALRM, on_alarm)
+            signal.setitimer(signal.ITIMER_REAL, limit)
+            try:
+                import resource
+
+                soft = int(limit) + 2
+                resource.setrlimit(resource.RLIMIT_CPU, (soft, soft + 1))
+            except (ImportError, ValueError, OSError):
+                pass
+            return
+    except (ImportError, ValueError, OSError):
+        pass
+    import threading
+
+    def emergency():
+        name = agent if agent in AGENTS else "claude"
+        out, _code, msg = fail_closed(name, "took too long to check")
+        try:
+            os.write(1, out.encode())
+            os.write(2, (msg + "\n").encode())
+        finally:
+            os._exit(2)
+
+    timer = threading.Timer(limit, emergency)
+    timer.daemon = True
+    timer.start()
+
+
 def main():
     agent = "claude"
+    try:
+        if "--agent" in sys.argv:
+            agent = sys.argv[sys.argv.index("--agent") + 1]
+    except IndexError:
+        pass
+    start_watchdog(agent)
     try:
         if "--agent" in sys.argv:
             agent = sys.argv[sys.argv.index("--agent") + 1]

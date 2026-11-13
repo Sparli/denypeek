@@ -24,7 +24,8 @@ keeps a backup and proves the result with a rescan. `keyhush guard install` stop
 `.env` read, in all four agents, from one pattern list.
 
 > **Status: v0.1.0, not released.** Guard, scan, redact and undo work and are tested on fixture
-> homes on macOS; CI results on Linux and Windows are not confirmed yet. **None of the four
+> homes on macOS and Linux. **Windows support for the guard is experimental**: its CI is not yet
+> green, and a missing hook Python fails open there. **None of the four
 > agents is live-tested yet**: the hooks follow each vendor's documented format, but nobody has
 > run them inside a real Claude Code, Codex CLI,
 > Cursor or Gemini CLI session. Not on PyPI. Detection is best effort: a clean scan is not proof
@@ -178,7 +179,8 @@ How a blocked `.env` read works:
 6. **The shell check undoes common disguises.** Quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`,
    `$IFS`, `{a,b}` braces, redirections such as `<.env`, globs such as `.e*` (including hidden
    files), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`), folders entered
-   with `cd`, and scripts nested in `bash -c` or `eval`. Agent-run `keyhush guard install` and
+   with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`), and scripts
+   nested in `bash -c` or `eval`. Agent-run `keyhush guard install` and
    `uninstall` are denied.
 7. **The guard protects itself.** Any agent access to `~/.keyhush/**` and to the agents' hook
    config files is denied, whatever the pattern list says, so an agent cannot switch the guard off.
@@ -435,6 +437,9 @@ in-place `.bak` files.
   - a copy of a secret file saved under another name before the guard was installed;
   - values already loaded into the agent's environment, which `env` can print;
   - MCP tools, and a user who approves a read the hook did not see.
+- **Windows support for the guard is experimental.** Windows path forms (`C:\...`, UNC shares,
+  `%USERPROFILE%`, `$env:USERPROFILE`) are handled and tested by feeding them to the parser on
+  every platform, but the guard has not yet passed CI on Windows.
 - **Windows: a missing Python fails open.** Windows has no `/bin/sh`, so the hook command runs
   Python directly. If that Python is removed, Claude Code, Codex CLI and Gemini CLI let tool calls
   through (only Cursor blocks). Run `keyhush guard status` after changing Python.

@@ -40,7 +40,10 @@ PATH, skipping anything inside a virtualenv or temporary folder, and warns if it
   project's settings can turn the user's hooks off.
 - **Shell normalisation (A18):** quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`, `$IFS`,
   `{a,b}` braces, redirections, globs (hidden files too), words after `:`, `=` and `@`, folders
-  entered with `cd`, Unicode NFC, and nested `bash -c` or `eval` scripts.
+  entered with `cd`, Unicode NFC, and nested `bash -c` or `eval` scripts. Windows-shaped paths
+  (drive letters, UNC shares, `%USERPROFILE%` and `$env:USERPROFILE` paths) get `/` separators
+  before splitting; on Windows every backslash does, since cmd and PowerShell never use it as an
+  escape. Elsewhere backslashes stay shell escapes.
 - **Known misses:** names built at run time (`$(ls | grep env)`, base64), scripts that open files
   themselves, copies under other names, values already in the environment, MCP tools.
 

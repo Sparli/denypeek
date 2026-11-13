@@ -252,9 +252,14 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
 
 
 def resolve_launcher(python: str) -> str:
-    """macOS /usr/bin/python3 is the xcrun launcher, which honours DEVELOPER_DIR (R1). Use the
-    root-owned interpreter it starts instead. `guard status` reports it missing if an Xcode or
-    Command Line Tools update moves it, and `guard install` picks the new one."""
+    """macOS /usr/bin/python3 is the xcrun launcher, which honours DEVELOPER_DIR (R1).
+
+    If the interpreter it starts is root-owned (Command Line Tools, or Xcode from the App Store),
+    use that interpreter directly; `guard status` reports it missing if a tools update moves it.
+    Otherwise (for example a full Xcode owned by the user, as on GitHub's macOS runners) keep
+    the launcher. That is safe because the wrapper starts it with `env -i`, so DEVELOPER_DIR,
+    SDKROOT and PATH never reach it (tested); and if that Xcode is writable by the user, the
+    installer and `guard status` warn, as for any user-writable Python (G1)."""
     if sys.platform != "darwin" or os.path.realpath(python) != "/usr/bin/python3":
         return python
     try:

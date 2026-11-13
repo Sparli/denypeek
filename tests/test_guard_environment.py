@@ -73,10 +73,34 @@ def test_r1_developer_dir_cannot_replace_python(isolated, tmp_path, proj):
 
 
 @mac_launcher
-def test_r1_installer_writes_the_real_python_not_the_xcrun_launcher():
-    python, _warning = stable_python("/usr/bin/python3")
-    assert python != "/usr/bin/python3"
-    assert os.path.isfile(python) and os.stat(python).st_uid == 0
+def test_r1_installer_resolves_the_launcher_only_to_a_root_owned_interpreter():
+    """Two developer-tool layouts: a root-owned interpreter behind the launcher (Command Line
+    Tools, App Store Xcode) is used directly; otherwise the launcher is kept, which is safe
+    because the wrapper clears the environment (see the next test). Either way, a user-writable
+    interpreter gets the G1 warning."""
+    real = subprocess.run(
+        [
+            "/usr/bin/python3",
+            "-I",
+            "-S",
+            "-c",
+            "import os, sys; print(os.path.realpath(sys.executable))",
+        ],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    ).stdout.strip()
+    owner = os.stat(real).st_uid if real and os.path.exists(real) else None
+    python, warning = stable_python("/usr/bin/python3")
+    detail = f"real={real!r} owner_uid={owner} chosen={python!r} warning={warning!r}"
+    if owner == 0:
+        assert python == real, detail
+    else:
+        assert python == "/usr/bin/python3", detail
+    from keyhush.guard.install_base import writable_parts
+
+    if writable_parts(python):
+        assert warning, detail
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX account database")
@@ -115,3 +139,35 @@ def test_r1_old_wrapper_without_clean_environment_is_out_of_date(isolated):
 
 def test_r1_tests_never_reach_the_real_home():
     assert Path(os.environ["HOME"]).name == "home"  # the conftest fixture home
+
+
+@posix_only
+@mac_launcher
+def test_r1_launcher_kept_in_the_wrapper_still_ignores_developer_dir(
+    isolated, tmp_path, proj, monkeypatch
+):
+    """When no root-owned interpreter is found behind /usr/bin/python3 (for example a full Xcode
+    owned by the user, as on CI runners), the installer keeps the xcrun launcher. That is safe
+    only because the wrapper starts it with env -i, so DEVELOPER_DIR never reaches it. Prove it
+    with the launcher forced into the wrapper."""
+    import keyhush.guard.install_base as base
+
+    monkeypatch.setattr(base, "resolve_launcher", lambda python: python)
+    code, out, err = run_cli(
+        "guard", "install", "--home", str(isolated), "--python", "/usr/bin/python3"
+    )
+    assert code == 0, out + err
+    wrapper = (isolated / ".keyhush" / "guard.sh").read_text()
+    assert "PY='/usr/bin/python3'" in wrapper and "/usr/bin/env -i" in wrapper
+    fake = tmp_path / "fakedev" / "usr" / "bin"
+    fake.mkdir(parents=True)
+    for name in ("xcrun", "python3"):
+        (fake / name).write_text("#!/bin/sh\necho '{}'\nexit 0\n")
+        (fake / name).chmod(0o755)
+    for extra in (
+        {"DEVELOPER_DIR": str(tmp_path / "fakedev")},
+        {"SDKROOT": str(tmp_path / "fakedev")},
+        {"PATH": f"{fake}:/usr/bin:/bin"},
+    ):
+        proc = installed_run(isolated, proj, "cat .env", extra)
+        assert blocked("claude", proc.stdout.decode(), proc.returncode), extra

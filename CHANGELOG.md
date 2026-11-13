@@ -6,6 +6,11 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed (security final check of the guard, F1)
+- The hook command starts with `/usr/bin/env -i`, so exported shell functions and variables
+  cannot change the wrapper; project settings that set `BASH_FUNC_*`, `BASH_ENV`, `SHELLOPTS`,
+  `IFS` and similar shell variables are denied.
+
 ### Fixed (security re-check of the guard, R1 to R7)
 - The hook starts from a clean environment with a fixed home folder (`env -i`, `--home`), and on
   macOS from the real interpreter rather than the `xcrun` launcher; settings that set

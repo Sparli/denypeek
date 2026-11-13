@@ -222,12 +222,17 @@ def is_secret(path, rules):
 def protected_paths():
     """(keyhush folder, set of protected files), normalised. Includes symlink targets."""
     home = home_dir()
-    claude = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
-    codex = os.environ.get("CODEX_HOME") or os.path.join(home, ".codex")
-    files = [
-        os.path.join(claude, "settings.json"),
-        os.path.join(codex, "hooks.json"),
-        os.path.join(codex, "config.toml"),  # `[features] hooks = false` turns Codex hooks off
+    claude_dirs = {os.path.join(home, ".claude")}
+    codex_dirs = {os.path.join(home, ".codex")}
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        claude_dirs.add(os.environ["CLAUDE_CONFIG_DIR"])
+    if os.environ.get("CODEX_HOME"):
+        codex_dirs.add(os.environ["CODEX_HOME"])
+    files = [os.path.join(d, "settings.json") for d in claude_dirs]
+    files += [os.path.join(d, "hooks.json") for d in codex_dirs]
+    # `[features] hooks = false` in config.toml turns Codex hooks off
+    files += [os.path.join(d, "config.toml") for d in codex_dirs]
+    files += [
         os.path.join(home, ".cursor", "hooks.json"),
         os.path.join(home, ".gemini", "settings.json"),
     ]
@@ -302,6 +307,233 @@ OFF_SWITCH = re.compile(
 
 def switches_hooks_off(text):
     return bool(OFF_SWITCH.search(text))
+
+
+# --- agent settings files anywhere (G5) ---------------------------------------------------
+# The user-level files above are always denied. The same files inside a project can also turn
+# hooks off, so edits to them are checked by parsing what the file would contain afterwards.
+SETTINGS_NAMES = {
+    ".claude/settings.json": "claude",
+    ".claude/settings.local.json": "claude",
+    ".codex/config.toml": "codex",
+    ".codex/hooks.json": "json",
+    ".gemini/settings.json": "gemini",
+    ".cursor/hooks.json": "json",
+}
+READ_VERBS = {
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "more",
+    "grep",
+    "egrep",
+    "fgrep",
+    "rg",
+    "jq",
+    "wc",
+    "ls",
+    "stat",
+    "file",
+    "diff",
+    "bat",
+    "git",
+    "nl",
+    "od",
+    "xxd",
+    "sha256sum",
+    "shasum",
+    "md5",
+    "md5sum",
+    "type",
+    "get-content",
+    "gc",
+}
+REDIRECT_TARGET = re.compile(r">{1,2}\|?\s*([^\s;|&<>]+)")
+
+
+def settings_kind(path):
+    p = _norm(path)
+    for name, kind in SETTINGS_NAMES.items():
+        if p.endswith("/" + name) or p == name:
+            return kind
+    return None
+
+
+def _strip_json_comments(text):
+    """Remove // and /* */ comments outside strings (Gemini allows them in settings.json)."""
+    out, i, n, in_str = [], 0, len(text), False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+            out.append(c)
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j == -1 else j + 2
+            continue
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _find_key(value, key):
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if k == key and v:
+                return True
+            if _find_key(v, key):
+                return True
+    elif isinstance(value, list):
+        return any(_find_key(v, key) for v in value)
+    return False
+
+
+def settings_problem(kind, text):
+    """Why this settings content would switch hooks off or cannot be checked, or None."""
+    off = "the change would switch agent hooks off, which would disable keyhush"
+    if kind == "codex":
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            tomllib = None
+        if tomllib is None:
+            if re.search(
+                r"(?im)^[ \t]*(features[ \t]*\.[ \t]*)?(codex_)?hooks[ \t]*=[ \t]*false"
+                r"|features[ \t]*=[ \t]*\{[^}]*hooks[ \t]*=[ \t]*false",
+                text,
+            ):
+                return off
+            return None
+        try:
+            data = tomllib.loads(text)
+        except (ValueError, TypeError):
+            return "the new config.toml cannot be parsed, so it cannot be checked"
+        features = data.get("features") if isinstance(data, dict) else None
+        if isinstance(features, dict) and (
+            features.get("hooks") is False or features.get("codex_hooks") is False
+        ):
+            return off
+        return None
+    try:
+        data = json.loads(_strip_json_comments(text) if kind == "gemini" else text)
+    except ValueError:
+        return "the new settings file cannot be parsed, so it cannot be checked"
+    if kind == "claude" and _find_key(data, "disableAllHooks"):
+        return off
+    if kind == "gemini" and isinstance(data, dict):
+        cfg = data.get("hooksConfig")
+        if isinstance(cfg, dict):
+            if cfg.get("enabled") is False:
+                return off
+            disabled = cfg.get("disabled")
+            if isinstance(disabled, list) and any("keyhush" in str(x).lower() for x in disabled):
+                return off
+    return None
+
+
+def settings_edit_problem(path, tool_input):
+    """For a tool call naming a project settings file: check the content it would leave."""
+    kind = settings_kind(path)
+    if not kind or not isinstance(tool_input, dict):
+        return None
+    if isinstance(tool_input.get("content"), str):
+        return settings_problem(kind, tool_input["content"])
+    if isinstance(tool_input.get("new_string"), str):
+        try:
+            if os.path.getsize(path) > 1_000_000:
+                return "the settings file is too big to check"
+            with open(path, encoding="utf-8") as fh:
+                current = fh.read()
+        except FileNotFoundError:
+            current = ""
+        except (OSError, UnicodeDecodeError):
+            return "the settings file cannot be read, so the edit cannot be checked"
+        old = tool_input.get("old_string") or ""
+        new = tool_input["new_string"]
+        if old and old not in current:
+            return None  # the edit tool will refuse it
+        result = (
+            current.replace(old, new)
+            if tool_input.get("replace_all")
+            else current.replace(old, new, 1)
+            if old
+            else new
+        )
+        return settings_problem(kind, result)
+    return None  # a read
+
+
+def patch_settings_problem(text, cwd):
+    """Codex apply_patch on a project settings file: Add File is checked, others denied."""
+    current, header, lines = None, None, []
+
+    def finish():
+        if current is None:
+            return None
+        if header == "add":
+            return settings_problem(settings_kind(current), "\n".join(lines) + "\n")
+        return (
+            "a patch changes an agent settings file, which keyhush cannot check; "
+            "edit it in your own terminal"
+        )
+
+    for line in text.splitlines():
+        if line.startswith("*** "):
+            problem = finish()
+            if problem:
+                return problem
+            current, header, lines = None, None, []
+            for prefix, kind in (
+                ("*** Add File: ", "add"),
+                ("*** Update File: ", "update"),
+                ("*** Delete File: ", "delete"),
+                ("*** Move to: ", "move"),
+            ):
+                if line.startswith(prefix):
+                    path = expand(line[len(prefix) :].strip(), cwd) or ""
+                    if settings_kind(path):
+                        current, header = path, kind
+        elif current is not None and header == "add" and line.startswith("+"):
+            lines.append(line[1:])
+    return finish()
+
+
+def shell_settings_problem(command, folders):
+    """Shell commands may read project settings files but not write them."""
+    for raw in SHELL_OPERATORS.split(command):
+        for target in REDIRECT_TARGET.findall(raw):
+            if any(settings_kind(expand(target, f) or "") for f in folders):
+                return "the command writes an agent settings file; edit it in your own terminal"
+        text = REDIRECT_TARGET.sub(" ", raw)
+        try:
+            words = shlex.split(text, posix=True)
+        except ValueError:
+            words = text.split()
+        while words and "=" in words[0] and not words[0].startswith("-"):
+            words = words[1:]
+        if not words:
+            continue
+        names = [w for w in words[1:] if any(settings_kind(expand(w, f) or "") for f in folders)]
+        if not names:
+            continue
+        verb = os.path.basename(words[0]).lower()
+        if verb not in READ_VERBS or "-i" in words or any(w.startswith("-i") for w in words):
+            return "the command may change an agent settings file; edit it in your own terminal"
+    return None
 
 
 def blocked_path(path, rules):
@@ -636,8 +868,14 @@ def decide(event, rules):
                     hits = path_hits(p, cwd, rules)
                     if hits:
                         return reason_for(hits[0], "edits")
+                problem = patch_settings_problem(s, cwd)
+                if problem:
+                    return problem
                 continue
             reason = check_command(s, cwd, rules, deadline, extra=workdirs)
+            if not reason:
+                folders = [cwd] + workdirs + cd_targets(SHELL_OPERATORS.split(s), cwd)
+                reason = shell_settings_problem(windows_paths(s), folders)
             if reason:
                 return reason
             continue
@@ -655,6 +893,10 @@ def decide(event, rules):
             hits = path_hits(s, folder, rules)
             if hits:
                 return reason_for(hits[0], "uses")
+            if is_path_key(key):
+                problem = settings_edit_problem(expand(s, folder) or "", tool_input)
+                if problem:
+                    return problem
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and os.path.isdir(folder):

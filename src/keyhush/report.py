@@ -81,6 +81,11 @@ def scan_text(result: ScanResult, home: Home) -> str:
         out.append("To scrub them from history: keyhush redact (keeps a backup).")
     else:
         out.append("No known key shapes found.")
+    if not result.files:
+        out.append(
+            f"No agent history found under {home.display(home.root)}; if that is not your "
+            "home folder, check --home."
+        )
     if result.incomplete:
         out.append("The scan was incomplete (exit code 2): see the list above.")
     out.append(NOT_PROOF)

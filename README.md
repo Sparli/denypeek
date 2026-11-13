@@ -410,6 +410,8 @@ apply to agent history:
   intact. If the file changed while keyhush worked (an agent writing to it), that file is skipped.
 - It skips files changed in the last 10 minutes unless you pass `--include-active`. It also skips
   symlinks that lead outside the history folders and files with other hard links.
+- It keeps each file's modification time, so agents' session lists keep their order, and `undo`
+  restores the original time too.
 - Untouched lines stay byte-identical. A changed line must still be valid JSON, or it is left
   alone and listed.
 - It rescans the changed files, says whether anything is left, and lists the keys to rotate.

@@ -40,7 +40,7 @@ class BackupSet:
     def name(self) -> str:
         return self.path.name
 
-    def add(self, original: Path, data: bytes, mode: int) -> dict:
+    def add(self, original: Path, data: bytes, mode: int, times_ns=None) -> dict:
         n = len(self.manifest["files"]) + 1
         blob = f"blob-{n:04d}"
         write_new_private(self.path / blob, data)
@@ -50,6 +50,8 @@ class BackupSet:
             "sha256_before": sha256(data),
             "sha256_after": None,
             "mode": mode,
+            "atime_ns": times_ns[0] if times_ns else None,
+            "mtime_ns": times_ns[1] if times_ns else None,
         }
         self.manifest["files"].append(entry)
         self.save()

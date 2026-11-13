@@ -159,8 +159,8 @@ def test_file_changed_during_redact_is_left_alone(isolated, monkeypatch):
 
     real_add = backups.BackupSet.add
 
-    def add_and_simulate_agent_write(self, original, data, mode):
-        entry = real_add(self, original, data, mode)
+    def add_and_simulate_agent_write(self, original, data, mode, *rest):
+        entry = real_add(self, original, data, mode, *rest)
         with open(original, "ab") as fh:
             fh.write(b'{"new": "line"}\n')
         return entry
@@ -180,3 +180,24 @@ def test_line_that_would_break_json_is_left_alone(isolated):
     assert "line is not valid JSON; left as is" in out
     assert key.encode() in f.read_bytes()
     assert code != 0
+
+
+def test_redact_and_undo_keep_file_times(four_store_home):
+    """QA pass 3: redact set mtime to now, which reorders agents' resume lists and made
+    a repeat redact after undo skip everything for 10 minutes."""
+    before = {p: p.stat().st_mtime_ns for p in history_files(four_store_home)}
+    code, out, _ = run_cli("redact", "--home", str(four_store_home), "--yes")
+    assert code == 0, out
+    for p, mtime in before.items():
+        assert p.stat().st_mtime_ns == mtime, p
+    run_cli("undo", "--home", str(four_store_home))
+    for p, mtime in before.items():
+        assert p.stat().st_mtime_ns == mtime, p
+    code, out, _ = run_cli("redact", "--home", str(four_store_home), "--yes")
+    assert "changed in the last 10 minutes" not in out
+    assert "Redacted 3 secret(s)" in out
+
+
+def test_empty_scan_hints_at_the_home_folder(isolated):
+    code, out, _ = run_cli("scan", "--home", str(isolated))
+    assert code == 0 and "check --home" in out

@@ -153,7 +153,8 @@ def redact(home: Home, include_active: bool = False) -> RedactResult:
             continue
         try:
             data = path.read_bytes()
-            mode = os.stat(path).st_mode & 0o777
+            st = os.stat(path)
+            mode = st.st_mode & 0o777
             new, count = redact_bytes(data, kinds[path], path, key, result)
         except (OSError, UnicodeDecodeError) as exc:
             result.skipped.append(Problem(path, "", f"cannot redact: {exc}"))
@@ -162,11 +163,14 @@ def redact(home: Home, include_active: bool = False) -> RedactResult:
             continue
         if result.backup is None:
             result.backup = backups.new_set(home)
-        entry = result.backup.add(path, data, mode)
+        entry = result.backup.add(path, data, mode, (st.st_atime_ns, st.st_mtime_ns))
         if path.read_bytes() != data:  # changed while we worked
             result.skipped.append(Problem(path, "", "file changed while redacting; left as is"))
             continue
         atomic_write(path, new, mode=mode)
+        # keep the file's times: agents order sessions by them, and a later redact would
+        # otherwise skip the file as recently changed
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
         entry["sha256_after"] = backups.sha256(new)
         result.backup.save()
         result.changed.append(path)
@@ -237,6 +241,8 @@ def undo(home: Home, set_name: Optional[str] = None) -> UndoResult:
             result.skipped.append(Problem(path, "", "backup copy is damaged; not restored"))
             continue
         atomic_write(path, original, mode=entry.get("mode", 0o600))
+        if entry.get("mtime_ns") is not None:
+            os.utime(path, ns=(entry.get("atime_ns", entry["mtime_ns"]), entry["mtime_ns"]))
         result.restored.append(path)
     bs.manifest["undone"] = True
     bs.save()

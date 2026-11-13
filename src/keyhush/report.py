@@ -6,7 +6,7 @@ import json
 
 from . import __version__
 from .scan import ScanResult
-from .sources import Home
+from .sources import Home, safe_text
 
 NOT_PROOF = (
     "This is best-effort detection of known key shapes, not proof that this machine is clean."
@@ -43,12 +43,14 @@ def scan_json(result: ScanResult, home: Home) -> str:
         ],
         "disclaimer": NOT_PROOF,
     }
-    return json.dumps(data, indent=2, ensure_ascii=False)
+    # ASCII only: every control, bidi or other non-ASCII character in a path is written as a
+    # \\u escape, so the raw JSON is safe to show, and a JSON parser still gets the exact path.
+    return json.dumps(data, indent=2, ensure_ascii=True)
 
 
 def _loc(home: Home, path, where: str) -> str:
     shown = home.display(path)
-    return f"{shown}:{where}" if where else shown
+    return f"{shown}:{safe_text(where)}" if where else shown
 
 
 def scan_text(result: ScanResult, home: Home) -> str:
@@ -67,11 +69,11 @@ def scan_text(result: ScanResult, home: Home) -> str:
     if result.incomplete:
         out += ["", f"NOT fully checked ({len(result.incomplete)}). Secrets here may be missed:"]
         for p in result.incomplete:
-            out.append(f"  {_loc(home, p.path, p.where)}: {p.reason}")
+            out.append(f"  {_loc(home, p.path, p.where)}: {safe_text(p.reason)}")
     if result.notes:
         out += ["", f"Notes ({len(result.notes)}):"]
         for p in result.notes:
-            out.append(f"  {_loc(home, p.path, p.where)}: {p.reason}")
+            out.append(f"  {_loc(home, p.path, p.where)}: {safe_text(p.reason)}")
 
     out.append("")
     if result.findings:

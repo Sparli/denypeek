@@ -9,7 +9,7 @@ from typing import Optional
 
 from . import __version__, report
 from .scan import scan
-from .sources import Home, resolve_home
+from .sources import Home, resolve_home, safe_text
 
 EPILOG = "Everything runs offline. Nothing leaves this machine."
 
@@ -23,7 +23,7 @@ def _print_problems(home: Home, title: str, problems) -> None:
         print(f"\n{title} ({len(problems)}):")
         for p in problems:
             where = f":{p.where}" if p.where else ""
-            print(f"  {home.display(p.path)}{where}: {p.reason}")
+            print(f"  {home.display(p.path)}{safe_text(where)}: {safe_text(p.reason)}")
 
 
 # --- scan -------------------------------------------------------------------------------

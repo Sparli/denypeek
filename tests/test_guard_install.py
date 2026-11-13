@@ -213,12 +213,8 @@ def test_temporary_python_is_never_used():
 def test_a10_read_only_config_is_left_untouched(isolated):
     import os
     import stat
-    import sys
 
-    if sys.platform == "win32":
-        import pytest
-
-        pytest.skip("read-only check uses POSIX modes; Windows read-only attribute differs")
+    # On Windows, chmod 0o444 sets the read-only attribute, which os.access honours.
     home = isolated
     cfg = home / ".claude/settings.json"
     cfg.parent.mkdir(parents=True)

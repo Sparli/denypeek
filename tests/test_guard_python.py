@@ -105,3 +105,13 @@ def test_default_choice_avoids_virtualenvs_or_warns():
     from keyhush.guard.install_base import in_virtualenv
 
     assert in_virtualenv(python) is None or warning
+
+
+def test_status_reports_a_missing_python_on_every_platform(isolated, tmp_path):
+    """No symlink and no wrapper needed: the hook points at a Python that does not exist."""
+    missing = tmp_path / "gone" / ("python.exe" if os.name == "nt" else "python3")
+    code, out, err = run_cli("guard", "install", "--home", str(isolated), "--python", str(missing))
+    assert code == 0, out + err
+    code, out, _ = run_cli("guard", "status", "--home", str(isolated))
+    assert code == 1
+    assert "BROKEN" in out and "Python is missing" in out

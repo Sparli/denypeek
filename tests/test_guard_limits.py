@@ -69,11 +69,63 @@ def test_g2_many_brace_groups_answer_fast(tmp_path):
 
 
 def test_g2_timeout_denies_and_says_why(tmp_path, monkeypatch):
+    """Deterministic: the deadline is already in the past, whatever the clock resolution."""
     from keyhush.guard import guard as g
 
-    monkeypatch.setattr(g, "HOOK_SECONDS", 0.0)
+    monkeypatch.setattr(g, "HOOK_SECONDS", -1.0)
     out, code, msg = g.run(["--agent", "claude"], json.dumps(bash("cat x", tmp_path)).encode())
     assert code == 2 and "too long" in msg
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_g2_deadline_reached_on_a_coarse_clock_counts_as_passed(monkeypatch):
+    """Windows with Python 3.12: the clock may not move between setting and checking."""
+    from keyhush.guard import guard as g
+
+    class FrozenClock:
+        @staticmethod
+        def monotonic():
+            return 1000.0
+
+    monkeypatch.setattr(g, "time", FrozenClock)
+    monkeypatch.setattr(g, "_deadline", [1000.0])
+    with pytest.raises(g.HookTimeout):
+        g.tick()
+
+
+@pytest.mark.parametrize("use_signals", [False, True])
+def test_g2_watchdog_denies_a_stuck_check(use_signals, tmp_path):
+    """The watchdog itself, both the thread version (used on Windows) and the signal version
+    (POSIX), tested on any platform with a decision that never finishes."""
+    import signal as signal_module
+
+    if use_signals and not hasattr(signal_module, "setitimer"):
+        pytest.skip("no interval timer on this platform; the thread version covers it")
+    script = (
+        "import json, sys, time\n"
+        f"sys.path.insert(0, {str(GUARD.parent)!r})\n"
+        "import guard\n"
+        "guard.HOOK_SECONDS = 0.2\n"
+        "def stuck(event, rules):\n"
+        "    while True:\n"
+        "        time.sleep(0.01)\n"
+        "guard.decide = stuck\n"
+        f"guard.start_watchdog('claude', use_signals={use_signals})\n"
+        "out, code, msg = guard.run(['--agent', 'claude'], b'{\"tool_name\": \"Read\"}')\n"
+        "sys.stdout.write(out)\n"
+        "sys.exit(code)\n"
+    )
+    start = time.monotonic()
+    proc = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", script],
+        capture_output=True,
+        timeout=30,
+        cwd=str(tmp_path),
+    )
+    assert time.monotonic() - start < 5
+    assert proc.returncode == 2, (proc.returncode, proc.stderr)
+    assert blocked("claude", proc.stdout.decode(), proc.returncode)
+    assert b"too long" in proc.stdout
 
 
 # --- G4: working-folder parameters ------------------------------------------------------

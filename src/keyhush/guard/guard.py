@@ -50,7 +50,9 @@ class HookTimeout(Exception):
 
 
 def tick():
-    if time.monotonic() > _deadline[0]:
+    # >=, not >: on Windows with Python 3.12 the monotonic clock moves in ~15.6 ms steps, so a
+    # deadline that has been reached must count as passed even if the clock has not ticked.
+    if time.monotonic() >= _deadline[0]:
         raise HookTimeout("took too long to check")
 
 
@@ -1135,7 +1137,7 @@ def run(argv, stdin_bytes):
     return out, code, ""
 
 
-def start_watchdog(agent):
+def start_watchdog(agent, use_signals=True):
     """A last resort if the decision itself gets stuck: deny before the agent's timeout.
 
     POSIX: an interval timer raises HookTimeout in Python code, and a CPU limit kills a run
@@ -1146,7 +1148,7 @@ def start_watchdog(agent):
     try:
         import signal
 
-        if hasattr(signal, "setitimer"):
+        if use_signals and hasattr(signal, "setitimer"):
 
             def on_alarm(_signum, _frame):
                 raise HookTimeout("took too long to check")

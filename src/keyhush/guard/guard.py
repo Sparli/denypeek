@@ -24,6 +24,7 @@ import re
 import shlex
 import sys
 import time
+import unicodedata
 
 GUARD_VERSION = "0.1.0"
 MAX_INPUT = 4_000_000  # bytes; bigger hook inputs are blocked, not parsed
@@ -105,7 +106,7 @@ def parse_patterns(text):
 
 
 def _norm(path):
-    return path.replace("\\", "/").lower()
+    return unicodedata.normalize("NFC", path).replace("\\", "/").lower()
 
 
 def _glob_to_re(pat):
@@ -257,6 +258,8 @@ def expand(token, cwd):
     home = home_dir()
     for var in ("${HOME}", "$HOME"):
         t = t.replace(var, home)
+    for var in ("${PWD}", "$PWD"):
+        t = t.replace(var, cwd)
     if t.startswith("~"):
         t = os.path.expanduser(t)
     if not os.path.isabs(t) and not re.match(r"^[A-Za-z]:[\\/]", t):
@@ -265,7 +268,30 @@ def expand(token, cwd):
 
 
 def path_hits(token, cwd, rules):
-    """Paths named by one token, including glob expansion. Returns the secret ones."""
+    """Paths named by one token, including braces and globs. Returns the blocked ones."""
+    found = []
+    for variant in expand_braces(token):
+        found += _path_hits(variant, cwd, rules)
+        if variant.startswith("@") and len(variant) > 1:  # curl -F f=@.env, --data @.env
+            found += _path_hits(variant[1:], cwd, rules)
+    return found
+
+
+def expand_braces(word, limit=256):
+    """Bash brace expansion of {a,b} (nested allowed), capped at `limit` results."""
+    m = re.search(r"\{([^{}]*,[^{}]*)\}", word)
+    if not m:
+        return [word]
+    out = []
+    for alt in m.group(1).split(","):
+        for w in expand_braces(word[: m.start()] + alt + word[m.end():], limit):
+            out.append(w)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _path_hits(token, cwd, rules):
     full = expand(token, cwd)
     if not full:
         return []
@@ -307,9 +333,25 @@ def folder_holds_secret(folder, rules, deadline):
     return False
 
 
+ANSI_C = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
+
+
+def _ansi_c(match):
+    """Decode bash $'...' quoting (\\x2e, \\056, \\n ...) into a plain quoted word."""
+    body = match.group(1)
+    try:
+        decoded = body.encode("latin-1", "backslashreplace").decode("unicode_escape")
+    except (UnicodeDecodeError, ValueError):
+        decoded = body
+    return shlex.quote(decoded)
+
+
 def split_tokens(command):
     """Shell-ish tokens. Splits on operators, quotes and $IFS tricks. Never runs anything."""
-    text = command.replace("${IFS}", " ").replace("$IFS", " ")
+    text = unicodedata.normalize("NFC", command)
+    text = ANSI_C.sub(_ansi_c, text)
+    text = text.replace('$"', '"')  # $"..." locale quoting is plain quoting here
+    text = text.replace("${IFS}", " ").replace("$IFS", " ")
     text = re.sub(r"[<>]+&?\d*", " ", text)  # redirections: cat<.env, >out
     tokens = []
     for part in SHELL_OPERATORS.split(text):
@@ -319,8 +361,10 @@ def split_tokens(command):
             words = part.split()
         for w in words:
             tokens.append(w)
-            if "=" in w and not w.startswith("="):  # --file=.env, VAR=.env
+            if "=" in w and not w.startswith("="):  # --file=.env, VAR=.env, f=@.env
                 tokens.append(w.split("=", 1)[1])
+            if ":" in w:  # git show HEAD:.env, .env::$DATA, host:path
+                tokens += [x for x in w.split(":") if x]
     return tokens, [t for t in SHELL_OPERATORS.split(text)]
 
 

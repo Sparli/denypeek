@@ -198,9 +198,16 @@ def test_g8_read_many_files_without_secrets_is_allowed(tmp_path):
 # --- variable concatenation (G9 known miss, now handled for simple assignments) ----------
 
 
-@pytest.mark.parametrize("command", ["a=.e; cat ${a}nv", "a=.e && cat $a'nv'",
-                                     "export F=.env; cat $F", "d=~/.ssh; cat $d/id_rsa",
-                                     "x=.e y=nv; cat ${x}${y}"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "a=.e; cat ${a}nv",
+        "a=.e && cat $a'nv'",
+        "export F=.env; cat $F",
+        "d=~/.ssh; cat $d/id_rsa",
+        "x=.e y=nv; cat ${x}${y}",
+    ],
+)
 def test_simple_variable_assignments_are_resolved(command, tmp_path, isolated):
     proc, _ = run("claude", bash(command, tmp_path), tmp_path)
     assert blocked("claude", proc.stdout.decode(), proc.returncode), command

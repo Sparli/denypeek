@@ -301,3 +301,29 @@ def test_partial_uninstall_keeps_state_for_the_rest(isolated):
     run_cli("guard", "uninstall", "--home", str(isolated), "--agent", "claude")
     state = json.loads((isolated / ".keyhush/guard-state.json").read_text())
     assert "claude" not in state and "gemini" in state
+
+
+def test_g12_user_hook_in_our_group_survives_reinstall_and_uninstall(isolated):
+    home = isolated
+    run_cli("guard", "install", "--home", str(home), "--python", PY, "--agent", "claude")
+    cfg = home / ".claude/settings.json"
+    data = json.loads(cfg.read_text())
+    group = data["hooks"]["PreToolUse"][-1]
+    group["hooks"].append({"type": "command", "command": "echo users-own-hook"})
+    cfg.write_text(json.dumps(data))
+    run_cli("guard", "install", "--home", str(home), "--python", PY, "--agent", "claude")
+    assert "users-own-hook" in cfg.read_text() and count_ours(json.loads(cfg.read_text())) == 1
+    run_cli("guard", "uninstall", "--home", str(home), "--agent", "claude")
+    after = json.loads(cfg.read_text())
+    assert count_ours(after) == 0
+    assert "users-own-hook" in json.dumps(after)
+
+
+def test_g12_loose_names_are_not_ours():
+    from keyhush.guard.install_base import is_ours
+
+    assert not is_ours("python3 ~/tools/keyhush-notes/guard.py")
+    assert not is_ours("echo keyhush guard.py")
+    assert is_ours('/bin/sh "/Users/x/.keyhush/guard.sh" --agent claude')
+    windows = r'"C:\Python\python.exe" -I -S "C:\Users\x\.keyhush\guard.py" --agent codex'
+    assert is_ours(windows)

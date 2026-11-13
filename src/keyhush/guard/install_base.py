@@ -11,6 +11,7 @@ import copy
 import datetime as _dt
 import json
 import os
+import re
 import shlex
 import shutil
 import stat
@@ -32,9 +33,33 @@ class ConfigError(Exception):
     """A config file we will not touch (malformed, too big, not an object)."""
 
 
+OUR_HOOK = re.compile(r"[/\\]\.keyhush[/\\]guard\.(?:py|sh)\b")
+
+
 def is_ours(command: str) -> bool:
-    c = command.replace("\\", "/")
-    return MARKER in c and ("guard.py" in c or "guard.sh" in c)
+    """Our hook command names ~/.keyhush/guard.sh or guard.py exactly (G12)."""
+    return bool(OUR_HOOK.search(command or ""))
+
+
+def remove_ours(entries: list) -> None:
+    """Remove only our hook objects; drop a matcher group only if nothing else is left (G12)."""
+    kept = []
+    for e in entries:
+        if isinstance(e, dict) and isinstance(e.get("hooks"), list):
+            hooks = [
+                h
+                for h in e["hooks"]
+                if not (isinstance(h, dict) and is_ours(str(h.get("command", ""))))
+            ]
+            if len(hooks) == len(e["hooks"]):
+                kept.append(e)
+            elif hooks:
+                kept.append({**e, "hooks": hooks})
+        elif isinstance(e, dict) and is_ours(str(e.get("command", ""))):
+            continue
+        else:
+            kept.append(e)
+    entries[:] = kept
 
 
 def guard_path(home: Home) -> Path:
@@ -353,7 +378,7 @@ def install(spec: AgentSpec, home: Home, command: str, state: dict) -> Change:
     try:
         for keys, make in spec.hook_lists:
             lst = _container(data, keys, created, list)
-            lst[:] = [e for e in lst if not any(is_ours(c) for c in spec.entry_commands(e))]
+            remove_ours(lst)
             lst.append(make(command))
         for keys, values in spec.extra_values:
             lst = _container(data, keys, created, list)
@@ -396,7 +421,7 @@ def uninstall(spec: AgentSpec, home: Home, state: dict) -> Change:
     for keys, _make in spec.hook_lists:
         node = _get(data, keys)
         if isinstance(node, list):
-            node[:] = [e for e in node if not any(is_ours(c) for c in spec.entry_commands(e))]
+            remove_ours(node)
     for dotted, values in st.get("added_values", {}).items():
         node = _get(data, dotted.split("."))
         if isinstance(node, list):

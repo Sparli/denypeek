@@ -33,6 +33,7 @@ MAX_GLOB_RESULTS = 2000  # paths one glob may expand to
 _deadline = [float("inf")]
 
 
+WORKDIR_KEYS = ("workdir", "dir_path", "directory", "working_directory", "cwd")
 MAX_COMMAND = 100_000  # characters in one shell command; longer ones are denied
 MAX_PATH = 4096  # characters in one path; longer ones are denied
 PATH_KEY_PARTS = ("path", "file", "dir", "include", "target", "source", "destination")
@@ -531,7 +532,7 @@ def switches_guard(tokens):
     )
 
 
-def check_command(command, cwd, rules, deadline, depth=0):
+def check_command(command, cwd, rules, deadline, depth=0, extra=()):
     tokens, parts = split_tokens(command)
     if switches_guard(tokens):
         return (
@@ -540,14 +541,14 @@ def check_command(command, cwd, rules, deadline, depth=0):
         )
     # `cd dir && cat .env`: relative paths are checked against every folder the command
     # changes into, as well as the starting one.
-    folders = [cwd] + cd_targets(parts, cwd)
+    folders = [cwd] + list(extra) + cd_targets(parts, cwd)
     if len(tokens) > MAX_TOKENS:
         raise HookTimeout("the command has too many words to check")
     for tok in tokens:
         tick()
         if depth < 3 and any(ch in tok for ch in " \t;|&<>$`"):
             # a nested script: bash -c '...', sh -lc "...", eval "..."
-            reason = check_command(tok, cwd, rules, deadline, depth + 1)
+            reason = check_command(tok, cwd, rules, deadline, depth + 1, extra)
             if reason:
                 return reason
             continue
@@ -593,12 +594,8 @@ def decide(event, rules):
     """Return a reason string to deny, or None to allow. Raises HookTimeout when out of time."""
     _deadline[0] = time.monotonic() + HOOK_SECONDS
     deadline = time.monotonic() + WALK_SECONDS
-    cwd = (
-        event.get("cwd")
-        or (event.get("tool_input") or {}).get("working_directory")
-        or (event.get("tool_input") or {}).get("dir_path")
-        or os.getcwd()
-    )
+    ti0 = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+    cwd = event.get("cwd") or ti0.get("working_directory") or ti0.get("dir_path") or os.getcwd()
     if isinstance(event.get("workspace_roots"), list) and not event.get("cwd"):
         roots = [r for r in event["workspace_roots"] if isinstance(r, str)]
         cwd = roots[0] if roots else cwd
@@ -609,6 +606,16 @@ def decide(event, rules):
             tool_input = json.loads(tool_input)
         except ValueError:
             pass
+    # Folders the tool runs in, besides the session's cwd (G4): relative names are checked
+    # against each of them.
+    workdirs = []
+    if isinstance(tool_input, dict):
+        for k in WORKDIR_KEYS:
+            v = tool_input.get(k)
+            if isinstance(v, str) and v.strip() and len(v) <= MAX_PATH:
+                d = expand(v.strip(), cwd)
+                if d and d not in workdirs and d != os.path.normpath(cwd):
+                    workdirs.append(d)
     scope = (
         {"tool_input": tool_input}
         if tool_input is not None
@@ -630,7 +637,7 @@ def decide(event, rules):
                     if hits:
                         return reason_for(hits[0], "edits")
                 continue
-            reason = check_command(s, cwd, rules, deadline)
+            reason = check_command(s, cwd, rules, deadline, extra=workdirs)
             if reason:
                 return reason
             continue
@@ -644,9 +651,10 @@ def decide(event, rules):
             continue  # file contents and other free text, not a path
         if not s:
             continue
-        hits = path_hits(s, cwd, rules)
-        if hits:
-            return reason_for(hits[0], "uses")
+        for folder in [cwd] + workdirs:
+            hits = path_hits(s, folder, rules)
+            if hits:
+                return reason_for(hits[0], "uses")
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and os.path.isdir(folder):

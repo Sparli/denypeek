@@ -72,3 +72,52 @@ def test_g2_timeout_denies_and_says_why(tmp_path, monkeypatch):
     monkeypatch.setattr(g, "HOOK_SECONDS", 0.0)
     out, code, msg = g.run(["--agent", "claude"], json.dumps(bash("cat x", tmp_path)).encode())
     assert code == 2 and "too long" in msg
+
+
+# --- G4: working-folder parameters ------------------------------------------------------
+
+
+def test_g4_codex_workdir_is_used(tmp_path, isolated):
+    payload = {
+        "cwd": str(tmp_path),
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": ["cat", "credentials"], "workdir": "~/.aws"},
+    }
+    proc, _ = run("codex", payload, tmp_path)
+    assert blocked("codex", proc.stdout.decode(), proc.returncode)
+
+
+def test_g4_gemini_dir_path_is_used(tmp_path, isolated):
+    payload = {
+        "cwd": str(tmp_path),
+        "hook_event_name": "BeforeTool",
+        "tool_name": "run_shell_command",
+        "tool_input": {"command": "cat credentials", "dir_path": "~/.aws"},
+    }
+    proc, _ = run("gemini", payload, tmp_path)
+    assert blocked("gemini", proc.stdout.decode(), proc.returncode)
+
+
+def test_g4_relative_file_tool_path_with_working_directory(tmp_path):
+    (tmp_path / "app").mkdir()
+    payload = {
+        "cwd": str(tmp_path),
+        "hook_event_name": "preToolUse",
+        "tool_name": "Read",
+        "tool_input": {"path": ".env", "working_directory": str(tmp_path / "app")},
+    }
+    proc, _ = run("cursor", payload, tmp_path)
+    assert blocked("cursor", proc.stdout.decode(), proc.returncode)
+
+
+def test_g4_workdir_does_not_block_normal_commands(tmp_path):
+    (tmp_path / "src").mkdir()
+    payload = {
+        "cwd": str(tmp_path),
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls", "workdir": str(tmp_path / "src")},
+    }
+    proc, _ = run("codex", payload, tmp_path)
+    assert not blocked("codex", proc.stdout.decode(), proc.returncode)

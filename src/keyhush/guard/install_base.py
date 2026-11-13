@@ -13,6 +13,7 @@ import json
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -218,6 +219,21 @@ def read_config(path: Path) -> tuple[dict, bool]:
     return data, True
 
 
+def read_only_reason(path: Path) -> Optional[str]:
+    """Why we must not write this file, or None. A rename would replace a read-only file, so
+    the check is on the file itself, not only on its folder."""
+    real = Path(os.path.realpath(path))
+    if not real.exists():
+        return None
+    mode = real.stat().st_mode
+    if not os.access(real, os.W_OK) or not (mode & stat.S_IWUSR):
+        return (
+            f"{path} is read-only; not touched. Make it writable yourself if you want "
+            "keyhush to change it"
+        )
+    return None
+
+
 def backup_config(home: Home, path: Path) -> Optional[Path]:
     if not path.exists():
         return None
@@ -279,6 +295,7 @@ def install(spec: AgentSpec, home: Home, command: str, state: dict) -> Change:
     except (ConfigError, OSError, UnicodeDecodeError) as exc:
         return Change(spec.name, path, False, error=str(exc))
     before = copy.deepcopy(data)
+    prior = copy.deepcopy(state.get(spec.name))
     st = state.setdefault(
         spec.name,
         {"config": str(path), "file_existed": existed, "created_keys": [], "added_values": {}},
@@ -304,6 +321,13 @@ def install(spec: AgentSpec, home: Home, command: str, state: dict) -> Change:
             st["created_keys"].append(c)
     if data == before and existed:
         return Change(spec.name, path, False)
+    reason = read_only_reason(path)
+    if reason:
+        if prior is None:  # nothing was written, so record nothing
+            state.pop(spec.name, None)
+        else:
+            state[spec.name] = prior
+        return Change(spec.name, path, False, error=reason)
     backup = backup_config(home, path)
     write_config(path, data)
     return Change(spec.name, path, True, backup)
@@ -330,9 +354,13 @@ def uninstall(spec: AgentSpec, home: Home, state: dict) -> Change:
             node[:] = [v for v in node if v not in values]
     for keys in sorted(st.get("created_keys", []), key=len, reverse=True):
         _prune(data, keys)
-    state.pop(spec.name, None)
     if data == before:
+        state.pop(spec.name, None)
         return Change(spec.name, path, False)
+    reason = read_only_reason(path)
+    if reason:
+        return Change(spec.name, path, False, error=reason)
+    state.pop(spec.name, None)
     backup = backup_config(home, path)
     if not data and st.get("file_existed") is False:
         os.remove(path)

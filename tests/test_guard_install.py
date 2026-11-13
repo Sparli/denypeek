@@ -208,3 +208,65 @@ def test_temporary_python_is_never_used():
 
     assert _temporary("/Users/a/.cache/uv/archive-v0/abc/bin/python")
     assert not _temporary("/usr/bin/python3")
+
+
+def test_a10_read_only_config_is_left_untouched(isolated):
+    import os
+    import stat
+    import sys
+
+    if sys.platform == "win32":
+        import pytest
+
+        pytest.skip("read-only check uses POSIX modes; Windows read-only attribute differs")
+    home = isolated
+    cfg = home / ".claude/settings.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"model": "opus"}')
+    os.chmod(cfg, 0o444)
+    before = cfg.read_bytes()
+    code, out, err = run_cli("guard", "install", "--home", str(home), "--python", PY)
+    assert code == 2
+    assert "read-only; not touched" in err and "opus" not in err + out
+    assert cfg.read_bytes() == before
+    assert stat.S_IMODE(cfg.stat().st_mode) == 0o444
+    state = json.loads((home / ".keyhush/guard-state.json").read_text())
+    assert "claude" not in state
+    gem = json.loads((home / ".gemini/settings.json").read_text())  # others still installed
+    assert count_ours(gem) == 1
+
+    os.chmod(cfg, 0o644)
+    run_cli("guard", "install", "--home", str(home), "--python", PY)
+    os.chmod(cfg, 0o444)
+    installed_bytes = cfg.read_bytes()
+    code, _out, err = run_cli("guard", "uninstall", "--home", str(home))
+    assert code == 2 and "read-only; not touched" in err
+    assert cfg.read_bytes() == installed_bytes
+    os.chmod(cfg, 0o644)
+
+
+def test_a10_mode_600_and_symlink_are_kept(isolated, tmp_path):
+    import os
+    import stat
+    import sys
+
+    home = isolated
+    cfg = home / ".gemini/settings.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("{}")
+    os.chmod(cfg, 0o600)
+    real = tmp_path / "dotfiles" / "claude.json"
+    real.parent.mkdir()
+    real.write_text('{"model": "opus"}')
+    (home / ".claude").mkdir()
+    try:
+        (home / ".claude/settings.json").symlink_to(real)
+        linked = True
+    except (OSError, NotImplementedError):
+        linked = False
+    run_cli("guard", "install", "--home", str(home), "--python", PY)
+    if sys.platform != "win32":
+        assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
+    if linked:
+        assert (home / ".claude/settings.json").is_symlink()
+        assert count_ours(json.loads(real.read_text())) == 1

@@ -126,3 +126,13 @@ def test_tripwire_blocks_the_real_home():
         open(probe)
     assert conftest._state["violations"]
     conftest._state["violations"].clear()
+
+
+def test_readme_diagrams_match_the_diagram_files():
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    files = sorted((REPO / "diagrams").glob("*.mmd"))
+    assert files
+    for f in files:
+        source = f.read_text(encoding="utf-8").rstrip()
+        block = f"<!-- diagram:{f.stem} -->\n```mermaid\n{source}\n```"
+        assert block in readme, f"README diagram {f.stem} differs from {f.name}"

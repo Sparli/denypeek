@@ -108,12 +108,19 @@ def cmd_undo(args) -> int:
 
 
 def cmd_backups_list(args) -> int:
-    from .backups import list_sets, size_of
+    from .backups import config_backups, list_sets, size_of
 
     home = _home(args)
     sets = list_sets(home)
+    configs = config_backups(home)
+    if configs:
+        print(
+            f"{len(configs)} copy(ies) of earlier agent settings in "
+            f"{home.display(home.keyhush_dir / 'config-backups')} "
+            "(delete with: keyhush backups purge --config --yes)"
+        )
     if not sets:
-        print("No backups.")
+        print("No redact backups.")
         return 0
     for bs in sets:
         state = (
@@ -130,9 +137,22 @@ def cmd_backups_list(args) -> int:
 
 
 def cmd_backups_purge(args) -> int:
-    from .backups import list_sets, purge
+    from .backups import config_backups, list_sets, purge, purge_config
 
     home = _home(args)
+    if args.config:
+        configs = config_backups(home)
+        if not configs:
+            print("No copies of agent settings to delete.")
+            return 0
+        print(
+            f"This deletes {len(configs)} copy(ies) of earlier agent settings in "
+            f"{home.display(home.keyhush_dir / 'config-backups')}."
+        )
+        if not _confirm(args, "Delete them?"):
+            return 2
+        print(f"Deleted {purge_config(home)} file(s).")
+        return 0
     sets = list_sets(home)
     if not sets:
         print("No backups to delete.")
@@ -164,7 +184,11 @@ def cmd_guard_install(args) -> int:
 
     home = _home(args)
     changes, warning = do_install(home, args.agent, args.python)
-    print("keyhush guard installed:")
+    ok = [c for c in changes if not c.error]
+    if len(ok) == len(changes):
+        print("keyhush guard installed:")
+    else:
+        print(f"keyhush guard installed for {len(ok)} of {len(changes)} agent(s):")
     for c in changes:
         if c.error:
             continue
@@ -185,12 +209,22 @@ def cmd_guard_uninstall(args) -> int:
 
     home = _home(args)
     changes = do_uninstall(home, args.agent)
-    print("keyhush guard removed:")
+    ok = [c for c in changes if not c.error]
+    if len(ok) == len(changes):
+        print("keyhush guard removed:")
+    else:
+        print(f"keyhush guard removed for {len(ok)} of {len(changes)} agent(s):")
     for c in changes:
         if not c.error:
             what = "removed our entries" if c.changed else "nothing of ours found"
             print(f"  {SPECS[c.agent].label:<12} {home.display(c.path)}  {what}")
     print("Your pattern list was kept: " + home.display(home.keyhush_dir / "secretfiles"))
+    cfg = home.keyhush_dir / "config-backups"
+    if cfg.is_dir() and any(cfg.iterdir()):
+        print(
+            f"Copies of your earlier agent settings are in {home.display(cfg)}. "
+            "Delete them with: keyhush backups purge --config --yes"
+        )
     return _guard_errors(changes)
 
 
@@ -309,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
         "purge", parents=[common], help="delete all backups (they hold the secrets)"
     )
     bp.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    bp.add_argument(
+        "--config",
+        action="store_true",
+        help="delete the copies of agent settings made by guard install instead",
+    )
     bp.set_defaults(func=cmd_backups_purge)
 
     g = sub.add_parser("guard", help="block agents from reading secret files")

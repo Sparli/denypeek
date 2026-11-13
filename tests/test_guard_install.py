@@ -270,3 +270,38 @@ def test_a10_mode_600_and_symlink_are_kept(isolated, tmp_path):
     if linked:
         assert (home / ".claude/settings.json").is_symlink()
         assert count_ours(json.loads(real.read_text())) == 1
+
+
+def test_header_says_how_many_agents_were_installed(isolated):
+    bad = isolated / ".claude/settings.json"
+    bad.parent.mkdir(parents=True)
+    bad.write_text("{broken")
+    code, out, err = run_cli("guard", "install", "--home", str(isolated), "--python", PY)
+    assert code == 2
+    assert "keyhush guard installed for 3 of 4 agent(s):" in out
+    assert "keyhush guard installed:" not in out
+    assert "claude: NOT changed" in err
+
+
+def test_uninstall_removes_state_and_offers_config_purge(isolated):
+    seed(isolated)
+    run_cli("guard", "install", "--home", str(isolated), "--python", PY)
+    code, out, _ = run_cli("guard", "uninstall", "--home", str(isolated))
+    assert code == 0
+    assert not (isolated / ".keyhush/guard-state.json").exists()
+    assert not (isolated / ".keyhush/guard.sh").exists()
+    assert "keyhush backups purge --config --yes" in out
+    cfg = isolated / ".keyhush/config-backups"
+    assert any(cfg.iterdir())
+    code, out, _ = run_cli("backups", "list", "--home", str(isolated))
+    assert "copy(ies) of earlier agent settings" in out
+    code, out, _ = run_cli("backups", "purge", "--home", str(isolated), "--config", "--yes")
+    assert code == 0 and "Deleted" in out
+    assert list(cfg.iterdir()) == []
+
+
+def test_partial_uninstall_keeps_state_for_the_rest(isolated):
+    run_cli("guard", "install", "--home", str(isolated), "--python", PY)
+    run_cli("guard", "uninstall", "--home", str(isolated), "--agent", "claude")
+    state = json.loads((isolated / ".keyhush/guard-state.json").read_text())
+    assert "claude" not in state and "gemini" in state

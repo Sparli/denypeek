@@ -118,3 +118,18 @@ def purge(home: Home) -> int:
     for bs in sets:
         shutil.rmtree(bs.path)
     return len(sets)
+
+
+def config_backups(home: Home) -> list[Path]:
+    """Copies of agent settings made by `guard install` and `guard uninstall`."""
+    base = home.keyhush_dir / "config-backups"
+    if not base.is_dir():
+        return []
+    return sorted(p for p in base.iterdir() if p.is_file() and not p.is_symlink())
+
+
+def purge_config(home: Home) -> int:
+    files = config_backups(home)
+    for f in files:
+        f.unlink()
+    return len(files)

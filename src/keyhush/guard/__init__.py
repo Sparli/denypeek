@@ -30,6 +30,7 @@ from .install_base import (
     ours_commands,
     save_state,
     stable_python,
+    state_path,
     uninstall,
     wrapper_path,
     write_wrapper,
@@ -81,7 +82,13 @@ def do_install(home: Home, agents=None, python: Optional[str] = None):
 def do_uninstall(home: Home, agents=None) -> list[Change]:
     state = load_state(home)
     changes = [uninstall(spec, home, state) for spec in pick(agents)]
-    save_state(home, state)
+    if state:
+        save_state(home, state)
+    else:  # nothing of ours is installed any more
+        try:
+            os.remove(state_path(home))
+        except FileNotFoundError:
+            pass
     if not any(installed(s, home)[0] for s in SPECS.values()):
         for path in (guard_path(home), wrapper_path(home)):
             try:

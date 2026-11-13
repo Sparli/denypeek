@@ -171,3 +171,68 @@ def test_r1_launcher_kept_in_the_wrapper_still_ignores_developer_dir(
     ):
         proc = installed_run(isolated, proj, "cat .env", extra)
         assert blocked("claude", proc.stdout.decode(), proc.returncode), extra
+
+
+# --- F1: exported shell functions and shell variables -------------------------------------
+
+BASH_FUNC = {"BASH_FUNC_printf%%": '() { echo "{}"; }', "BASH_FUNC_echo%%": "() { :; }"}
+
+
+@posix_only
+def test_f1_exported_functions_cannot_rewrite_the_answer(isolated, proj):
+    """the review's reproduction: run the installed command through sh -c, as agents do, with an
+    exported printf function. macOS /bin/sh is bash and imports it; the answer must stay deny."""
+    run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
+    h = resolve_home(str(isolated))
+    command = ours_commands(SPECS["claude"], h)[0]
+    payload = json.dumps(sample_inputs("claude", proj, h)["cat .env"]).encode()
+    for shell in ("/bin/sh", "/bin/bash"):
+        if not os.path.exists(shell):
+            continue
+        env = {**os.environ, **BASH_FUNC, "BASH_ENV": "/dev/null", "SHELLOPTS": "xtrace"}
+        proc = subprocess.run(
+            [shell, "-c", command],
+            input=payload,
+            capture_output=True,
+            timeout=60,
+            cwd=str(proj),
+            env=env,
+        )
+        assert blocked("claude", proc.stdout.decode(), proc.returncode), (shell, proc.stdout)
+
+
+@posix_only
+def test_f1_hook_command_starts_with_a_clean_environment(isolated):
+    run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
+    for spec in SPECS.values():
+        for command in ours_commands(spec, resolve_home(str(isolated))):
+            assert command.startswith("/usr/bin/env -i /bin/sh "), command
+
+
+@posix_only
+def test_f1_old_hook_command_is_reported_out_of_date(isolated):
+    run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
+    cfg = isolated / ".claude" / "settings.json"
+    cfg.write_text(cfg.read_text().replace("/usr/bin/env -i /bin/sh", "/bin/sh"))
+    code, out, _ = run_cli("guard", "status", "--home", str(isolated))
+    assert code == 1 and "out of date" in out
+
+
+@pytest.mark.parametrize(
+    "var",
+    [
+        "BASH_FUNC_printf%%",
+        "BASH_FUNC_x()",
+        "BASH_ENV",
+        "ENV",
+        "SHELLOPTS",
+        "BASHOPTS",
+        "IFS",
+        "CDPATH",
+        "GLOBIGNORE",
+        "PROMPT_COMMAND",
+        "PS4",
+    ],
+)
+def test_f1_project_settings_shell_variables_are_denied(var):
+    assert g.settings_problem("claude", json.dumps({"env": {var: "() { :; }"}})), var

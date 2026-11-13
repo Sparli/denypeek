@@ -79,20 +79,19 @@ WRAPPER = """#!/bin/sh
 PY={py}
 GUARD={guard}
 KHOME={home}
+CCD={claude_dir}
+CXH={codex_dir}
 if [ ! -x "$PY" ] || [ ! -f "$GUARD" ]; then
   echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \\
 Fix it in your own terminal: keyhush guard status (or keyhush guard uninstall)." >&2
   exit 2
 fi
-# Start Python from a clean, fixed environment (R1): nothing an agent can set (PYTHONPATH,
-# HOME, DEVELOPER_DIR, LD_PRELOAD ...) reaches it. Only the two config-folder variables pass,
-# and they can only add protected folders. The home folder is fixed at install time.
+# The hook command starts this script with `/usr/bin/env -i`, so no variable or exported
+# function an agent can set reaches this shell (F1). Python is started clean again here (R1),
+# with the home folder and the agents' config folders fixed at install time.
 # -I: isolated mode. -S: no site module, so no site-packages and no .pth files.
-E1=; E2=
-[ -n "${{CLAUDE_CONFIG_DIR:-}}" ] && E1="CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"
-[ -n "${{CODEX_HOME:-}}" ] && E2="CODEX_HOME=$CODEX_HOME"
-OUT=$(/usr/bin/env -i HOME="$KHOME" PATH=/usr/bin:/bin ${{E1:+"$E1"}} ${{E2:+"$E2"}} \\
-  "$PY" -I -S "$GUARD" --home "$KHOME" "$@")
+OUT=$(/usr/bin/env -i HOME="$KHOME" PATH=/usr/bin:/bin CLAUDE_CONFIG_DIR="$CCD" \\
+  CODEX_HOME="$CXH" "$PY" -I -S "$GUARD" --home "$KHOME" "$@")
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
   echo "keyhush guard failed (exit $rc). Blocked to be safe. Run: keyhush guard status" >&2
@@ -113,7 +112,11 @@ def _sh_quote(value: str) -> str:
 
 def write_wrapper(home: Home, python: str) -> None:
     text = WRAPPER.format(
-        py=_sh_quote(python), guard=_sh_quote(str(guard_path(home))), home=_sh_quote(str(home.root))
+        py=_sh_quote(python),
+        guard=_sh_quote(str(guard_path(home))),
+        home=_sh_quote(str(home.root)),
+        claude_dir=_sh_quote(str(home.claude_dir)),
+        codex_dir=_sh_quote(str(home.codex_dir)),
     )
     atomic_write(wrapper_path(home), text.encode(), mode=0o600)
 
@@ -291,7 +294,9 @@ def _writable_warning(python: str) -> Optional[str]:
 
 def hook_command(python: str, home: Home, agent: str) -> str:
     if USE_WRAPPER:
-        return f'/bin/sh "{wrapper_path(home)}" --agent {agent}'
+        # /usr/bin/env -i first: the shell that runs the wrapper starts with an empty
+        # environment, so exported functions (BASH_FUNC_*) and variables cannot reach it (F1).
+        return f'/usr/bin/env -i /bin/sh "{wrapper_path(home)}" --agent {agent}'
     return f'"{python}" -I -S "{guard_path(home)}" --home "{home.root}" --agent {agent}'
 
 

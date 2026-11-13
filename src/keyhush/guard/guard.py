@@ -365,6 +365,15 @@ HOOK_ENV_NAMES = {
     "SHELL",
     "BASH_ENV",
     "ENV",
+    # shell variables that change how a shell runs the hook command (F1)
+    "SHELLOPTS",
+    "BASHOPTS",
+    "IFS",
+    "CDPATH",
+    "GLOBIGNORE",
+    "PROMPT_COMMAND",
+    "PS4",
+    "ZDOTDIR",
 }
 READ_VERBS = {
     "cat",
@@ -485,7 +494,8 @@ def settings_problem(kind, text):
         risky = [
             k
             for k in data["env"]
-            if str(k).upper() in HOOK_ENV_NAMES or str(k).upper().startswith("PYTHON")
+            if str(k).upper() in HOOK_ENV_NAMES
+            or str(k).upper().startswith(("PYTHON", "BASH_FUNC_"))
         ]
         if risky:
             return (

@@ -133,7 +133,15 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
             or not wrapper_path(home).exists()
             or all(
                 x in wrapper_path(home).read_text(encoding="utf-8")
-                for x in ("-I -S", "/usr/bin/env -i", "--home")
+                for x in ("-I -S", "/usr/bin/env -i", "--home", "CCD=")
+            )
+        )
+        and (
+            not USE_WRAPPER
+            or all(
+                c.startswith("/usr/bin/env -i ")
+                for spec in pick(agents)
+                for c in ours_commands(spec, home)
             )
         ),
         "patterns": str(patterns_path(home)),

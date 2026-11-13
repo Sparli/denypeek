@@ -293,8 +293,15 @@ Every command takes `--home DIR` to work on another home folder (used for testin
 writes a default pattern list to `~/.keyhush/secretfiles` if there is none, and adds a hook entry
 to each agent. Before each edit it backs the file up to `~/.keyhush/config-backups/`. It merges
 without touching your other settings, writes atomically, and can run twice without duplicates. A
-config file that is malformed, too big, oddly typed or read-only is left untouched and reported.
-`uninstall` removes only what it added.
+config file that is malformed, too big, oddly typed or read-only, or sits in a folder it cannot
+write to, is left untouched and reported. `uninstall` removes only keyhush's own hook entries,
+even inside a group you added hooks to.
+
+**Your config file's layout changes.** keyhush writes the file back as standard JSON with
+two-space indentation, so comments, key order quirks and spacing are not kept, and if the file
+had the same key twice only the last one remains. Nothing of yours is lost otherwise, and the
+original is in `~/.keyhush/config-backups/` (delete those copies with
+`keyhush backups purge --config --yes`).
 
 **Which Python runs the hook.** `guard install` prefers a system Python (Homebrew,
 `/usr/local/bin`, `/usr/bin`), then the Python your virtual environment was built from, then

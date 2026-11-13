@@ -587,6 +587,7 @@ in-place `.bak` files.
 |---|---|
 | **v0.1** | Guard for four agents with `guard test`, scan, redact with verify and undo, offline tests, CI on three systems |
 | v0.2 | A live test of what each agent passes to hook processes (environment, timeout behaviour, the `{}` reply); an allowlist instead of a denylist for `env` in project settings; a Windows wrapper (clean environment, fail closed when Python is missing); catching `tar` extraction and `git checkout`/`stash` restoring settings files; cached folder walks so big projects are not denied; a short guide for running agents in a sandbox; Claude Code plugin and MCP server |
+| v0.2 (scan and redact, from the security review) | Find double-quoted values inside JSON history (`api_key = \"…\"`), which generic rules miss today (S2); save the manifest before the rename, so `undo` can restore a file after a crash at that moment (S3); a stronger warning, or a second confirmation, for `--include-active`, since an agent that keeps the file open can lose lines it writes later (S4); a full disk skips that file and still prints the summary, rotate list and backup path, instead of a traceback (S5); skip every symlink in `redact` instead of replacing a link inside the history folders with a plain file (S6); scan long dense lines in windows around keyword hits (S7); say that purged backups can survive in Time Machine, APFS snapshots and cloud-synced home folders (S8) |
 | later | More agents, faster scan on large histories, verified Windows paths |
 
 ## Use from an agent

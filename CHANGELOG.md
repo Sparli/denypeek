@@ -12,6 +12,7 @@ All notable changes are listed here. The format follows
   (`AKIA…`, `ghp_…`, `hf_…`) and nothing for rules without one, such as `generic-api-key`
   (JSON `"preview": null`). The prefixes are derived from each rule's regex in
   `tools/gen_rules.py` and stored in `rules.py`.
+- the review's medium and low findings S2 to S8 are on the README roadmap for v0.2.
 
 ### Fixed (security final check of the guard, F1)
 - The hook command starts with `/usr/bin/env -i`, so exported shell functions and variables

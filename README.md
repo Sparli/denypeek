@@ -131,7 +131,7 @@ flowchart TD
         E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
         E4["Gemini CLI: BeforeTool"]
     end
-    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>(Windows runs Python directly)"]
+    EV -->|"JSON on stdin"| W0["/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh<br/>empty environment: no inherited variables<br/>or shell functions (Windows runs Python directly)"]
     W0 --> W1{"Its Python and<br/>guard.py present?"}
     W1 -->|no| FC
     W1 -->|yes| G["env -i: clean environment, fixed home<br/>python -I -S guard.py --home H --agent NAME<br/>no site-packages, .pth, user site, PYTHONPATH"]
@@ -173,8 +173,10 @@ flowchart TD
 How a blocked `.env` read works:
 
 1. **The agent fires its hook.** Before a tool call, the agent runs
-   `/bin/sh ~/.keyhush/guard.sh --agent NAME` (on Windows, the Python command directly) and writes
-   the call to its stdin as JSON. The event differs per agent: `PreToolUse` in Claude Code and
+   `/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh --agent NAME` (on Windows, the Python command
+   directly) and writes the call to its stdin as JSON. `env -i` comes first, so the shell that
+   runs the wrapper starts with an empty environment: no variable or exported shell function
+   (`BASH_FUNC_*`) an agent might set can change it. The event differs per agent: `PreToolUse` in Claude Code and
    Codex CLI, `beforeReadFile`, `beforeShellExecution` and `preToolUse` in Cursor, `BeforeTool` in
    Gemini CLI.
 2. **The wrapper makes sure the hook can run, and runs it isolated.** It starts Python through
@@ -209,8 +211,10 @@ How a blocked `.env` read works:
    delete or change them, also when named through a glob, braces or a `find -delete` from the
    home folder. Agent settings files inside projects may be read and edited with the agent's
    file tools, but an edit is checked by parsing the file it would produce: one that turns hooks
-   off (`disableAllHooks`, Codex `hooks = false`, Gemini `hooksConfig.enabled: false`), sets
-   variables that could change how the hook runs, or cannot be parsed is denied. Shell commands
+   off (`disableAllHooks`, Codex `hooks = false`, Gemini `hooksConfig.enabled: false`), sets an
+   `env` variable that could change how the hook or the agent's shell runs (`PYTHON*`, `HOME`,
+   `PATH`, `DEVELOPER_DIR`, `LD_*`, `DYLD_*`, `BASH_FUNC_*`, `BASH_ENV`, `ENV`, `SHELLOPTS`,
+   `IFS` and similar), or cannot be parsed is denied. Shell commands
    may read those files but may not write them, and may not use a project `.claude`, `.codex`,
    `.gemini` or `.cursor` folder itself as the source or target of a copy, move, link or
    extraction. Text containing `disableAllHooks` or `hooks = false` (also JSON-escaped) is denied
@@ -435,7 +439,8 @@ Rejected: trusting the agent's own permission prompt to catch it.
 
 **A shell wrapper starts the hook.** If the hook's Python disappears (a deleted virtual
 environment, an upgraded Python), most agents treat a hook that cannot start as "no decision" and
-let the call through. On macOS and Linux the hook command is `/bin/sh guard.sh`, which blocks when
+let the call through. On macOS and Linux the hook command is `/usr/bin/env -i /bin/sh guard.sh`,
+which starts from an empty environment and blocks when
 its Python or `guard.py` is missing or fails to load, or when the hook exits without a reply. It
 also starts Python isolated (`-I -S`, `PYTHON*` variables cleared), so files and variables an
 agent can set cannot change what the hook runs. Rejected: a Python-only wrapper, which cannot
@@ -463,7 +468,8 @@ in-place `.bak` files.
 | A grep targets a folder too big to walk in 0.4 seconds | Denies and asks for a narrower path. |
 | An agent config is not valid JSON, too big, read-only, or has an unexpected type | `guard install` leaves that file untouched, reports it, and still installs the others. Exit code 2. |
 | An agent tries to edit `~/.keyhush/`, a hook config file, or run `keyhush guard uninstall` | Denied, with a message to make the change in your own terminal. |
-| An agent edits an agent settings file in a project so that it turns hooks off, sets hook-relevant variables, or cannot be parsed | Denied. Ordinary edits with the file tools are allowed. |
+| An agent edits an agent settings file in a project so that it turns hooks off, sets `env` variables that change how the hook or the shell runs (`PYTHON*`, `HOME`, `PATH`, `LD_*`, `DYLD_*`, `BASH_FUNC_*`, `BASH_ENV`, `SHELLOPTS`...), or cannot be parsed | Denied. Ordinary edits with the file tools are allowed. |
+| An agent sets an exported shell function (`BASH_FUNC_printf%%`) or other shell variable for the hook (macOS, Linux) | No effect: the hook command starts with `/usr/bin/env -i`, so the wrapper's shell sees an empty environment. |
 | An agent writes a project settings file or folder with a shell command (`cp x .claude/`, `dd of=...`, `git mv`, `tar -C .claude`) | Denied. Writing other files inside those folders, such as `.claude/commands/*.md`, is allowed. |
 | An agent writes text containing `disableAllHooks` or `hooks = false` anywhere | Denied. |
 | An agent moves, deletes or changes `~/.claude`, `~/.codex`, `~/.cursor` or `~/.gemini`, by name, glob, braces or `find -delete` | Denied; listing and reading them is allowed. |
@@ -575,7 +581,7 @@ in-place `.bak` files.
 | Version | Adds |
 |---|---|
 | **v0.1** | Guard for four agents with `guard test`, scan, redact with verify and undo, offline tests, CI on three systems |
-| v0.2 | Fixes from QA and security review, live tests in each agent, Claude Code plugin, MCP server |
+| v0.2 | A live test of what each agent passes to hook processes (environment, timeout behaviour, the `{}` reply); an allowlist instead of a denylist for `env` in project settings; a Windows wrapper (clean environment, fail closed when Python is missing); catching `tar` extraction and `git checkout`/`stash` restoring settings files; cached folder walks so big projects are not denied; a short guide for running agents in a sandbox; Claude Code plugin and MCP server |
 | later | More agents, faster scan on large histories, verified Windows paths |
 
 ## Use from an agent

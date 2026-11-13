@@ -15,7 +15,9 @@ not only the agent's file tool.
   `install_gemini.py`), sharing `install_base.py`.
 
 ## How it starts
-On macOS and Linux each agent runs `/bin/sh ~/.keyhush/guard.sh --agent NAME`. The wrapper holds
+On macOS and Linux each agent runs `/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh --agent NAME`, so
+the wrapper's shell starts from an empty environment: no exported function (`BASH_FUNC_*`) or
+variable can replace its builtins (F1). The wrapper holds
 the absolute path of the hook's Python and the home folder at install time, and starts
 `/usr/bin/env -i HOME=<home> PATH=/usr/bin:/bin python -I -S guard.py --home <home>` (R1: no
 variable an agent can set reaches the hook; only CLAUDE_CONFIG_DIR and CODEX_HOME pass, and they
@@ -61,7 +63,8 @@ covers a check stuck inside C code (G2).
   update them; shell commands may only read them, and a command that is not read-only may not
   use a project `.claude`, `.codex`, `.gemini` or `.cursor` folder itself as source or target
   (R2; `git` is read-only only for status, log, diff, show, grep...). Edits that set
-  hook-relevant `env` variables are denied. The text check also runs on JSON-unescaped text. Any text containing `disableAllHooks` or a
+  hook-relevant `env` variables are denied (`PYTHON*`, `HOME`, `PATH`, `LD_*`, `DYLD_*`,
+  `BASH_FUNC_*`, `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `IFS` and similar shell variables). The text check also runs on JSON-unescaped text. Any text containing `disableAllHooks` or a
   `hooks = false` line is also denied.
 - **Shell normalisation (A18):** quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`, `$IFS`,
   `{a,b}` braces, redirections, globs (hidden files too), words after `:`, `=` and `@`, folders

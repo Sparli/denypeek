@@ -6,7 +6,7 @@ flowchart TD
         E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
         E4["Gemini CLI: BeforeTool"]
     end
-    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>(Windows runs Python directly)"]
+    EV -->|"JSON on stdin"| W0["/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh<br/>empty environment: no inherited variables<br/>or shell functions (Windows runs Python directly)"]
     W0 --> W1{"Its Python and<br/>guard.py present?"}
     W1 -->|no| FC
     W1 -->|yes| G["env -i: clean environment, fixed home<br/>python -I -S guard.py --home H --agent NAME<br/>no site-packages, .pth, user site, PYTHONPATH"]

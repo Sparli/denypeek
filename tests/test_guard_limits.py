@@ -269,3 +269,59 @@ def test_simple_variable_assignments_are_resolved(command, tmp_path, isolated):
 def test_variables_do_not_block_normal_commands(tmp_path):
     proc, _ = run("claude", bash("name=world; echo hello $name", tmp_path), tmp_path)
     assert not blocked("claude", proc.stdout.decode(), proc.returncode)
+
+
+# --- R4: variable expansion cannot blow up -------------------------------------------------
+
+
+def nested_assignments(levels=400):
+    parts = ["a0=xxxxxxxx"]
+    for i in range(1, levels):
+        parts.append(f"a{i}=$a{i - 1}$a{i - 1}$a{i - 1}")
+    return "; ".join(parts) + f"; cat $a{levels - 1}"
+
+
+def exploding_command():
+    """Each value multiplies the last: far past the size limit within the first passes."""
+    return "a=" + "x" * 1000 + "; b=" + "$a" * 200 + "; c=$b$b$b$b; echo $c"
+
+
+def test_r4_nested_assignments_answer_fast(tmp_path):
+    command = nested_assignments()
+    assert len(command) < 10_000
+    proc, secs = run("claude", bash(command, tmp_path), tmp_path)
+    assert secs < LIMIT, secs
+    assert proc.stdout.strip(), "the hook must always answer"
+
+
+def test_r4_expansion_past_the_limit_is_denied_fast(tmp_path):
+    proc, secs = run("claude", bash(exploding_command(), tmp_path), tmp_path)
+    assert secs < LIMIT, secs
+    assert blocked("claude", proc.stdout.decode(), proc.returncode)
+    assert b"too much text to check" in proc.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="resource module is POSIX only")
+def test_r4_exploding_variables_use_little_memory(tmp_path):
+    payload = tmp_path / "payload.json"
+    payload.write_text(
+        json.dumps(bash(exploding_command() + "; " + nested_assignments(), tmp_path))
+    )
+    argv = [sys.executable, "-I", "-S", str(GUARD), "--agent", "claude", "--home", str(tmp_path)]
+    code = (
+        "import resource, subprocess, sys\n"
+        f"subprocess.run({argv!r}, input=open({str(payload)!r}, 'rb').read(), "
+        "capture_output=True)\n"
+        "print(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    peak = int(out.stdout.strip())
+    peak_mb = peak / (1024 * 1024) if sys.platform == "darwin" else peak / 1024
+    assert peak_mb < 200, peak_mb
+
+
+def test_r4_substitution_stops_at_the_size_limit():
+    from keyhush.guard import guard as g
+
+    with pytest.raises(g.HookTimeout):
+        g.substitute_variables(exploding_command())

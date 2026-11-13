@@ -967,11 +967,20 @@ def substitute_variables(command):
     if not values:
         return command
     text = command
+    too_long = HookTimeout("the command's variables expand to too much text to check")
     for _ in range(3):
         before = text
         for name, value in values.items():
-            text = text.replace("${" + name + "}", value)
-            text = re.sub(r"\$" + name + r"(?![A-Za-z0-9_])", lambda _m, v=value: v, text)
+            tick()
+            if len(value) > MAX_COMMAND:
+                raise too_long
+            pattern = re.compile(r"\$\{" + name + r"\}|\$" + name + r"(?![A-Za-z0-9_])")
+            hits = len(pattern.findall(text))
+            # R4: check the size before building the string, so nothing big is ever made
+            if hits and len(text) + hits * len(value) > MAX_COMMAND:
+                raise too_long
+            if hits:
+                text = pattern.sub(lambda _m, v=value: v, text)
         if text == before:
             break
     return text

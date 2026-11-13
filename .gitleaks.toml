@@ -1,0 +1,7 @@
+# gitleaks config for scanning this repo. Uses the default rules plus one exact allowlist entry.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "src/keyhush/rules.py holds the bedrock rule's own regex, whose fixed prefix is base64 of the public hostname bedrock.amazonaws.com. Not a key."
+regexes = ['''^bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29t$''']

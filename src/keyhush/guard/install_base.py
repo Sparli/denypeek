@@ -403,7 +403,20 @@ def install(spec: AgentSpec, home: Home, command: str, state: dict) -> Change:
             state[spec.name] = prior
         return Change(spec.name, path, False, error=reason)
     backup = backup_config(home, path)
-    write_config(path, data)
+    try:
+        write_config(path, data)
+    except OSError as exc:
+        if prior is None:
+            state.pop(spec.name, None)
+        else:
+            state[spec.name] = prior
+        return Change(
+            spec.name,
+            path,
+            False,
+            backup,
+            error=f"cannot write {path} ({exc.strerror or exc}); not touched",
+        )
     return Change(spec.name, path, True, backup)
 
 
@@ -434,12 +447,21 @@ def uninstall(spec: AgentSpec, home: Home, state: dict) -> Change:
     reason = read_only_reason(path)
     if reason:
         return Change(spec.name, path, False, error=reason)
-    state.pop(spec.name, None)
     backup = backup_config(home, path)
-    if not data and st.get("file_existed") is False:
-        os.remove(path)
-    else:
-        write_config(path, data)
+    try:
+        if not data and st.get("file_existed") is False:
+            os.remove(path)
+        else:
+            write_config(path, data)
+    except OSError as exc:
+        return Change(
+            spec.name,
+            path,
+            False,
+            backup,
+            error=f"cannot write {path} ({exc.strerror or exc}); not touched",
+        )
+    state.pop(spec.name, None)
     return Change(spec.name, path, True, backup)
 
 

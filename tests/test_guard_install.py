@@ -327,3 +327,24 @@ def test_g12_loose_names_are_not_ours():
     assert is_ours('/bin/sh "/Users/x/.keyhush/guard.sh" --agent claude')
     windows = r'"C:\Python\python.exe" -I -S "C:\Users\x\.keyhush\guard.py" --agent codex'
     assert is_ours(windows)
+
+
+def test_unwritable_config_folder_gives_a_message_not_a_traceback(isolated):
+    import os
+
+    if os.name != "posix" or os.geteuid() == 0:
+        import pytest
+
+        pytest.skip("needs POSIX folder permissions and a non-root user")
+    folder = isolated / ".claude"
+    folder.mkdir()
+    (folder / "settings.json").write_text('{"model": "opus"}')
+    os.chmod(folder, 0o555)
+    try:
+        code, out, err = run_cli("guard", "install", "--home", str(isolated), "--python", PY)
+    finally:
+        os.chmod(folder, 0o755)
+    assert code == 2
+    assert "cannot write" in err and "Traceback" not in err + out
+    assert json.loads((folder / "settings.json").read_text()) == {"model": "opus"}
+    assert count_ours(json.loads((isolated / ".gemini/settings.json").read_text())) == 1

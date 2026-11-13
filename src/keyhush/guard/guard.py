@@ -222,8 +222,11 @@ def path_hits(token, cwd, rules):
             names = os.listdir(folder) if not any(ch in folder for ch in "*?[") else []
         except OSError:
             names = []
-        candidates += [os.path.join(folder, n) for n in names
-                       if fnmatch.fnmatchcase(n.lower(), pattern.lower())]
+        candidates += [
+            os.path.join(folder, n)
+            for n in names
+            if fnmatch.fnmatchcase(n.lower(), pattern.lower())
+        ]
         found += [c for c in candidates if is_secret(c, rules)]
     return found
 
@@ -317,7 +320,7 @@ def patch_paths(text):
     for line in text.splitlines():
         for prefix in ("*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "):
             if line.startswith(prefix):
-                out.append(line[len(prefix):].strip())
+                out.append(line[len(prefix) :].strip())
     return out
 
 
@@ -339,8 +342,12 @@ def strings_in(value, key=None):
 def decide(event, rules):
     """Return a reason string to deny, or None to allow."""
     deadline = time.monotonic() + WALK_SECONDS
-    cwd = event.get("cwd") or (event.get("tool_input") or {}).get("working_directory") \
-        or (event.get("tool_input") or {}).get("dir_path") or os.getcwd()
+    cwd = (
+        event.get("cwd")
+        or (event.get("tool_input") or {}).get("working_directory")
+        or (event.get("tool_input") or {}).get("dir_path")
+        or os.getcwd()
+    )
     if isinstance(event.get("workspace_roots"), list) and not event.get("cwd"):
         roots = [r for r in event["workspace_roots"] if isinstance(r, str)]
         cwd = roots[0] if roots else cwd
@@ -351,9 +358,11 @@ def decide(event, rules):
             tool_input = json.loads(tool_input)
         except ValueError:
             pass
-    scope = {"tool_input": tool_input} if tool_input is not None else {
-        k: v for k, v in event.items() if k in ("file_path", "command", "attachments")
-    }
+    scope = (
+        {"tool_input": tool_input}
+        if tool_input is not None
+        else {k: v for k, v in event.items() if k in ("file_path", "command", "attachments")}
+    )
     for key, s in strings_in(scope):
         if len(s) > 100_000:
             continue
@@ -379,8 +388,10 @@ def decide(event, rules):
                         return f"search over {folder}, which holds a secret file; narrow the path"
                 except TimeoutError:
                     return f"search over {folder}: too many files to check; narrow the path"
-    if tool in GREP_TOOLS and isinstance(tool_input, dict) and not (
-        tool_input.get("path") or tool_input.get("dir_path")
+    if (
+        tool in GREP_TOOLS
+        and isinstance(tool_input, dict)
+        and not (tool_input.get("path") or tool_input.get("dir_path"))
     ):
         try:
             if folder_holds_secret(cwd, rules, deadline):
@@ -401,11 +412,15 @@ def deny_output(agent, event_name, reason):
     if agent == "gemini":
         return json.dumps({"decision": "deny", "reason": msg}), 0
     # claude and codex share this shape
-    return json.dumps({"hookSpecificOutput": {
-        "hookEventName": event_name or "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": msg,
-    }}), 0
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": event_name or "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": msg,
+            }
+        }
+    ), 0
 
 
 def allow_output(agent):

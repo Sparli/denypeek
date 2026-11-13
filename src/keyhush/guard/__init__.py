@@ -116,6 +116,7 @@ DENY_CASES = [
     "grep -r KEY . (folder holds .env)",
     "edit .dev.vars",
     "read ~/.ssh/id_rsa",
+    "overwrite ~/.keyhush/secretfiles",
 ]
 ALLOW_CASES = ["read .env.example", "read src/app.py", "ls", "grep -r KEY src/ (no secret file)"]
 
@@ -208,6 +209,7 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
         "grep -r KEY . (folder holds .env)": sh("grep -r KEY ."),
         "edit .dev.vars": edit,
         "read ~/.ssh/id_rsa": reads(ssh),
+        "overwrite ~/.keyhush/secretfiles": sh("echo '!*' > ~/.keyhush/secretfiles"),
         "read .env.example": reads(p(".env.example")),
         "read src/app.py": reads(p("src", "app.py")),
         "ls": sh("ls"),

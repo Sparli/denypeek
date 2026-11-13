@@ -132,11 +132,11 @@ def test_a15_guard_test_table(isolated):
     code, out, _ = run_cli("guard", "test", "--home", str(home))
     assert code == 0, out
     rows = [line for line in out.splitlines() if line.endswith("  ok") or line.endswith("FAIL")]
-    assert len(rows) == 4 * 9
+    assert len(rows) == 4 * 10
     blocked_rows = [r for r in rows if " blocked " in r and r.rstrip().endswith("ok")]
-    assert len(blocked_rows) == 4 * 5
+    assert len(blocked_rows) == 4 * 6
     for label in ("Claude Code", "Codex CLI", "Cursor", "Gemini CLI"):
-        assert sum(r.startswith(label) for r in rows) == 9
+        assert sum(r.startswith(label) for r in rows) == 10
 
     run_cli("guard", "uninstall", "--home", str(home))
     code, out, _ = run_cli("guard", "test", "--home", str(home))

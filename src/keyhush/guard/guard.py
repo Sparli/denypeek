@@ -185,6 +185,68 @@ def is_secret(path, rules):
     return False
 
 
+# --- self-protection -------------------------------------------------------------------
+# An agent must not be able to switch the guard off. keyhush's own folder and the files that
+# hold the agents' hook settings are always denied, whatever the pattern list says. The user
+# changes them in their own terminal, where no hook runs.
+
+
+def protected_paths():
+    """(keyhush folder, set of protected files), normalised. Includes symlink targets."""
+    home = home_dir()
+    claude = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+    codex = os.environ.get("CODEX_HOME") or os.path.join(home, ".codex")
+    files = [
+        os.path.join(claude, "settings.json"),
+        os.path.join(codex, "hooks.json"),
+        os.path.join(codex, "config.toml"),  # `[features] hooks = false` turns Codex hooks off
+        os.path.join(home, ".cursor", "hooks.json"),
+        os.path.join(home, ".gemini", "settings.json"),
+    ]
+    norm = set()
+    for f in files:
+        norm.add(_norm(os.path.normpath(f)))
+        try:
+            norm.add(_norm(os.path.realpath(f)))
+        except (OSError, ValueError):
+            pass
+    kdir = os.path.join(home, ".keyhush")
+    dirs = {_norm(os.path.normpath(kdir))}
+    try:
+        dirs.add(_norm(os.path.realpath(kdir)))
+    except (OSError, ValueError):
+        pass
+    return dirs, norm
+
+
+def is_protected(path):
+    dirs, files = protected_paths()
+    candidates = {_norm(path)}
+    try:
+        candidates.add(_norm(os.path.realpath(path)))
+    except (OSError, ValueError):
+        pass
+    for cand in candidates:
+        if cand in files:
+            return True
+        if any(cand == d or cand.startswith(d + "/") for d in dirs):
+            return True
+    return False
+
+
+def blocked_path(path, rules):
+    return is_protected(path) or is_secret(path, rules)
+
+
+def reason_for(path, verb="names"):
+    if is_protected(path):
+        return (
+            f"the call {verb} {os.path.basename(path.rstrip('/')) or path}, which keyhush "
+            "protects so an agent cannot switch the guard off; change it in your own terminal"
+        )
+    return f"the call {verb} a secret file ({os.path.basename(path.rstrip('/'))})"
+
+
 # --- resolving paths in tool input ---------------------------------------------------
 
 
@@ -208,7 +270,7 @@ def path_hits(token, cwd, rules):
     if not full:
         return []
     found = []
-    if is_secret(full, rules):
+    if blocked_path(full, rules):
         found.append(full)
     if any(ch in token for ch in "*?["):
         candidates = []
@@ -227,7 +289,7 @@ def path_hits(token, cwd, rules):
             for n in names
             if fnmatch.fnmatchcase(n.lower(), pattern.lower())
         ]
-        found += [c for c in candidates if is_secret(c, rules)]
+        found += [c for c in candidates if blocked_path(c, rules)]
     return found
 
 
@@ -240,7 +302,7 @@ def folder_holds_secret(folder, rules, deadline):
             seen += 1
             if seen > WALK_LIMIT or time.monotonic() > deadline:
                 raise TimeoutError
-            if is_secret(os.path.join(dirpath, name), rules):
+            if blocked_path(os.path.join(dirpath, name), rules):
                 return True
     return False
 
@@ -299,8 +361,42 @@ def grep_targets(part, cwd):
     return out
 
 
+def cd_targets(parts, cwd):
+    """Folders named by `cd` or `pushd` anywhere in the command (no argument means home)."""
+    out = []
+    for part in parts:
+        try:
+            words = shlex.split(part, posix=True)
+        except ValueError:
+            words = part.split()
+        if words and words[0] in ("cd", "pushd", "chdir"):
+            args = [w for w in words[1:] if not w.startswith("-")]
+            target = expand(args[0], cwd) if args else home_dir()
+            if target:
+                out.append(target)
+    return out
+
+
+def switches_guard(tokens):
+    """True for `keyhush guard install|uninstall` in any form (keyhush, python -m keyhush...)."""
+    low = [os.path.basename(t).lower() for t in tokens]
+    return (
+        any("keyhush" in t for t in low)
+        and "guard" in low
+        and ("uninstall" in low or "install" in low)
+    )
+
+
 def check_command(command, cwd, rules, deadline, depth=0):
     tokens, parts = split_tokens(command)
+    if switches_guard(tokens):
+        return (
+            "keyhush guard install and uninstall change the guard itself; "
+            "run them yourself in a terminal"
+        )
+    # `cd dir && cat .env`: relative paths are checked against every folder the command
+    # changes into, as well as the starting one.
+    folders = [cwd] + cd_targets(parts, cwd)
     for tok in tokens:
         if depth < 3 and any(ch in tok for ch in " \t;|&<>$`"):
             # a nested script: bash -c '...', sh -lc "...", eval "..."
@@ -308,9 +404,10 @@ def check_command(command, cwd, rules, deadline, depth=0):
             if reason:
                 return reason
             continue
-        hits = path_hits(tok, cwd, rules)
-        if hits:
-            return f"the command names a secret file ({os.path.basename(hits[0])})"
+        for folder in folders:
+            hits = path_hits(tok, folder, rules)
+            if hits:
+                return reason_for(hits[0], "names")
     for part in parts:
         for folder in grep_targets(part, cwd):
             try:
@@ -375,8 +472,9 @@ def decide(event, rules):
         if key in SHELL_KEYS:
             if tool == "apply_patch" or s.lstrip().startswith("*** Begin Patch"):
                 for p in patch_paths(s):
-                    if path_hits(p, cwd, rules):
-                        return f"the patch edits a secret file ({os.path.basename(p)})"
+                    hits = path_hits(p, cwd, rules)
+                    if hits:
+                        return reason_for(hits[0], "edits")
                 continue
             reason = check_command(s, cwd, rules, deadline)
             if reason:
@@ -384,8 +482,9 @@ def decide(event, rules):
             continue
         if not s or "\n" in s or len(s) > 4096:
             continue
-        if path_hits(s, cwd, rules):
-            return f"{os.path.basename(s.rstrip('/'))} is a secret file"
+        hits = path_hits(s, cwd, rules)
+        if hits:
+            return reason_for(hits[0], "uses")
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and os.path.isdir(folder):

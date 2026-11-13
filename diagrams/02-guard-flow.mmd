@@ -6,33 +6,39 @@ flowchart TD
         E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
         E4["Gemini CLI: BeforeTool"]
     end
-    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>(macOS, Linux; Windows runs<br/>Python directly)"]
+    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>clears PYTHON* variables<br/>(Windows runs Python directly)"]
     W0 --> W1{"Its Python and<br/>guard.py present?"}
     W1 -->|no| FC
-    W1 -->|yes| G["python guard.py --agent NAME"]
-    G -->|"Python fails to start<br/>or load the hook"| FC
+    W1 -->|yes| G["python -I -S guard.py --agent NAME<br/>isolated: no site-packages, .pth,<br/>user site or PYTHONPATH"]
+    G -->|"fails to start or load,<br/>or exits 0 with no reply"| FC
     G --> V{"Input usable?<br/>known agent, not empty,<br/>4 MB or less, a JSON object"}
     V -->|no, or any error| FC["Fail closed: exit 2 = block,<br/>message names the fix"]
-    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults"]
+    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults;<br/>start a 2.5 s deadline"]
     P --> S["Walk every string in tool_input"]
-    S --> OFF{"Turns hooks off?<br/>disableAllHooks, hooks = false"}
+    S -->|"deadline passed"| FC
+    S --> OFF{"Text that turns hooks off?<br/>disableAllHooks, hooks = false"}
     OFF -->|yes| DENY
     OFF -->|no| K{"Kind of string"}
-    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME,<br/>$PWD, $IFS, braces, redirections, globs;<br/>split at :, = and @; follow cd;<br/>recurse into bash -c and eval"]
+    K -->|"command over 100,000<br/>chars, or path over 4,096"| DENY
+    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME, $PWD,<br/>$IFS, braces, line continuations, redirections,<br/>globs, same-command variables; split at :, = and @;<br/>follow cd and the tool's working folder;<br/>recurse into bash -c and eval"]
     K -->|"command field,<br/>apply_patch"| AP["Read the file names<br/>in the patch headers"]
-    K -->|"single-line string"| PT["Path check, also on<br/>the symlink target"]
-    SH --> GR{"Recursive grep, rg,<br/>ag, ack or git grep?"}
+    K -->|"path field"| PT["Path check against cwd and<br/>the tool's working folder,<br/>also on the symlink target"]
+    SH --> GR{"Recursive search?<br/>grep -r, -d recurse,<br/>rg, ag, ack, git grep"}
     GR -->|yes| WK["Walk the target folder<br/>for a secret file"]
-    K -->|"Grep tool path,<br/>or no path"| WK
+    K -->|"search tool path, or<br/>read_many_files folder or **"| WK
     SH -->|"keyhush guard<br/>install or uninstall"| DENY
-    SH & AP & PT --> PR{"Protected path?<br/>~/.keyhush/**, the hook<br/>config files"}
+    SH & AP & PT --> PR{"Protected path?<br/>~/.keyhush/**, user hook config<br/>files, user Python folders"}
     PR -->|yes| DENY
-    PR -->|no| PL{"On the pattern list?"}
+    PR -->|no| ST{"Agent settings file<br/>at any depth?"}
+    ST -->|"edit: parse the result;<br/>turns hooks off or unparseable"| DENY
+    ST -->|"shell write, or a patch<br/>that updates it"| DENY
+    SH -->|"moves, deletes or changes<br/>~/.claude, ~/.codex, ~/.cursor,<br/>~/.gemini"| DENY
+    ST -->|"read, or a safe edit"| PL{"On the pattern list?"}
     PL -->|yes| DENY
     WK -->|"holds a secret file,<br/>or too big to walk in time"| DENY
     PL & WK & GR -->|"nothing found"| ALLOW
     DENY["Deny in the agent's own format"] --> D1["Claude, Codex:<br/>permissionDecision deny"]
     DENY --> D2["Cursor: permission deny"]
     DENY --> D3["Gemini: decision deny"]
-    ALLOW["Allow without approving"] --> A1["Claude, Codex, Gemini:<br/>no output, exit 0"]
+    ALLOW["Allow without approving"] --> A1["Claude, Codex, Gemini:<br/>an empty JSON object, exit 0"]
     ALLOW --> A2["Cursor: permission allow<br/>(Cursor blocks empty output)"]

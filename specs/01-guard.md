@@ -16,13 +16,22 @@ not only the agent's file tool.
 
 ## How it starts
 On macOS and Linux each agent runs `/bin/sh ~/.keyhush/guard.sh --agent NAME`. The wrapper holds
-the absolute path of the hook's Python and exits 2 (block, for all four agents) if that Python or
-`guard.py` is missing, or if Python exits with anything but 0 or 2. On Windows the command runs
-Python directly, so a missing interpreter is a fail-open case there.
+the absolute path of the hook's Python, clears `PYTHONPATH` and the other `PYTHON*` variables,
+and runs `python -I -S guard.py` (isolated mode and no site module: no site-packages, `.pth`
+files, user site or script-folder imports; both flags exist on 3.9). It exits 2 (block, for all
+four agents) if that Python or `guard.py` is missing, if Python exits with anything but 0 or 2,
+or if it exits 0 without a reply (the guard always replies, `{}` on allow). On Windows the
+command runs `python -I -S` directly, so a missing interpreter is a fail-open case there.
 
-`guard install` prefers a system Python, then the virtualenv's base Python, then `python3` on
-PATH, skipping anything inside a virtualenv or temporary folder, and warns if it must use one.
-`guard status` checks the Python exists and runs the hook once on a deny and an allow case.
+`guard install` prefers a Python the user cannot modify: `/usr/bin/python3` first, then other
+system Pythons, the virtualenv's base Python and `python3` on PATH, skipping anything inside a
+virtualenv or temporary folder. A Python whose program file or stdlib folder the user can write
+to is used only as a last resort, with a warning (G1). `guard status` checks the Python exists,
+warns if it is user-writable, and runs the hook once on a deny and an allow case.
+
+Every decision has a 2.5 s deadline checked in the token, brace and glob loops; past it the call
+is denied. A watchdog at 3 s (interval timer and CPU limit on POSIX, timer thread on Windows)
+covers a check stuck inside C code (G2).
 
 ## Rules
 - **Deny:** reads, edits and writes of a listed path; shell commands that name one; recursive
@@ -32,20 +41,33 @@ PATH, skipping anything inside a virtualenv or temporary folder, and warns if it
 - **Fail closed:** on its own error the hook denies and names `keyhush guard uninstall`.
 - **Field-agnostic:** every string in the tool input is checked, so renamed fields do not open
   holes.
+- **Over-limit input (G3):** commands over 100,000 characters and paths over 4,096 are denied as
+  too long to check; path fields are trimmed of surrounding whitespace only.
+- **Working folders (G4):** relative names are checked against the session cwd and the tool's
+  `workdir`, `dir_path`, `directory`, `working_directory` or `cwd` fields, and any `cd` target.
 - **Self-protection (A19):** any agent access to `~/.keyhush/**` and to the hook config files
   (`~/.claude/settings.json` or `$CLAUDE_CONFIG_DIR`, `~/.codex/hooks.json` and `config.toml` or
   `$CODEX_HOME`, `~/.cursor/hooks.json`, `~/.gemini/settings.json`, and their symlink targets) is
   denied, whatever the pattern list says. Agent-run `keyhush guard install|uninstall` is denied.
-  Any call whose content contains `disableAllHooks` or a `hooks = false` line is denied, because a
-  project's settings can turn the user's hooks off.
+  Shell commands may only read `~/.claude`, `~/.codex`, `~/.cursor`, `~/.gemini`. The user's
+  Python folders (`~/Library/Python`, `~/.local/lib/python*`, `%APPDATA%\Python`) are protected
+  (G1). Agent settings files at any depth (G5): an edit or write is checked by parsing the file it
+  would produce (JSON, comments stripped for Gemini; TOML via tomllib, or a text pattern on 3.9
+  and 3.10) and denied if it turns hooks off or cannot be parsed; Codex patches may add but not
+  update them; shell commands may only read them. Any text containing `disableAllHooks` or a
+  `hooks = false` line is also denied.
 - **Shell normalisation (A18):** quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`, `$IFS`,
   `{a,b}` braces, redirections, globs (hidden files too), words after `:`, `=` and `@`, folders
   entered with `cd`, Unicode NFC, and nested `bash -c` or `eval` scripts. Windows-shaped paths
   (drive letters, UNC shares, `%USERPROFILE%` and `$env:USERPROFILE` paths) get `/` separators
   before splitting; on Windows every backslash does, since cmd and PowerShell never use it as an
   escape. Elsewhere backslashes stay shell escapes.
-- **Known misses:** names built at run time (`$(ls | grep env)`, base64), scripts that open files
-  themselves, copies under other names, values already in the environment, MCP tools.
+- **Recursive reads (G6, G8):** `grep -r`, `-d recurse`, `--directories=recurse`, `rg`, `ag`,
+  `ack`, `git grep`, the search tools and Gemini `read_many_files` folders or `**` globs trigger a
+  folder walk; `node_modules` is walked for `grep -r` and skipped for tools that honour ignores.
+- **Known misses:** names built at run time (`$(ls | grep env)`, base64, command substitution in
+  a variable), whole-tree dumps (`find -exec cat`, `tar`), programs that open files on their own,
+  copies under other names, values already in the environment, `rm -rf ~`, MCP tools.
 
 ## Config edits
 Back up first, merge without touching other keys, write atomically, recognise our entries by the

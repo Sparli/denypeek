@@ -123,35 +123,41 @@ flowchart TD
         E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
         E4["Gemini CLI: BeforeTool"]
     end
-    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>(macOS, Linux; Windows runs<br/>Python directly)"]
+    EV -->|"JSON on stdin"| W0["/bin/sh ~/.keyhush/guard.sh<br/>clears PYTHON* variables<br/>(Windows runs Python directly)"]
     W0 --> W1{"Its Python and<br/>guard.py present?"}
     W1 -->|no| FC
-    W1 -->|yes| G["python guard.py --agent NAME"]
-    G -->|"Python fails to start<br/>or load the hook"| FC
+    W1 -->|yes| G["python -I -S guard.py --agent NAME<br/>isolated: no site-packages, .pth,<br/>user site or PYTHONPATH"]
+    G -->|"fails to start or load,<br/>or exits 0 with no reply"| FC
     G --> V{"Input usable?<br/>known agent, not empty,<br/>4 MB or less, a JSON object"}
     V -->|no, or any error| FC["Fail closed: exit 2 = block,<br/>message names the fix"]
-    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults"]
+    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults;<br/>start a 2.5 s deadline"]
     P --> S["Walk every string in tool_input"]
-    S --> OFF{"Turns hooks off?<br/>disableAllHooks, hooks = false"}
+    S -->|"deadline passed"| FC
+    S --> OFF{"Text that turns hooks off?<br/>disableAllHooks, hooks = false"}
     OFF -->|yes| DENY
     OFF -->|no| K{"Kind of string"}
-    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME,<br/>$PWD, $IFS, braces, redirections, globs;<br/>split at :, = and @; follow cd;<br/>recurse into bash -c and eval"]
+    K -->|"command over 100,000<br/>chars, or path over 4,096"| DENY
+    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME, $PWD,<br/>$IFS, braces, line continuations, redirections,<br/>globs, same-command variables; split at :, = and @;<br/>follow cd and the tool's working folder;<br/>recurse into bash -c and eval"]
     K -->|"command field,<br/>apply_patch"| AP["Read the file names<br/>in the patch headers"]
-    K -->|"single-line string"| PT["Path check, also on<br/>the symlink target"]
-    SH --> GR{"Recursive grep, rg,<br/>ag, ack or git grep?"}
+    K -->|"path field"| PT["Path check against cwd and<br/>the tool's working folder,<br/>also on the symlink target"]
+    SH --> GR{"Recursive search?<br/>grep -r, -d recurse,<br/>rg, ag, ack, git grep"}
     GR -->|yes| WK["Walk the target folder<br/>for a secret file"]
-    K -->|"Grep tool path,<br/>or no path"| WK
+    K -->|"search tool path, or<br/>read_many_files folder or **"| WK
     SH -->|"keyhush guard<br/>install or uninstall"| DENY
-    SH & AP & PT --> PR{"Protected path?<br/>~/.keyhush/**, the hook<br/>config files"}
+    SH & AP & PT --> PR{"Protected path?<br/>~/.keyhush/**, user hook config<br/>files, user Python folders"}
     PR -->|yes| DENY
-    PR -->|no| PL{"On the pattern list?"}
+    PR -->|no| ST{"Agent settings file<br/>at any depth?"}
+    ST -->|"edit: parse the result;<br/>turns hooks off or unparseable"| DENY
+    ST -->|"shell write, or a patch<br/>that updates it"| DENY
+    SH -->|"moves, deletes or changes<br/>~/.claude, ~/.codex, ~/.cursor,<br/>~/.gemini"| DENY
+    ST -->|"read, or a safe edit"| PL{"On the pattern list?"}
     PL -->|yes| DENY
     WK -->|"holds a secret file,<br/>or too big to walk in time"| DENY
     PL & WK & GR -->|"nothing found"| ALLOW
     DENY["Deny in the agent's own format"] --> D1["Claude, Codex:<br/>permissionDecision deny"]
     DENY --> D2["Cursor: permission deny"]
     DENY --> D3["Gemini: decision deny"]
-    ALLOW["Allow without approving"] --> A1["Claude, Codex, Gemini:<br/>no output, exit 0"]
+    ALLOW["Allow without approving"] --> A1["Claude, Codex, Gemini:<br/>an empty JSON object, exit 0"]
     ALLOW --> A2["Cursor: permission allow<br/>(Cursor blocks empty output)"]
 ```
 <!-- /diagram -->
@@ -163,33 +169,45 @@ How a blocked `.env` read works:
    the call to its stdin as JSON. The event differs per agent: `PreToolUse` in Claude Code and
    Codex CLI, `beforeReadFile`, `beforeShellExecution` and `preToolUse` in Cursor, `BeforeTool` in
    Gemini CLI.
-2. **The wrapper makes sure the hook can run.** If the hook's Python or `guard.py` is missing, or
-   Python fails to start or load the hook, `guard.sh` exits 2, which every supported agent reads
-   as "block". Deleting the Python keyhush was installed with blocks tool calls; it does not let
-   them through.
+2. **The wrapper makes sure the hook can run, and runs it isolated.** It clears `PYTHONPATH` and
+   the other `PYTHON*` variables and starts Python with `-I -S`, so no `site-packages`, `.pth`
+   file, user `usercustomize.py` or script-folder module can change what the hook does. If the
+   hook's Python or `guard.py` is missing, if Python fails, or if it exits without a reply,
+   `guard.sh` exits 2, which every supported agent reads as "block".
 3. **The guard checks the input itself.** Unknown agent, empty input, input over 4 MB, broken
    JSON, or anything that raises: the guard denies, exits 2, and names `keyhush guard uninstall`.
-   It never fails open.
+   The whole decision has a 2.5-second deadline; past it, the call is denied ("took too long to
+   check"), and a watchdog makes sure of that even if the check itself gets stuck.
 4. **It loads the pattern list.** `~/.keyhush/secretfiles`, or the built-in defaults when that file
    is missing.
 5. **It looks at every string in the tool input**, so it does not depend on each agent's field
-   names. Any call that would turn hooks off (`disableAllHooks`, `hooks = false`) is denied. A
-   `command` field gets the shell check. An `apply_patch` gets its file headers read. Any other
-   single-line string gets the path check.
+   names. A `command` field gets the shell check, an `apply_patch` gets its file headers read,
+   and path fields get the path check, against the session folder and any working folder the
+   tool names (`workdir`, `dir_path`...). A command over 100,000 characters or a path over 4,096
+   is denied as too long to check, never skipped.
 6. **The shell check undoes common disguises.** Quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`,
-   `$IFS`, `{a,b}` braces, redirections such as `<.env`, globs such as `.e*` (including hidden
-   files), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`), folders entered
-   with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`), and scripts
-   nested in `bash -c` or `eval`. Agent-run `keyhush guard install` and
-   `uninstall` are denied.
-7. **The guard protects itself.** Any agent access to `~/.keyhush/**` and to the agents' hook
-   config files is denied, whatever the pattern list says, so an agent cannot switch the guard off.
-   You change those in your own terminal, where no hook runs.
-8. **Recursive search is checked as a whole.** For `grep -r`, `rg`, `ag`, `ack`, `git grep` and the
-   agents' own search tools, the guard walks the target folder. If it holds a secret file, or is
-   too big to walk in 0.4 seconds, the search is denied.
+   `$IFS`, `{a,b}` braces, backslash line continuations, redirections such as `<.env`, globs such
+   as `.e*` (including hidden files), variables set earlier in the same command
+   (`a=.e; cat ${a}nv`), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`),
+   folders entered with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`),
+   and scripts nested in `bash -c` or `eval`. Agent-run `keyhush guard install` and `uninstall`
+   are denied.
+7. **The guard protects itself.** Any agent access to `~/.keyhush/**`, to the user-level hook
+   config files and to your per-user Python folders is denied, whatever the pattern list says.
+   Commands may list or read `~/.claude`, `~/.codex`, `~/.cursor` and `~/.gemini` but not move,
+   delete or change them. Agent settings files inside projects may be read and edited, but an
+   edit is checked by parsing the file it would produce: one that turns hooks off
+   (`disableAllHooks`, Codex `hooks = false`, Gemini `hooksConfig.enabled: false`) or cannot be
+   parsed is denied, and shell commands may not write those files. Text containing
+   `disableAllHooks` or `hooks = false` is denied anywhere as a second line. You change all of
+   this in your own terminal, where no hook runs.
+8. **Recursive reads are checked as a whole.** For `grep -r` and `-d recurse`, `rg`, `ag`, `ack`,
+   `git grep`, the agents' own search tools and Gemini's `read_many_files`, the guard walks the
+   target folder (including `node_modules` for `grep -r`, which reads it). If the folder holds a
+   secret file, or is too big to walk in 0.4 seconds, the call is denied.
 9. **The answer goes back in the agent's own format.** A deny carries a reason the agent shows.
-   An allow says nothing (Cursor gets an explicit `allow`, because it blocks empty output), so the
+   An allow is an empty JSON object with no decision (Cursor gets an explicit `allow`, because it
+   blocks empty output), so the
    agent's own permission prompts still apply.
 
 ### Scan, redact and undo
@@ -281,7 +299,7 @@ fake keys made at run time and runs the commands against it
 | `keyhush undo [--set NAME]` | Restores the files changed by the last redact, byte for byte. |
 | `keyhush backups list` / `purge --yes` | Lists or deletes redact backups. They still hold the keys. `purge --config` deletes the copies of agent settings that `guard install` made instead. |
 | `keyhush guard install [--agent NAME]` | Wires the guard into each agent's own pre-tool hook. |
-| `keyhush guard status [--json]` | Shows where it is installed, checks the hook's Python exists, and runs the hook once per agent. Exit 0 only if every asked-for agent is covered and working. |
+| `keyhush guard status [--json]` | Shows where it is installed, checks the hook's Python exists and whether your account can modify it, and runs the hook once per agent. Exit 0 only if every asked-for agent is covered and working. |
 | `keyhush guard test` | Feeds each agent's real hook input format to the installed hook and prints blocked or allowed, per agent and case. |
 | `keyhush guard uninstall [--agent NAME]` | Removes only keyhush's entries. Run it in your own terminal: the guard denies it when an agent tries. |
 
@@ -298,16 +316,21 @@ write to, is left untouched and reported. `uninstall` removes only keyhush's own
 even inside a group you added hooks to.
 
 **Your config file's layout changes.** keyhush writes the file back as standard JSON with
-two-space indentation, so comments, key order quirks and spacing are not kept, and if the file
-had the same key twice only the last one remains. Nothing of yours is lost otherwise, and the
+two-space indentation, so your spacing is not kept, and if the file had the same key twice only
+the last one remains. A file with comments is not valid JSON, so keyhush leaves it untouched and
+says so. Nothing of yours is lost otherwise, and the
 original is in `~/.keyhush/config-backups/` (delete those copies with
 `keyhush backups purge --config --yes`).
 
-**Which Python runs the hook.** `guard install` prefers a system Python (Homebrew,
-`/usr/local/bin`, `/usr/bin`), then the Python your virtual environment was built from, then
-`python3` on your PATH. It skips any Python inside a virtual environment or a temporary folder,
-such as a cloned repo's `.venv`, because deleting that folder would break the guard. If it has no
-other choice it uses one anyway and prints a warning. `--python PATH` picks one yourself.
+**Which Python runs the hook.** `guard install` prefers a Python your user account cannot
+modify: first `/usr/bin/python3` (root-owned; on macOS it is protected by the system), then other
+system Pythons, the Python your virtual environment was built from, and `python3` on your PATH. It
+skips any Python inside a virtual environment or a temporary folder, such as a cloned repo's
+`.venv`, because deleting that folder would break the guard. A Python whose program file or
+standard library your account can write to (python.org and Homebrew installs often are) is used
+only if nothing better exists, with a warning, because an agent allowed to write there could make
+the hook allow everything. `guard status` repeats that warning. `--python PATH` picks one
+yourself.
 
 | Agent | File it edits | Hook | Notes |
 |---|---|---|---|
@@ -386,8 +409,9 @@ keys to third parties), and writing our own rules.
 
 **The hook fails closed.** If the guard cannot read its input or crashes, it denies the call and
 says how to uninstall it. A guard that fails open is skipped exactly when something odd happens.
-Codex lets a tool run on a hook error, so the guard always answers with a proper deny rather than
-crashing. Rejected: fail open with a warning.
+Codex lets a tool run on a hook error or timeout, so the guard answers within about 3 seconds even
+on crafted input (a deadline, then a watchdog) rather than crashing or hanging. Rejected: fail
+open with a warning.
 
 **The guard protects itself.** A guard an agent can edit is not a guard: one `echo` into the
 pattern list, or one line in a settings file, would switch it off. So `~/.keyhush/**` and the hook
@@ -398,11 +422,14 @@ Rejected: trusting the agent's own permission prompt to catch it.
 **A shell wrapper starts the hook.** If the hook's Python disappears (a deleted virtual
 environment, an upgraded Python), most agents treat a hook that cannot start as "no decision" and
 let the call through. On macOS and Linux the hook command is `/bin/sh guard.sh`, which blocks when
-its Python or `guard.py` is missing or fails to load. Rejected: a Python-only wrapper, which cannot
+its Python or `guard.py` is missing or fails to load, or when the hook exits without a reply. It
+also starts Python isolated (`-I -S`, `PYTHON*` variables cleared), so files and variables an
+agent can set cannot change what the hook runs. Rejected: a Python-only wrapper, which cannot
 help when Python itself is gone. Windows has no `/bin/sh`, so there the gap remains (see Limits).
 
-**Allow by saying nothing.** On a harmless call the guard returns no decision, so the agent's own
-permission prompts still run. Returning "allow" would have approved calls the user is normally
+**Allow without a decision.** On a harmless call the guard replies with an empty JSON object, no
+decision, so the agent's own permission prompts still run. Always replying lets the wrapper treat
+silence as a failure. Returning "allow" would have approved calls the user is normally
 asked about. Cursor is the exception: it blocks empty output, so it gets an explicit allow.
 
 **Check every string, not named fields.** Hook input formats differ per agent and change between
@@ -422,7 +449,13 @@ in-place `.bak` files.
 | A grep targets a folder too big to walk in 0.4 seconds | Denies and asks for a narrower path. |
 | An agent config is not valid JSON, too big, read-only, or has an unexpected type | `guard install` leaves that file untouched, reports it, and still installs the others. Exit code 2. |
 | An agent tries to edit `~/.keyhush/`, a hook config file, or run `keyhush guard uninstall` | Denied, with a message to make the change in your own terminal. |
-| An agent writes `disableAllHooks` or `hooks = false` into any settings file | Denied. |
+| An agent edits an agent settings file in a project so that it turns hooks off, or so that it cannot be parsed | Denied. Ordinary edits of project settings are allowed. |
+| An agent writes text containing `disableAllHooks` or `hooks = false` anywhere | Denied. |
+| An agent moves, deletes or changes `~/.claude`, `~/.codex`, `~/.cursor` or `~/.gemini` | Denied; listing and reading them is allowed. |
+| Crafted input that would take long to check | Denied after 2.5 s ("took too long to check"); a watchdog denies at 3 s if the check gets stuck. |
+| A command over 100,000 characters, or a path over 4,096 | Denied as too long to check. |
+| The hook's Python can be modified by your account | `guard install` and `guard status` warn; install prefers a root-owned Python. |
+| An agent config folder is not writable | `guard install` reports "cannot write" for that agent and carries on with the others. |
 | The hook's Python or `guard.py` is deleted (macOS, Linux) | The wrapper blocks every tool call and names the fix; `guard status` shows BROKEN. |
 | The hook's Python is deleted (Windows) | The hook fails to start. Cursor blocks (`failClosed`); Claude Code, Codex and Gemini let the call through. `guard status` shows BROKEN. |
 | `~/.keyhush/secretfiles` is missing | The guard uses its built-in defaults. |
@@ -440,28 +473,45 @@ in-place `.bak` files.
 - **Not live-tested in any agent.** Claude Code, Codex CLI, Cursor and Gemini CLI are all "not
   live-tested" so far. The hooks follow each vendor's documented format and pass `guard test`
   on fixtures.
-- **The guard is a heuristic.** The shell check will miss some tricks. Known misses:
-  - names built at run time, such as `cat $(ls -a | grep env)` or a name decoded from base64;
-  - scripts that open files themselves (`python -c "open('.env')"`);
+- **The guard is a heuristic.** The shell check will miss some tricks. **Known misses:**
+  - names built at run time: `cat $(ls -a | grep env)`, a name decoded from base64, variables
+    whose value comes from command substitution or arithmetic;
+  - commands that dump a whole tree without naming files: `find . -type f -exec cat {} +`,
+    `tar cf - . | tar xOf -`, `zip -r` then `unzip -p`;
+  - scripts and programs that open files on their own (a script file, or code that builds the
+    name); code that names the file literally in the command, such as
+    `python3 -c "open('.env')"`, is caught;
   - a copy of a secret file saved under another name before the guard was installed;
   - values already loaded into the agent's environment, which `env` can print;
+  - deleting or moving your home folder itself (`rm -rf ~`), left to the agent's own prompt;
   - MCP tools, and a user who approves a read the hook did not see.
+- **A Python your account can modify weakens the guard.** If the only usable Python has a
+  program file or standard library your account can write to, an agent allowed to write there
+  can still make the hook allow everything. keyhush warns at install and in `guard status`;
+  prefer a root-owned Python such as `/usr/bin/python3`.
 - **Windows support for the guard is experimental.** Windows path forms (`C:\...`, UNC shares,
   `%USERPROFILE%`, `$env:USERPROFILE`) are handled and tested by feeding them to the parser on
   every platform, but the guard has not yet passed CI on Windows.
 - **Windows: a missing Python fails open.** Windows has no `/bin/sh`, so the hook command runs
   Python directly. If that Python is removed, Claude Code, Codex CLI and Gemini CLI let tool calls
   through (only Cursor blocks). Run `keyhush guard status` after changing Python.
-- **Self-protection covers the user-level hook files and keyhush's folder**, plus any call that
-  writes `disableAllHooks` or `hooks = false`. An agent with another way to change your agent's
-  settings (for example an MCP tool, or a script that edits the file itself) is not stopped.
+- **Self-protection is about known files and settings.** It covers keyhush's folder, the
+  user-level hook files and their folders, your user Python folders, and agent settings files
+  in projects (edits checked by parsing). On Python 3.9 and 3.10, Codex `config.toml` edits are
+  checked by a text pattern instead of a TOML parser. An agent with another way to change your
+  agent's settings (an MCP tool, or a program that edits the file itself) is not stopped.
 - **Cursor:** Cursor's own docs say terminal and MCP protection is not guaranteed. Whether Cursor's
   own approval prompt still appears after the guard's `allow` on a shell command is not documented.
 - **Codex:** the hook does nothing until you trust it with `/hooks`. Codex lets a tool run if a
-  hook errors or times out; keyhush always answers to avoid that.
+  hook errors or times out; keyhush answers within about 3 seconds to avoid that. Codex's hook
+  docs name only `command` for its shell tool; a `workdir` field is checked in case it is sent.
+- **Gemini's `read_many_files`:** its current docs do not describe its parameters or default
+  ignore list, so keyhush walks any folder or `**` glob it is given, whether or not Gemini would
+  skip `.env` on its own.
 - **Grep:** the guard blocks a search over any folder that holds a secret file, including the
   agent's own search tool over your whole project. Narrow the path (for example `src/`) to search.
-- **Hook inputs over 4 MB are blocked** rather than checked. Cursor sends a file's contents with
+- **Over-limit input is denied, not checked:** hook inputs over 4 MB, commands over 100,000
+  characters and paths over 4,096. Cursor sends a file's contents with
   each read, so reading a file over 4 MB in Cursor is blocked.
 - **Paths:** history locations for Codex, Gemini CLI, Cursor and Claude's `history.jsonl` come
   from community sources, not vendor docs. Windows paths are unverified. Windows is tested on

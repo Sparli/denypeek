@@ -6,6 +6,21 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed (security review of the guard, G1 to G14)
+- The hook's Python runs isolated (`-I -S`, `PYTHON*` cleared); the installer prefers a
+  root-owned Python and warns about one the user can modify; user Python folders are protected.
+- The hook answers within about 3 seconds on any input (deadline plus watchdog).
+- Over-long commands and paths are denied, not skipped.
+- Relative names are checked against the tool's working folder.
+- Settings that turn hooks off are found by parsing, in project settings too, including
+  Gemini's `hooksConfig`.
+- `grep -d recurse`, `node_modules` for `grep -r`, line continuations, Gemini `read_many_files`
+  folders and simple same-command variables are handled.
+- Agents cannot move, delete or rewrite `~/.claude`, `~/.codex`, `~/.cursor`, `~/.gemini`.
+- Uninstall removes only keyhush's own hook objects.
+- Install reports an unwritable config folder instead of crashing.
+- CI pins actions to commit SHAs and runs the suite on Python 3.9.
+
 ### Fixed (after QA and security review)
 - The guard protects itself: agents cannot read or change `~/.keyhush/**` or the hook config
   files, run `keyhush guard install|uninstall`, or write `disableAllHooks` / `hooks = false`.

@@ -323,7 +323,8 @@ apply to agent history:
 
 - It asks first (or takes `--yes`) and never runs without confirmation in a non-interactive shell.
 - It backs up each file to `~/.keyhush/backups/<time>-<id>/`. Those folders and files are created
-  owner-only (0700 and 0600), not beside the original.
+  owner-only (0700 and 0600) on macOS and Linux, not beside the original. Windows ignores these
+  modes; there the backups rely on your user folder's permissions.
 - It writes to a temporary file and renames it over the original, so a crash leaves the original
   intact. If the file changed while keyhush worked (an agent writing to it), that file is skipped.
 - It skips files changed in the last 10 minutes unless you pass `--include-active`. It also skips
@@ -403,6 +404,8 @@ in-place `.bak` files.
   win. The example run shows a GitHub token labelled `generic-api-key`. The key is still found.
 - **Speed:** very long history lines packed with key-like words scan slowly, about 7 seconds per
   400 KB in our worst-case test.
+- **Windows file permissions:** keyhush sets owner-only modes on its backups and salt, which
+  Windows ignores. There they are protected only by your user folder's permissions.
 - Secrets with no known shape, and secrets split across messages, are not found.
 - **Redaction changes your history files**, and the backups hold the secrets until you purge them.
 - **A found key must be rotated**, whether or not you redact it. It may already have been sent to

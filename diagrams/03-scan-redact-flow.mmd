@@ -1,0 +1,35 @@
+flowchart TD
+    subgraph SC["keyhush scan (read only)"]
+        S1["Find history files<br/>symlinked folders not followed"] --> S2{"Symlink leading outside<br/>the history folders?"}
+        S2 -->|yes| SN["Listed as skipped"]
+        S2 -->|no| S3["Read: JSONL split on newline only,<br/>JSON whole, SQLite known tables"]
+        S3 -->|"bad UTF-8, broken JSON,<br/>no permission"| SI["Listed as NOT fully checked"]
+        S3 --> S4["Rules: keyword prefilter, regex,<br/>entropy, allowlists, dedupe"]
+        S4 --> S5["Finding: rule, file, line,<br/>first 4 chars, length,<br/>HMAC fingerprint"]
+        S5 & SI --> S6{"Exit code"}
+        S6 -->|"anything unread"| X2["2"]
+        S6 -->|findings| X1["1"]
+        S6 -->|clean| X0["0, plus: not proof<br/>the machine is clean"]
+    end
+
+    subgraph RD["keyhush redact (JSONL and JSON only)"]
+        R0{"--yes, or yes<br/>at the prompt?"} -->|no| RX["Nothing changed"]
+        R0 -->|yes| R1["Scan JSONL and JSON"]
+        R1 --> R2{"Skip the file?<br/>outside history folders,<br/>hard links, changed in<br/>last 10 min, unreadable"}
+        R2 -->|yes| RS["Listed as skipped"]
+        R2 -->|no| R3["Replace each secret with<br/>[REDACTED:rule:fingerprint];<br/>a line that would stop being<br/>valid JSON is left alone"]
+        R3 --> R4[("Backup copy to<br/>~/.keyhush/backups/")]
+        R4 --> R5{"File changed while<br/>we worked?"}
+        R5 -->|yes| RS
+        R5 -->|no| R6["Temp file, fsync, rename<br/>over the original"]
+        R6 --> R7["Rescan the changed files"]
+        R7 --> R8["Report: verified or leftovers,<br/>keys to rotate, backup warning"]
+    end
+
+    subgraph UN["keyhush undo"]
+        U1["Latest backup set"] --> U2{"File exactly as redact<br/>left it, and backup<br/>copy intact?"}
+        U2 -->|no| US["Not restored, listed"]
+        U2 -->|yes| U3["Atomic write of the<br/>backup copy: byte-identical"]
+    end
+    R4 -.-> U1
+    R8 -.->|"backups hold the keys"| PG["keyhush backups purge --yes"]

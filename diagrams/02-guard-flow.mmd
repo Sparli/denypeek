@@ -1,0 +1,31 @@
+flowchart TD
+    T(["Agent wants to use a tool<br/>read, edit, write, search, shell"]) --> EV
+    subgraph EV["Agent hook event"]
+        E1["Claude Code: PreToolUse"]
+        E2["Codex CLI: PreToolUse<br/>Bash, apply_patch"]
+        E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
+        E4["Gemini CLI: BeforeTool"]
+    end
+    EV -->|"JSON on stdin"| G["guard.py --agent NAME"]
+    G --> V{"Input usable?<br/>known agent, not empty,<br/>4 MB or less, a JSON object"}
+    V -->|no, or any error| FC["Fail closed: deny, exit 2,<br/>message names guard uninstall"]
+    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults"]
+    P --> S["Walk every string in tool_input"]
+    S --> K{"Kind of string"}
+    K -->|"command field"| SH["Shell check: undo quotes, ~, $HOME,<br/>$IFS, redirections, globs;<br/>recurse into bash -c and eval"]
+    K -->|"command field,<br/>apply_patch"| AP["Read the file names<br/>in the patch headers"]
+    K -->|"single-line string"| PT["Path check, also on<br/>the symlink target"]
+    SH --> GR{"Recursive grep, rg,<br/>ag, ack or git grep?"}
+    GR -->|yes| W["Walk the target folder<br/>for a secret file"]
+    K -->|"Grep tool path,<br/>or no path"| W
+    W -->|"too big to walk in time"| DENY
+    SH -->|"names a secret file"| DENY
+    AP -->|"edits a secret file"| DENY
+    PT -->|"matches the list"| DENY
+    W -->|"holds a secret file"| DENY
+    SH & AP & PT & W & GR -->|"nothing found"| ALLOW
+    DENY["Deny in the agent's own format"] --> D1["Claude, Codex:<br/>permissionDecision deny"]
+    DENY --> D2["Cursor: permission deny"]
+    DENY --> D3["Gemini: decision deny"]
+    ALLOW["Allow without approving"] --> A1["Claude, Codex, Gemini:<br/>no output, exit 0"]
+    ALLOW --> A2["Cursor: permission allow<br/>(Cursor blocks empty output)"]

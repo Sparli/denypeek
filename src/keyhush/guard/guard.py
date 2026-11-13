@@ -626,11 +626,16 @@ def _path_hits(token, cwd, rules):
     return found
 
 
-def folder_holds_secret(folder, rules, deadline):
-    """True if the folder (recursively) holds a secret file. Raises TimeoutError if too big."""
+def folder_holds_secret(folder, rules, deadline, honours_ignores=True):
+    """True if the folder (recursively) holds a secret file. Raises TimeoutError if too big.
+
+    `honours_ignores`: the search tool skips gitignored folders such as node_modules (ripgrep,
+    ag, git grep and the agents' search tools do; grep -r does not), so the walk may skip them.
+    """
+    skip = {".git", "__pycache__"} | ({"node_modules"} if honours_ignores else set())
     seen = 0
     for dirpath, dirnames, filenames in os.walk(folder):
-        dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules", "__pycache__")]
+        dirnames[:] = [d for d in dirnames if d not in skip]
         for name in filenames + dirnames:
             seen += 1
             if seen > WALK_LIMIT or time.monotonic() > deadline:
@@ -719,22 +724,40 @@ def grep_targets(part, cwd):
         prog, args = "git-grep", args[1:]
     if prog not in GREP_NAMES and prog != "git-grep":
         return []
-    recursive = prog in ("rg", "ag", "ack", "git-grep") or any(
-        a in ("-r", "-R", "--recursive", "--dereference-recursive")
-        or (a.startswith("-") and not a.startswith("--") and ("r" in a[1:] or "R" in a[1:]))
-        for a in args
+    # grep -d recurse / --directories=recurse read the whole tree too (G6)
+    dir_recurse = any(a in ("--directories=recurse", "-drecurse") for a in args) or any(
+        a == "-d" and i + 1 < len(args) and args[i + 1] == "recurse" for i, a in enumerate(args)
+    )
+    recursive = (
+        dir_recurse
+        or prog in ("rg", "ag", "ack", "git-grep")
+        or any(
+            a in ("-r", "-R", "--recursive", "--dereference-recursive")
+            or (a.startswith("-") and not a.startswith("--") and ("r" in a[1:] or "R" in a[1:]))
+            for a in args
+        )
     )
     if not recursive:
         return []
-    positional = [a for a in args if not a.startswith("-")]
+    cleaned, skip_next = [], False
+    for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in ("-d", "-e", "-f", "--regexp", "--file", "--include", "--exclude", "-g", "-t"):
+            skip_next = True  # the next word is this option's value
+            continue
+        cleaned.append(a)
+    positional = [a for a in cleaned if not a.startswith("-")]
     paths = positional[1:] if prog not in ("git-grep",) else positional[1:]
     if not paths:
         paths = ["."]
+    honours_ignores = prog in ("rg", "ag", "git-grep")
     out = []
     for p in paths:
         full = expand(p, cwd)
         if full and os.path.isdir(full):
-            out.append(full)
+            out.append((full, honours_ignores))
     return out
 
 
@@ -789,9 +812,9 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=()):
             if hits:
                 return reason_for(hits[0], "names")
     for part in parts:
-        for folder in grep_targets(part, cwd):
+        for folder, honours_ignores in grep_targets(part, cwd):
             try:
-                if folder_holds_secret(folder, rules, deadline):
+                if folder_holds_secret(folder, rules, deadline, honours_ignores):
                     return f"recursive search over {folder}, which holds a secret file"
             except TimeoutError:
                 return f"recursive search over {folder}: too many files to check; narrow the path"

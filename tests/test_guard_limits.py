@@ -9,6 +9,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from keyhush.guard import blocked
 
 GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
@@ -121,3 +123,36 @@ def test_g4_workdir_does_not_block_normal_commands(tmp_path):
     }
     proc, _ = run("codex", payload, tmp_path)
     assert not blocked("codex", proc.stdout.decode(), proc.returncode)
+
+
+# --- G6: recursive reads ----------------------------------------------------------------
+
+
+def g6_project(tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "node_modules" / "pkg").mkdir(parents=True)
+    (proj / "node_modules" / "pkg" / ".env").write_text("PLACEHOLDER=1\n")
+    (proj / "src").mkdir()
+    return proj
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "grep -d recurse KEY .",
+        "grep --directories=recurse KEY .",
+        "grep -r KEY .",
+        "grep -rn KEY node_modules",
+    ],
+)
+def test_g6_recursive_grep_forms_see_node_modules(command, tmp_path):
+    proj = g6_project(tmp_path)
+    proc, _ = run("claude", bash(command, proj), proj)
+    assert blocked("claude", proc.stdout.decode(), proc.returncode), command
+
+
+@pytest.mark.parametrize("command", ["rg KEY .", "git grep KEY", "grep -r KEY src"])
+def test_g6_tools_that_skip_node_modules_are_allowed(command, tmp_path):
+    proj = g6_project(tmp_path)
+    proc, _ = run("claude", bash(command, proj), proj)
+    assert not blocked("claude", proc.stdout.decode(), proc.returncode), command

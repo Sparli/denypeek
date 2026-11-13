@@ -213,11 +213,40 @@ def protected_paths():
             pass
     kdir = os.path.join(home, ".keyhush")
     dirs = {_norm(os.path.normpath(kdir))}
+    # Per-user Python folders: a usercustomize.py, sitecustomize.py or .pth file there runs
+    # before any script in Pythons that load the user site (G1).
+    for d in python_user_dirs(home):
+        dirs.add(_norm(os.path.normpath(d)))
     try:
         dirs.add(_norm(os.path.realpath(kdir)))
     except (OSError, ValueError):
         pass
     return dirs, norm
+
+
+def python_user_dirs(home):
+    """User site folders for every Python version: macOS framework, POSIX and Windows."""
+    out = [os.path.join(home, "Library", "Python")]
+    local_lib = os.path.join(home, ".local", "lib")
+    try:
+        out += [
+            os.path.join(local_lib, n)
+            for n in os.listdir(local_lib)
+            if n.lower().startswith("python")
+        ]
+    except OSError:
+        pass
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        out.append(os.path.join(appdata, "Python"))
+    return out
+
+
+def _python_user_file(path):
+    """True for ~/.local/lib/pythonX.Y/... even if that folder does not exist yet."""
+    p = _norm(path)
+    home = _norm(home_dir()).rstrip("/")
+    return bool(re.match(re.escape(home) + r"/\.local/lib/python[0-9.]*(?:/|$)", p))
 
 
 def is_protected(path):
@@ -228,7 +257,7 @@ def is_protected(path):
     except (OSError, ValueError):
         pass
     for cand in candidates:
-        if cand in files:
+        if cand in files or _python_user_file(cand):
             return True
         if any(cand == d or cand.startswith(d + "/") for d in dirs):
             return True
@@ -618,7 +647,9 @@ def allow_output(agent):
     """Allow without approving: defer to the agent's own permission prompts."""
     if agent == "cursor":
         return json.dumps({"permission": "allow"}), 0  # Cursor blocks on empty output
-    return "", 0
+    # An empty JSON object: no decision, so the agent's own prompts still apply. Always
+    # answering lets the wrapper treat a silent exit as a failure (G1).
+    return "{}", 0
 
 
 def fail_closed(agent, why):

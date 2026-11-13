@@ -74,7 +74,8 @@ def test_a13_allows_harmless_calls_without_approving_them(agent, project, isolat
         if agent == "cursor":
             assert json.loads(out) == {"permission": "allow"}  # Cursor needs an explicit answer
         else:
-            assert out == ""  # no "allow": the agent's own permission prompts still apply
+            # an empty object, no "allow": the agent's own permission prompts still apply
+            assert json.loads(out) == {}
 
 
 @pytest.mark.parametrize("agent", AGENTS)

@@ -49,21 +49,31 @@ USE_WRAPPER = os.name == "posix"  # /bin/sh exists on macOS and Linux, not on Wi
 
 WRAPPER = """#!/bin/sh
 # keyhush guard wrapper, written by `keyhush guard install`.
-# If the hook's Python or guard.py is missing, or Python fails to start or load the hook,
-# exit 2: every supported agent reads exit code 2 as "block this tool call".
+# Exit 2 means "block this tool call" to every supported agent. It is used if the hook's Python
+# or guard.py is missing, if Python fails, or if the hook gives no answer.
 PY={py}
 GUARD={guard}
+# Nothing from the environment may change what Python loads (G1).
+unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE PYTHONINSPECT PYTHONEXECUTABLE \
+  PYTHONWARNINGS PYTHONSAFEPATH PYTHONPLATLIBDIR PYTHONNOUSERSITE
 if [ ! -x "$PY" ] || [ ! -f "$GUARD" ]; then
   echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \
 Fix it in your own terminal: keyhush guard status (or keyhush guard uninstall)." >&2
   exit 2
 fi
-"$PY" "$GUARD" "$@"
+# -I: isolated (ignores PYTHON* variables, the user site folder and the script's folder).
+# -S: no site module, so no site-packages and no .pth files. The hook needs only the stdlib.
+OUT=$("$PY" -I -S "$GUARD" "$@")
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
   echo "keyhush guard failed (exit $rc). Blocked to be safe. Run: keyhush guard status" >&2
   exit 2
 fi
+if [ "$rc" -eq 0 ] && [ -z "$OUT" ]; then
+  echo "keyhush guard gave no answer. Blocked to be safe. Run: keyhush guard status" >&2
+  exit 2
+fi
+printf '%s\n' "$OUT"
 exit "$rc"
 """
 
@@ -118,7 +128,8 @@ def _temporary(path: str) -> bool:
     ) or p.startswith(tmp)
 
 
-SYSTEM_PYTHONS = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+# Root-owned system Python first: its files cannot be changed without admin rights.
+SYSTEM_PYTHONS = ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
 
 
 def in_virtualenv(path: str) -> Optional[Path]:
@@ -145,6 +156,28 @@ def _works(python: str) -> bool:
     return proc.returncode == 0
 
 
+WRITABLE_CHECK = (
+    "import json, os, sys, sysconfig\n"
+    "paths = [os.path.realpath(sys.executable), sysconfig.get_paths()['stdlib']]\n"
+    "print(json.dumps([p for p in paths if os.access(p, os.W_OK)]))\n"
+)
+
+
+def writable_parts(python: str) -> list[str]:
+    """The interpreter file or stdlib folder of this Python that the current user can write.
+
+    If an agent can write there, it can make the hook run its code (G1). A system Python such
+    as /usr/bin/python3 on macOS is root-owned; python.org and Homebrew Pythons often are not.
+    """
+    try:
+        proc = subprocess.run(
+            [python, "-I", "-S", "-c", WRITABLE_CHECK], capture_output=True, text=True, timeout=15
+        )
+        return list(json.loads(proc.stdout or "[]"))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return []
+
+
 def _fragile(python: str) -> Optional[str]:
     """Why this Python may disappear (a virtualenv or a temporary folder), or None."""
     venv = in_virtualenv(python)
@@ -164,13 +197,18 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
     """
     if explicit:
         why = _fragile(explicit)
-        return explicit, (f"the hook's Python {explicit} may disappear: {why}" if why else None)
+        if why:
+            return explicit, f"the hook's Python {explicit} may disappear: {why}"
+        return explicit, _writable_warning(explicit)
     base = getattr(sys, "_base_executable", None) or ""
     candidates = (SYSTEM_PYTHONS if os.name == "posix" else []) + [base]
     candidates += [shutil.which(n) or "" for n in ("python3", "python")]
-    for c in candidates:
-        if c and not _fragile(c) and _works(c):
+    usable = [c for c in dict.fromkeys(candidates) if c and not _fragile(c) and _works(c)]
+    for c in usable:  # first choice: one the user cannot modify
+        if not writable_parts(c):
             return c, None
+    if usable:
+        return usable[0], _writable_warning(usable[0])
     if sys.executable and _works(sys.executable):
         why = _fragile(sys.executable) or "no system Python was found"
         return sys.executable, (
@@ -181,10 +219,21 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
     raise ConfigError("no working Python 3.9+ found; pass --python /path/to/python3")
 
 
+def _writable_warning(python: str) -> Optional[str]:
+    parts = writable_parts(python)
+    if not parts:
+        return None
+    return (
+        f"the hook's Python can be modified by your user account ({', '.join(parts)}). An agent "
+        "allowed to write there could make the hook allow everything. Prefer a root-owned "
+        "Python, for example --python /usr/bin/python3 on macOS."
+    )
+
+
 def hook_command(python: str, home: Home, agent: str) -> str:
     if USE_WRAPPER:
         return f'/bin/sh "{wrapper_path(home)}" --agent {agent}'
-    return f'"{python}" "{guard_path(home)}" --agent {agent}'
+    return f'"{python}" -I -S "{guard_path(home)}" --agent {agent}'
 
 
 def hook_python(command: str, home: Home) -> Optional[str]:

@@ -274,6 +274,15 @@ def cmd_guard_status(args) -> int:
         if info["guard_present"] and not info["guard_current"]:
             guard_state = "present but out of date: run keyhush guard install"
         print(f"  Hook script: {guard_state}")
+        if info.get("python"):
+            print(f"  Hook Python: {info['python']}")
+        if info.get("python_writable"):
+            print(
+                "  WARNING: your user account can modify the hook's Python "
+                f"({', '.join(info['python_writable'])}). An agent allowed to write there could "
+                "make the hook allow everything. Reinstall with a root-owned Python, for "
+                "example: keyhush guard install --python /usr/bin/python3"
+            )
         print(f"  Patterns:    {'present' if info['patterns_present'] else 'defaults (no file)'}")
     all_ok = (
         all(r.installed and r.health is None for r in rows)

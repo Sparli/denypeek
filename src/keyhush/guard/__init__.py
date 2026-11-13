@@ -33,6 +33,7 @@ from .install_base import (
     state_path,
     uninstall,
     wrapper_path,
+    writable_parts,
     write_wrapper,
 )
 from .patterns import ensure_patterns, patterns_path
@@ -115,10 +116,23 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
         ok, err = installed(spec, home)
         health = hook_health(spec, home) if ok else None
         rows.append(Status(spec.name, spec.label, spec.config(home), ok, err, spec.notes, health))
+    python = None
+    for spec in pick(agents):
+        commands = ours_commands(spec, home)
+        if commands:
+            python = hook_python(commands[0], home)
+            break
     info = {
+        "python": python,
+        "python_writable": writable_parts(python) if python and os.path.exists(python) else [],
         "guard": str(guard_path(home)),
         "guard_present": guard_path(home).exists(),
-        "guard_current": _digest(guard_path(home)) == _digest(GUARD_SOURCE),
+        "guard_current": _digest(guard_path(home)) == _digest(GUARD_SOURCE)
+        and (
+            not USE_WRAPPER
+            or not wrapper_path(home).exists()
+            or "-I -S" in wrapper_path(home).read_text(encoding="utf-8")
+        ),
         "patterns": str(patterns_path(home)),
         "patterns_present": patterns_path(home).exists(),
     }

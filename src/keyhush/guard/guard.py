@@ -748,7 +748,7 @@ def _ansi_c(match):
     return shlex.quote(decoded)
 
 
-def split_tokens(command):
+def split_tokens(command, _resolve=True):
     """Shell-ish tokens. Splits on operators, quotes and $IFS tricks. Never runs anything."""
     text = unicodedata.normalize("NFC", command)
     # A backslash before a line break joins the lines: `cat .e\\<newline>nv` is `cat .env` (G7)
@@ -770,7 +770,41 @@ def split_tokens(command):
                 tokens.append(w.split("=", 1)[1])
             if ":" in w:  # git show HEAD:.env, .env::$DATA, host:path
                 tokens += [x for x in w.split(":") if x]
+    if _resolve:
+        resolved = substitute_variables(command)
+        if resolved != command:
+            more, more_parts = split_tokens(resolved, _resolve=False)
+            return tokens + more, [t for t in SHELL_OPERATORS.split(text)] + more_parts
     return tokens, [t for t in SHELL_OPERATORS.split(text)]
+
+
+ASSIGNMENT = re.compile(
+    r"(?:^|[\s;&|(])(?:export[ \t]+|local[ \t]+|readonly[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)="
+    r"('[^']*'|\"[^\"]*\"|[^\s;&|)]*)"
+)
+
+
+def substitute_variables(command):
+    """`a=.e; cat ${a}nv` -> `a=.e; cat .env`: variables assigned in the same command, simple
+    cases only (no arithmetic, arrays or command substitution in the value)."""
+    values = {}
+    for name, value in ASSIGNMENT.findall(command):
+        if len(values) >= 200:
+            break
+        if value[:1] in ("'", '"') and value[-1:] == value[:1]:
+            value = value[1:-1]
+        values[name] = value
+    if not values:
+        return command
+    text = command
+    for _ in range(3):
+        before = text
+        for name, value in values.items():
+            text = text.replace("${" + name + "}", value)
+            text = re.sub(r"\$" + name + r"(?![A-Za-z0-9_])", lambda _m, v=value: v, text)
+        if text == before:
+            break
+    return text
 
 
 def grep_targets(part, cwd):

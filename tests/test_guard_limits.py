@@ -193,3 +193,19 @@ def test_g8_read_many_files_without_secrets_is_allowed(tmp_path):
     (tmp_path / ".env").write_text("PLACEHOLDER=1\n")
     proc, _ = run("gemini", gemini_many(["src/**/*.py", "README.md"], tmp_path), tmp_path)
     assert not blocked("gemini", proc.stdout.decode(), proc.returncode)
+
+
+# --- variable concatenation (G9 known miss, now handled for simple assignments) ----------
+
+
+@pytest.mark.parametrize("command", ["a=.e; cat ${a}nv", "a=.e && cat $a'nv'",
+                                     "export F=.env; cat $F", "d=~/.ssh; cat $d/id_rsa",
+                                     "x=.e y=nv; cat ${x}${y}"])
+def test_simple_variable_assignments_are_resolved(command, tmp_path, isolated):
+    proc, _ = run("claude", bash(command, tmp_path), tmp_path)
+    assert blocked("claude", proc.stdout.decode(), proc.returncode), command
+
+
+def test_variables_do_not_block_normal_commands(tmp_path):
+    proc, _ = run("claude", bash("name=world; echo hello $name", tmp_path), tmp_path)
+    assert not blocked("claude", proc.stdout.decode(), proc.returncode)

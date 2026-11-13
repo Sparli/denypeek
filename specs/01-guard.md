@@ -16,8 +16,12 @@ not only the agent's file tool.
 
 ## How it starts
 On macOS and Linux each agent runs `/bin/sh ~/.keyhush/guard.sh --agent NAME`. The wrapper holds
-the absolute path of the hook's Python, clears `PYTHONPATH` and the other `PYTHON*` variables,
-and runs `python -I -S guard.py` (isolated mode and no site module: no site-packages, `.pth`
+the absolute path of the hook's Python and the home folder at install time, and starts
+`/usr/bin/env -i HOME=<home> PATH=/usr/bin:/bin python -I -S guard.py --home <home>` (R1: no
+variable an agent can set reaches the hook; only CLAUDE_CONFIG_DIR and CODEX_HOME pass, and they
+can only add protected folders). guard.py takes its home folder from --home or the account
+record (pwd), never from HOME. On macOS the installer writes the root-owned interpreter behind
+the /usr/bin/python3 xcrun launcher, which honours DEVELOPER_DIR. Python runs (isolated mode and no site module: no site-packages, `.pth`
 files, user site or script-folder imports; both flags exist on 3.9). It exits 2 (block, for all
 four agents) if that Python or `guard.py` is missing, if Python exits with anything but 0 or 2,
 or if it exits 0 without a reply (the guard always replies, `{}` on allow). On Windows the
@@ -54,7 +58,10 @@ covers a check stuck inside C code (G2).
   (G1). Agent settings files at any depth (G5): an edit or write is checked by parsing the file it
   would produce (JSON, comments stripped for Gemini; TOML via tomllib, or a text pattern on 3.9
   and 3.10) and denied if it turns hooks off or cannot be parsed; Codex patches may add but not
-  update them; shell commands may only read them. Any text containing `disableAllHooks` or a
+  update them; shell commands may only read them, and a command that is not read-only may not
+  use a project `.claude`, `.codex`, `.gemini` or `.cursor` folder itself as source or target
+  (R2; `git` is read-only only for status, log, diff, show, grep...). Edits that set
+  hook-relevant `env` variables are denied. The text check also runs on JSON-unescaped text. Any text containing `disableAllHooks` or a
   `hooks = false` line is also denied.
 - **Shell normalisation (A18):** quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`, `$IFS`,
   `{a,b}` braces, redirections, globs (hidden files too), words after `:`, `=` and `@`, folders
@@ -65,9 +72,16 @@ covers a check stuck inside C code (G2).
 - **Recursive reads (G6, G8):** `grep -r`, `-d recurse`, `--directories=recurse`, `rg`, `ag`,
   `ack`, `git grep`, the search tools and Gemini `read_many_files` folders or `**` globs trigger a
   folder walk; `node_modules` is walked for `grep -r` and skipped for tools that honour ignores.
+- **Agent folders (R3):** words are expanded (braces, globs) before the agent-folder check;
+  `find -delete/-exec` starting at the home folder or above an agent folder is denied.
+- **Variables (R4):** substitution stops and the call is denied once the text would pass
+  100,000 characters, checked before any large string is built.
 - **Known misses:** names built at run time (`$(ls | grep env)`, base64, command substitution in
   a variable), whole-tree dumps (`find -exec cat`, `tar`), programs that open files on their own,
-  copies under other names, values already in the environment, `rm -rf ~`, MCP tools.
+  copies under other names, values already in the environment, `rm -rf ~`, MCP tools; variables
+  set by `for`, `printf -v`, `set --` or `read` (R5); project settings written without naming
+  the folder (`tar xf` in the project root, `git checkout .`, a program). Windows: no wrapper,
+  so a missing Python fails open and the home folder comes from USERPROFILE.
 
 ## Config edits
 Back up first, merge without touching other keys, write atomically, recognise our entries by the

@@ -51,8 +51,29 @@ def seed(home: Path) -> dict[Path, dict]:
 
 
 def count_ours(obj) -> int:
+    """Hook entries pointing at keyhush: guard.sh (macOS, Linux) or guard.py (Windows)."""
     text = json.dumps(obj)
-    return text.count(".keyhush/guard.py") + text.count(".keyhush\\\\guard.py")
+    return sum(
+        text.count(f".keyhush{sep}guard.{ext}") for sep in ("/", "\\\\") for ext in ("py", "sh")
+    )
+
+
+def our_commands(obj) -> list[str]:
+    found = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k == "command" and isinstance(x, str) and "keyhush" in x:
+                    found.append(x)
+                else:
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+
+    walk(obj)
+    return found
 
 
 def test_a10_install_twice_keeps_other_settings(isolated):
@@ -70,6 +91,9 @@ def test_a10_install_twice_keeps_other_settings(isolated):
     pre = claude["hooks"]["PreToolUse"]
     assert pre[0]["hooks"][0]["command"] == "echo mine" and len(pre) == 2
     assert count_ours(claude) == 1
+    for command in our_commands(claude):  # absolute, quoted path to the hook
+        quoted = command.split('"')[1]
+        assert Path(quoted).is_absolute() and Path(quoted).exists(), command
 
     codex = json.loads((home / ".codex/hooks.json").read_text())
     assert codex["description"] == "my hooks" and count_ours(codex) == 1

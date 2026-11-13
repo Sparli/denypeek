@@ -163,7 +163,7 @@ def cmd_guard_install(args) -> int:
     from .guard import SPECS, do_install
 
     home = _home(args)
-    changes = do_install(home, args.agent, args.python)
+    changes, warning = do_install(home, args.agent, args.python)
     print("keyhush guard installed:")
     for c in changes:
         if c.error:
@@ -174,6 +174,8 @@ def cmd_guard_install(args) -> int:
         for note in SPECS[c.agent].notes:
             print(f"      note: {note}")
     print(f"Secret-file patterns: {home.display(home.keyhush_dir / 'secretfiles')}")
+    if warning:
+        print(f"WARNING: {warning}")
     print("Restart open agent sessions, then check it works: keyhush guard test")
     return _guard_errors(changes)
 
@@ -207,6 +209,8 @@ def cmd_guard_status(args) -> int:
                             "agent": r.agent,
                             "config": str(r.config),
                             "installed": r.installed,
+                            "working": r.installed and r.health is None,
+                            "problem": r.health,
                             "error": r.error,
                             "notes": r.notes,
                         }
@@ -224,7 +228,11 @@ def cmd_guard_status(args) -> int:
                 if r.installed
                 else ("ERROR: " + r.error if r.error else "not installed")
             )
+            if r.installed and r.health:
+                state = "BROKEN"
             print(f"  {r.label:<12} {state:<14} {home.display(r.config)}")
+            if r.health:
+                print(f"      PROBLEM: {r.health}. Until fixed, this agent may not be protected.")
             if r.installed:
                 for note in r.notes:
                     print(f"      note: {note}")
@@ -233,7 +241,11 @@ def cmd_guard_status(args) -> int:
             guard_state = "present but out of date: run keyhush guard install"
         print(f"  Hook script: {guard_state}")
         print(f"  Patterns:    {'present' if info['patterns_present'] else 'defaults (no file)'}")
-    all_ok = all(r.installed for r in rows) and info["guard_present"] and info["guard_current"]
+    all_ok = (
+        all(r.installed and r.health is None for r in rows)
+        and info["guard_present"]
+        and info["guard_current"]
+    )
     return 0 if all_ok else 1
 
 

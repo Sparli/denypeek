@@ -284,7 +284,7 @@ def expand_braces(word, limit=256):
         return [word]
     out = []
     for alt in m.group(1).split(","):
-        for w in expand_braces(word[: m.start()] + alt + word[m.end():], limit):
+        for w in expand_braces(word[: m.start()] + alt + word[m.end() :], limit):
             out.append(w)
             if len(out) >= limit:
                 return out

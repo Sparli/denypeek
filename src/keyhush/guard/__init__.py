@@ -18,10 +18,12 @@ from ..fsutil import atomic_write, ensure_private_dir
 from ..sources import Home
 from . import install_claude, install_codex, install_cursor, install_gemini
 from .install_base import (
+    USE_WRAPPER,
     Change,
     ConfigError,
     guard_path,
     hook_command,
+    hook_python,
     install,
     installed,
     load_state,
@@ -29,6 +31,8 @@ from .install_base import (
     save_state,
     stable_python,
     uninstall,
+    wrapper_path,
+    write_wrapper,
 )
 from .patterns import ensure_patterns, patterns_path
 
@@ -59,16 +63,19 @@ def copy_guard(home: Home) -> None:
     atomic_write(guard_path(home), GUARD_SOURCE.read_bytes(), mode=0o600)
 
 
-def do_install(home: Home, agents=None, python: Optional[str] = None) -> list[Change]:
-    py = stable_python(python)
+def do_install(home: Home, agents=None, python: Optional[str] = None):
+    """Returns (changes, warning about the chosen Python or None)."""
+    py, warning = stable_python(python)
     copy_guard(home)
+    if USE_WRAPPER:
+        write_wrapper(home, py)
     ensure_patterns(home)
     state = load_state(home)
     changes = [
         install(spec, home, hook_command(py, home, spec.name), state) for spec in pick(agents)
     ]
     save_state(home, state)
-    return changes
+    return changes, warning
 
 
 def do_uninstall(home: Home, agents=None) -> list[Change]:
@@ -76,10 +83,11 @@ def do_uninstall(home: Home, agents=None) -> list[Change]:
     changes = [uninstall(spec, home, state) for spec in pick(agents)]
     save_state(home, state)
     if not any(installed(s, home)[0] for s in SPECS.values()):
-        try:
-            os.remove(guard_path(home))
-        except FileNotFoundError:
-            pass
+        for path in (guard_path(home), wrapper_path(home)):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
     return changes
 
 
@@ -91,13 +99,15 @@ class Status:
     installed: bool
     error: Optional[str]
     notes: list
+    health: Optional[str] = None  # None if the hook runs and blocks; else why not
 
 
 def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
     rows = []
     for spec in pick(agents):
         ok, err = installed(spec, home)
-        rows.append(Status(spec.name, spec.label, spec.config(home), ok, err, spec.notes))
+        health = hook_health(spec, home) if ok else None
+        rows.append(Status(spec.name, spec.label, spec.config(home), ok, err, spec.notes, health))
     info = {
         "guard": str(guard_path(home)),
         "guard_present": guard_path(home).exists(),
@@ -286,3 +296,44 @@ def do_test(home: Home, agents=None) -> list[TestRow]:
     finally:
         shutil.rmtree(proj, ignore_errors=True)
     return rows
+
+
+def hook_health(spec, home: Home) -> Optional[str]:
+    """Run the installed hook once on a deny case and an allow case. None means healthy."""
+    commands = ours_commands(spec, home)
+    if not commands:
+        return "no keyhush hook command found"
+    python = hook_python(commands[0], home)
+    if not python or not os.path.exists(python):
+        return f"the hook's Python is missing ({python or 'unknown'}); run keyhush guard install"
+    proj = Path(tempfile.mkdtemp(prefix="keyhush-status-"))
+    try:
+        (proj / "src").mkdir()
+        (proj / "src" / "app.py").write_text("x\n")
+        (proj / ".env").write_text("PLACEHOLDER=1\n")
+        (proj / ".env.example").write_text("PLACEHOLDER=1\n")
+        (proj / ".dev.vars").write_text("PLACEHOLDER=1\n")
+        cases = sample_inputs(spec.name, proj, home)
+        env = {**os.environ, "HOME": str(home.root), "USERPROFILE": str(home.root)}
+        for case, want in (("cat .env", True), ("ls", False)):
+            try:
+                proc = subprocess.run(
+                    _argv(commands[0]),
+                    input=json.dumps(cases[case]).encode(),
+                    capture_output=True,
+                    timeout=15,
+                    cwd=str(proj),
+                    env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return f"the hook command does not run ({type(exc).__name__})"
+            if want and not blocked(
+                spec.name, proc.stdout.decode(errors="replace"), proc.returncode
+            ):
+                return "the hook ran but did not block a .env read"
+            if not want and proc.returncode not in (0,):
+                msg = proc.stderr.decode(errors="replace").strip().splitlines()[-1:] or [""]
+                return f"the hook fails on a harmless call (exit {proc.returncode}): {msg[0]}"
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+    return None

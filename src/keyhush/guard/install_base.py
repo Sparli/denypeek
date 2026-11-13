@@ -11,7 +11,9 @@ import copy
 import datetime as _dt
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -31,11 +33,59 @@ class ConfigError(Exception):
 
 def is_ours(command: str) -> bool:
     c = command.replace("\\", "/")
-    return MARKER in c and "guard.py" in c
+    return MARKER in c and ("guard.py" in c or "guard.sh" in c)
 
 
 def guard_path(home: Home) -> Path:
     return home.keyhush_dir / "guard.py"
+
+
+def wrapper_path(home: Home) -> Path:
+    return home.keyhush_dir / "guard.sh"
+
+
+USE_WRAPPER = os.name == "posix"  # /bin/sh exists on macOS and Linux, not on Windows
+
+WRAPPER = """#!/bin/sh
+# keyhush guard wrapper, written by `keyhush guard install`.
+# If the hook's Python or guard.py is missing, or Python fails to start or load the hook,
+# exit 2: every supported agent reads exit code 2 as "block this tool call".
+PY={py}
+GUARD={guard}
+if [ ! -x "$PY" ] || [ ! -f "$GUARD" ]; then
+  echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \
+Fix it in your own terminal: keyhush guard status (or keyhush guard uninstall)." >&2
+  exit 2
+fi
+"$PY" "$GUARD" "$@"
+rc=$?
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  echo "keyhush guard failed (exit $rc). Blocked to be safe. Run: keyhush guard status" >&2
+  exit 2
+fi
+exit "$rc"
+"""
+
+
+def _sh_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def write_wrapper(home: Home, python: str) -> None:
+    text = WRAPPER.format(py=_sh_quote(python), guard=_sh_quote(str(guard_path(home))))
+    atomic_write(wrapper_path(home), text.encode(), mode=0o600)
+
+
+def wrapper_python(home: Home) -> Optional[str]:
+    """The Python path written into guard.sh, if any."""
+    try:
+        for line in wrapper_path(home).read_text(encoding="utf-8").splitlines():
+            if line.startswith("PY="):
+                v = line[3:]
+                return v[1:-1].replace("'\\''", "'") if v.startswith("'") else v
+    except OSError:
+        pass
+    return None
 
 
 def state_path(home: Home) -> Path:
@@ -67,19 +117,84 @@ def _temporary(path: str) -> bool:
     ) or p.startswith(tmp)
 
 
-def stable_python(explicit: Optional[str] = None) -> str:
-    """A Python that will still exist tomorrow: never the temporary one `uvx` runs in."""
+SYSTEM_PYTHONS = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+
+
+def in_virtualenv(path: str) -> Optional[Path]:
+    """The virtual environment folder a Python lives in, or None."""
+    p = Path(path).absolute()
+    for parent in list(p.parents)[:4]:
+        if (parent / "pyvenv.cfg").exists():
+            return parent
+    return None
+
+
+def _works(python: str) -> bool:
+    """True if this Python runs and is 3.9 or newer."""
+    if not python or not os.path.exists(python):
+        return False
+    try:
+        proc = subprocess.run(
+            [python, "-c", "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def _fragile(python: str) -> Optional[str]:
+    """Why this Python may disappear (a virtualenv or a temporary folder), or None."""
+    venv = in_virtualenv(python)
+    if venv:
+        return f"it is inside the virtual environment {venv}"
+    if _temporary(python):
+        return "it is in a temporary or cache folder"
+    return None
+
+
+def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
+    """Pick the hook's Python. Returns (path, warning or None).
+
+    Order: --python; a system Python; the Python this virtualenv was built from; python3 on
+    PATH. A Python inside a virtualenv or a temporary folder is used only as a last resort,
+    with a warning, because deleting that folder would break the guard.
+    """
     if explicit:
-        return explicit
-    candidates = [sys.executable] + [shutil.which(n) or "" for n in ("python3", "python")]
+        why = _fragile(explicit)
+        return explicit, (f"the hook's Python {explicit} may disappear: {why}" if why else None)
+    base = getattr(sys, "_base_executable", None) or ""
+    candidates = (SYSTEM_PYTHONS if os.name == "posix" else []) + [base]
+    candidates += [shutil.which(n) or "" for n in ("python3", "python")]
     for c in candidates:
-        if c and os.path.exists(c) and not _temporary(c):
-            return c
-    raise ConfigError("no stable Python found; pass --python /path/to/python3")
+        if c and not _fragile(c) and _works(c):
+            return c, None
+    if sys.executable and _works(sys.executable):
+        why = _fragile(sys.executable) or "no system Python was found"
+        return sys.executable, (
+            f"no stable Python found, so the hook uses {sys.executable} ({why}). If that folder "
+            "is moved or deleted, the guard stops working: run keyhush guard install again "
+            "with --python /path/to/python3."
+        )
+    raise ConfigError("no working Python 3.9+ found; pass --python /path/to/python3")
 
 
 def hook_command(python: str, home: Home, agent: str) -> str:
+    if USE_WRAPPER:
+        return f'/bin/sh "{wrapper_path(home)}" --agent {agent}'
     return f'"{python}" "{guard_path(home)}" --agent {agent}'
+
+
+def hook_python(command: str, home: Home) -> Optional[str]:
+    """The Python an installed hook command will run."""
+    if "guard.sh" in command.replace("\\", "/"):
+        return wrapper_python(home)
+    try:
+        parts = shlex.split(command, posix=os.name == "posix")
+    except ValueError:
+        return None
+    return parts[0].strip('"') if parts else None
 
 
 def read_config(path: Path) -> tuple[dict, bool]:

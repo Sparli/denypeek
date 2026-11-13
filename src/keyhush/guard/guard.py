@@ -33,6 +33,17 @@ MAX_GLOB_RESULTS = 2000  # paths one glob may expand to
 _deadline = [float("inf")]
 
 
+MAX_COMMAND = 100_000  # characters in one shell command; longer ones are denied
+MAX_PATH = 4096  # characters in one path; longer ones are denied
+PATH_KEY_PARTS = ("path", "file", "dir", "include", "target", "source", "destination")
+
+
+def is_path_key(key):
+    """Field names that hold paths in the agents' tool inputs (file_path, dir_path, paths...)."""
+    k = (key or "").lower()
+    return any(part in k for part in PATH_KEY_PARTS)
+
+
 class HookTimeout(Exception):
     """The hook ran out of time; the call is denied."""
 
@@ -610,8 +621,8 @@ def decide(event, rules):
                 "the call would switch agent hooks off (disableAllHooks or hooks = false), "
                 "which would disable keyhush; change hook settings in your own terminal"
             )
-        if len(s) > 100_000:
-            continue
+        if key in SHELL_KEYS and len(s) > MAX_COMMAND:
+            return f"the command is too long to check ({len(s)} characters)"
         if key in SHELL_KEYS:
             if tool == "apply_patch" or s.lstrip().startswith("*** Begin Patch"):
                 for p in patch_paths(s):
@@ -623,7 +634,15 @@ def decide(event, rules):
             if reason:
                 return reason
             continue
-        if not s or "\n" in s or len(s) > 4096:
+        if is_path_key(key):
+            s = s.strip()  # only surrounding whitespace; the rest is checked as given
+            if len(s) > MAX_PATH:
+                return f"a path is too long to check ({len(s)} characters)"
+            if "\n" in s or "\r" in s:
+                return "a path contains a line break, so it cannot be checked"
+        elif not s or "\n" in s or len(s) > MAX_PATH:
+            continue  # file contents and other free text, not a path
+        if not s:
             continue
         hits = path_hits(s, cwd, rules)
         if hits:

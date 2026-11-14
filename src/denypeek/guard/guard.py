@@ -152,6 +152,16 @@ def parse_patterns(text):
     return rules
 
 
+def name_matches(name, pattern):
+    """Glob match, ignoring case. A word that is not a valid glob (Python 3.9's fnmatch raises
+    on a reversed range such as `[z-a]`) is compared as plain text instead of crashing the hook.
+    Real hook errors still block (fail closed); this only stops ordinary text from causing one."""
+    try:
+        return fnmatch.fnmatchcase(name.lower(), pattern.lower())
+    except re.error:
+        return name.lower() == pattern.lower()
+
+
 def _norm(path):
     return unicodedata.normalize("NFC", path).replace("\\", "/").lower()
 
@@ -721,9 +731,7 @@ def _names_agent_dir(word, folders):
                 except OSError:
                     names = []
                 for n in names:  # glob skips hidden names for a leading *
-                    if fnmatch.fnmatchcase(n.lower(), pattern.lower()) and is_agent_dir(
-                        os.path.join(folder, n)
-                    ):
+                    if name_matches(n, pattern) and is_agent_dir(os.path.join(folder, n)):
                         return True
     return False
 
@@ -862,11 +870,7 @@ def _path_hits(token, cwd, rules):
             names = os.listdir(folder) if not any(ch in folder for ch in "*?[") else []
         except OSError:
             names = []
-        candidates += [
-            os.path.join(folder, n)
-            for n in names
-            if fnmatch.fnmatchcase(n.lower(), pattern.lower())
-        ]
+        candidates += [os.path.join(folder, n) for n in names if name_matches(n, pattern)]
         found += [c for c in candidates if blocked_path(c, rules)]
     return found
 

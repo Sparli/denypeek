@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import ALLOW_CASES, DENY_CASES, blocked, sample_inputs
-from keyhush.sources import resolve_home
+from denypeek.guard import ALLOW_CASES, DENY_CASES, blocked, sample_inputs
+from denypeek.sources import resolve_home
 
 from .conftest import symlink_or_skip
 
-GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
+GUARD = Path(__file__).resolve().parents[1] / "src" / "denypeek" / "guard" / "guard.py"
 AGENTS = ["claude", "codex", "cursor", "gemini"]
 
 
@@ -54,14 +54,14 @@ def test_a12_denies_in_each_agents_format(agent, project, isolated):
         assert blocked(agent, out, proc.returncode), (agent, case, out, proc.stderr)
         data = json.loads(out)
         if agent == "cursor":
-            assert data["permission"] == "deny" and "keyhush blocked" in data["user_message"]
+            assert data["permission"] == "deny" and "denypeek blocked" in data["user_message"]
         elif agent == "gemini":
-            assert data["decision"] == "deny" and "keyhush blocked" in data["reason"]
+            assert data["decision"] == "deny" and "denypeek blocked" in data["reason"]
         else:
             hso = data["hookSpecificOutput"]
             assert hso["permissionDecision"] == "deny"
             assert hso["hookEventName"] == "PreToolUse"
-            assert "keyhush blocked" in hso["permissionDecisionReason"]
+            assert "denypeek blocked" in hso["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize("agent", AGENTS)
@@ -86,8 +86,8 @@ def test_a14_bad_input_blocks_fast_and_names_uninstall(agent, raw, project):
     proc, seconds = run_guard(agent, None, project, raw=raw)
     assert blocked(agent, proc.stdout.decode(), proc.returncode)
     assert proc.returncode == 2
-    assert "keyhush guard uninstall" in proc.stderr.decode()
-    assert "keyhush guard uninstall" in proc.stdout.decode()
+    assert "denypeek guard uninstall" in proc.stderr.decode()
+    assert "denypeek guard uninstall" in proc.stdout.decode()
     assert seconds < 1.0, seconds
 
 
@@ -194,8 +194,8 @@ def test_codex_array_command_is_checked(project):
 
 
 def test_user_patterns_file_is_used(project, isolated):
-    (isolated / ".keyhush").mkdir()
-    (isolated / ".keyhush" / "secretfiles").write_text("config/prod.yml\n")
+    (isolated / ".denypeek").mkdir()
+    (isolated / ".denypeek" / "secretfiles").write_text("config/prod.yml\n")
     (project / "config").mkdir()
     payload = {
         "cwd": str(project),
@@ -212,7 +212,7 @@ def test_user_patterns_file_is_used(project, isolated):
 
 def test_unknown_agent_fails_closed(project):
     proc, _ = run_guard("nope", {"tool_name": "Read"}, project)
-    assert proc.returncode == 2 and "keyhush guard uninstall" in proc.stderr.decode()
+    assert proc.returncode == 2 and "denypeek guard uninstall" in proc.stderr.decode()
 
 
 def _python39():
@@ -365,8 +365,8 @@ def test_a18_nfd_name_matches_nfc_pattern(project, isolated):
     import unicodedata
 
     nfc = unicodedata.normalize("NFC", "schlüssel.txt")
-    (isolated / ".keyhush").mkdir()
-    (isolated / ".keyhush" / "secretfiles").write_text(nfc + "\n", encoding="utf-8")
+    (isolated / ".denypeek").mkdir()
+    (isolated / ".denypeek" / "secretfiles").write_text(nfc + "\n", encoding="utf-8")
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfd != nfc
     proc, _ = run_guard("claude", shell_event("claude", f"cat {nfd}", project), project)

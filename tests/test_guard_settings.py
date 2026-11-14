@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from keyhush.guard import guard as g
+from denypeek.guard import guard as g
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ OFF = [
     (".codex/config.toml", "features = { hooks = false }\n"),
     (".codex/config.toml", "[features]\ncodex_hooks = false\n"),
     (".gemini/settings.json", '{"hooksConfig": {"enabled": false}}'),
-    (".gemini/settings.json", '{"hooksConfig": {"disabled": ["keyhush-guard"]}}'),
+    (".gemini/settings.json", '{"hooksConfig": {"disabled": ["denypeek-guard"]}}'),
 ]
 
 

@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import SPECS, blocked, sample_inputs
-from keyhush.guard import guard as g
-from keyhush.guard.install_base import ours_commands, stable_python
-from keyhush.sources import resolve_home
+from denypeek.guard import SPECS, blocked, sample_inputs
+from denypeek.guard import guard as g
+from denypeek.guard.install_base import ours_commands, stable_python
+from denypeek.sources import resolve_home
 
 from .conftest import run_cli
 
@@ -53,8 +53,8 @@ def installed_run(home, proj, case, env_extra):
 def test_r1_home_from_the_environment_is_ignored(isolated, tmp_path, proj):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
     evil = tmp_path / "evil-home"
-    (evil / ".keyhush").mkdir(parents=True)
-    (evil / ".keyhush" / "secretfiles").write_text("!*\n!**\n")
+    (evil / ".denypeek").mkdir(parents=True)
+    (evil / ".denypeek" / "secretfiles").write_text("!*\n!**\n")
     proc = installed_run(isolated, proj, "cat .env", {"HOME": str(evil)})
     assert blocked("claude", proc.stdout.decode(), proc.returncode)
 
@@ -97,7 +97,7 @@ def test_r1_installer_resolves_the_launcher_only_to_a_root_owned_interpreter():
         assert python == real, detail
     else:
         assert python == "/usr/bin/python3", detail
-    from keyhush.guard.install_base import writable_parts
+    from denypeek.guard.install_base import writable_parts
 
     if writable_parts(python):
         assert warning, detail
@@ -131,7 +131,7 @@ def test_r1_ordinary_settings_env_is_allowed():
 @posix_only
 def test_r1_old_wrapper_without_clean_environment_is_out_of_date(isolated):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
-    w = isolated / ".keyhush" / "guard.sh"
+    w = isolated / ".denypeek" / "guard.sh"
     w.write_text(w.read_text().replace("/usr/bin/env -i", "/usr/bin/env"))
     code, out, _ = run_cli("guard", "status", "--home", str(isolated))
     assert code == 1 and "out of date" in out
@@ -150,14 +150,14 @@ def test_r1_launcher_kept_in_the_wrapper_still_ignores_developer_dir(
     owned by the user, as on CI runners), the installer keeps the xcrun launcher. That is safe
     only because the wrapper starts it with env -i, so DEVELOPER_DIR never reaches it. Prove it
     with the launcher forced into the wrapper."""
-    import keyhush.guard.install_base as base
+    import denypeek.guard.install_base as base
 
     monkeypatch.setattr(base, "resolve_launcher", lambda python: python)
     code, out, err = run_cli(
         "guard", "install", "--home", str(isolated), "--python", "/usr/bin/python3"
     )
     assert code == 0, out + err
-    wrapper = (isolated / ".keyhush" / "guard.sh").read_text()
+    wrapper = (isolated / ".denypeek" / "guard.sh").read_text()
     assert "PY='/usr/bin/python3'" in wrapper and "/usr/bin/env -i" in wrapper
     fake = tmp_path / "fakedev" / "usr" / "bin"
     fake.mkdir(parents=True)

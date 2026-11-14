@@ -168,14 +168,14 @@ def _dedupe(hits: list[Hit]) -> list[Hit]:
 
 def salt(home: Home) -> bytes:
     """Per-machine random salt, so a short key cannot be recovered from its fingerprint."""
-    path = home.keyhush_dir / "salt"
+    path = home.denypeek_dir / "salt"
     try:
         data = path.read_bytes()
         if len(data) >= 32:
             return data
     except FileNotFoundError:
         pass
-    ensure_private_dir(home.keyhush_dir)
+    ensure_private_dir(home.denypeek_dir)
     data = os.urandom(32)
     try:
         write_new_private(path, data)

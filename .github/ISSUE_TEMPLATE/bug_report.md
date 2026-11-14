@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something keyhush did wrong
+about: Something denypeek did wrong
 labels: bug
 ---
 
@@ -15,10 +15,10 @@ Describe a key by its shape instead, for example "a GitHub token, 40 characters"
 Commands you ran (with `--home <temp folder>` if you can):
 
 ## Output
-Paste the output. keyhush never prints full keys, but check before posting.
+Paste the output. denypeek never prints full keys, but check before posting.
 
 ## Environment
-- keyhush version (`keyhush --version`):
+- denypeek version (`denypeek --version`):
 - OS:
 - Python version:
 - Agent and version (if this is about the guard):

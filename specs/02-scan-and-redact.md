@@ -1,7 +1,7 @@
 # 02: Scan and redact
 
 ## Scan
-- Offline, read-only. Sources per agent live in `src/keyhush/sources/`, each path a named constant
+- Offline, read-only. Sources per agent live in `src/denypeek/sources/`, each path a named constant
   with its source in a comment. `--home DIR` replaces the home folder and ignores
   `CLAUDE_CONFIG_DIR` and `CODEX_HOME`, so a fixture home cannot reach the real one.
 - JSONL is split on `\n` only (U+2028 inside a JSON string is valid and does not end a line).
@@ -23,7 +23,7 @@
 - Safety order per file: skip checks (outside history roots, hard links, changed in the last
   10 minutes), compute the new content, back up, confirm the file has not changed, write a temp
   file, fsync, rename.
-- Backups go to `~/.keyhush/backups/<time>-<id>/`, created 0700 and 0600, with a manifest of
+- Backups go to `~/.denypeek/backups/<time>-<id>/`, created 0700 and 0600, with a manifest of
   hashes before and after.
 - A rescan of every changed file proves the result.
 

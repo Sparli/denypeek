@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from keyhush.guard import guard as g
+from denypeek.guard import guard as g
 
 
 @pytest.fixture

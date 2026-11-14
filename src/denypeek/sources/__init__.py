@@ -77,8 +77,8 @@ class Home:
     cursor_app_dirs: tuple[Path, ...]
 
     @property
-    def keyhush_dir(self) -> Path:
-        return self.root / ".keyhush"
+    def denypeek_dir(self) -> Path:
+        return self.root / ".denypeek"
 
     def history_roots(self) -> list[Path]:
         """Folders that redact and undo may write inside."""

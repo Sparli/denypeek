@@ -56,7 +56,7 @@ def test_a22_redact_output_escapes_names(hostile_home):
 
 
 def test_a22_windows_separators_are_not_doubled(monkeypatch):
-    from keyhush import sources
+    from denypeek import sources
 
     monkeypatch.setattr(sources.os, "sep", "\\")
     assert sources.safe_text("~\\.claude\\x") == "~\\.claude\\x"

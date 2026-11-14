@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import blocked
+from denypeek.guard import blocked
 
-GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
+GUARD = Path(__file__).resolve().parents[1] / "src" / "denypeek" / "guard" / "guard.py"
 
 
 def run(agent, payload, cwd, raw=None):

@@ -1,8 +1,8 @@
-"""Backups for redact and undo, under ~/.keyhush/backups/ with owner-only access.
+"""Backups for redact and undo, under ~/.denypeek/backups/ with owner-only access.
 
 Each redact run makes one backup set: a folder holding a copy of every file before it was
 changed (blob-0001, ...) and manifest.json. The copies still contain the secrets until
-`keyhush backups purge` deletes them.
+`denypeek backups purge` deletes them.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def sha256(data: bytes) -> str:
 
 
 def backups_dir(home: Home) -> Path:
-    return home.keyhush_dir / "backups"
+    return home.denypeek_dir / "backups"
 
 
 @dataclass
@@ -67,7 +67,7 @@ class BackupSet:
 
 
 def new_set(home: Home) -> BackupSet:
-    ensure_private_dir(home.keyhush_dir)
+    ensure_private_dir(home.denypeek_dir)
     ensure_private_dir(backups_dir(home))
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = backups_dir(home) / f"{stamp}-{secrets.token_hex(3)}"
@@ -75,7 +75,7 @@ def new_set(home: Home) -> BackupSet:
     bs = BackupSet(
         path,
         {
-            "tool": "keyhush",
+            "tool": "denypeek",
             "version": __version__,
             "created": stamp,
             "home": str(home.root),
@@ -124,7 +124,7 @@ def purge(home: Home) -> int:
 
 def config_backups(home: Home) -> list[Path]:
     """Copies of agent settings made by `guard install` and `guard uninstall`."""
-    base = home.keyhush_dir / "config-backups"
+    base = home.denypeek_dir / "config-backups"
     if not base.is_dir():
         return []
     return sorted(p for p in base.iterdir() if p.is_file() and not p.is_symlink())

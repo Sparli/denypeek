@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import blocked
+from denypeek.guard import blocked
 
-GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
+GUARD = Path(__file__).resolve().parents[1] / "src" / "denypeek" / "guard" / "guard.py"
 
 
 def run(agent, payload, cwd, raw=None):
@@ -70,7 +70,7 @@ def test_g2_many_brace_groups_answer_fast(tmp_path):
 
 def test_g2_timeout_denies_and_says_why(tmp_path, monkeypatch):
     """Deterministic: the deadline is already in the past, whatever the clock resolution."""
-    from keyhush.guard import guard as g
+    from denypeek.guard import guard as g
 
     monkeypatch.setattr(g, "HOOK_SECONDS", -1.0)
     out, code, msg = g.run(["--agent", "claude"], json.dumps(bash("cat x", tmp_path)).encode())
@@ -80,7 +80,7 @@ def test_g2_timeout_denies_and_says_why(tmp_path, monkeypatch):
 
 def test_g2_deadline_reached_on_a_coarse_clock_counts_as_passed(monkeypatch):
     """Windows with Python 3.12: the clock may not move between setting and checking."""
-    from keyhush.guard import guard as g
+    from denypeek.guard import guard as g
 
     class FrozenClock:
         @staticmethod
@@ -321,7 +321,7 @@ def test_r4_exploding_variables_use_little_memory(tmp_path):
 
 
 def test_r4_substitution_stops_at_the_size_limit():
-    from keyhush.guard import guard as g
+    from denypeek.guard import guard as g
 
     with pytest.raises(g.HookTimeout):
         g.substitute_variables(exploding_command())

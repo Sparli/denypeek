@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import string
 
-from keyhush import rules as R
-from keyhush.scan import find_secrets, preview
+from denypeek import rules as R
+from denypeek.scan import find_secrets, preview
 
 from .conftest import _rand, fake_aws, fake_github, jl, run_cli, write
 

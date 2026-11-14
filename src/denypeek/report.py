@@ -18,7 +18,7 @@ ROTATE = "Rotate every real key found here, whether or not you redact it."
 
 def scan_json(result: ScanResult, home: Home) -> str:
     data = {
-        "tool": "keyhush",
+        "tool": "denypeek",
         "version": __version__,
         "home": str(home.root),
         "complete": not result.incomplete,
@@ -62,7 +62,7 @@ def _loc(home: Home, path, where: str) -> str:
 
 
 def scan_text(result: ScanResult, home: Home) -> str:
-    out = ["keyhush scan: offline, nothing leaves this machine."]
+    out = ["denypeek scan: offline, nothing leaves this machine."]
     per = result.per_agent()
     agents = ", ".join(f"{a} {n}" for a, n in sorted(per.items())) or "no history files found"
     out.append(f"Scanned {len(result.files)} file(s): {agents}.")
@@ -86,7 +86,7 @@ def scan_text(result: ScanResult, home: Home) -> str:
     out.append("")
     if result.findings:
         out.append(f"Found {len(result.findings)} possible secret(s). {ROTATE}")
-        out.append("To scrub them from history: keyhush redact (keeps a backup).")
+        out.append("To scrub them from history: denypeek redact (keeps a backup).")
     else:
         out.append("No known key shapes found.")
     if not result.files:

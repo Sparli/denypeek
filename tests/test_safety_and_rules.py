@@ -30,8 +30,8 @@ NETWORK_MODULES = (
 
 def test_a2_package_imports_no_network_module():
     code = (
-        "import sys, pkgutil, importlib, keyhush\n"
-        "for m in pkgutil.walk_packages(keyhush.__path__, 'keyhush.'):\n"
+        "import sys, pkgutil, importlib, denypeek\n"
+        "for m in pkgutil.walk_packages(denypeek.__path__, 'denypeek.'):\n"
         "    importlib.import_module(m.name)\n"
         f"bad = [m for m in {NETWORK_MODULES!r} if m in sys.modules]\n"
         "print(','.join(bad))\n"
@@ -74,7 +74,7 @@ def test_a16_generator_reproduces_rules_exactly():
 
 
 def test_a16_every_rule_compiles_and_unconverted_are_listed():
-    from keyhush import rules
+    from denypeek import rules
 
     for r in rules.RULES:
         re.compile(r["regex"], re.ASCII)
@@ -95,13 +95,13 @@ def committed_files():
 
 
 def test_no_key_shaped_literal_is_committed():
-    from keyhush.scan import find_secrets
+    from denypeek.scan import find_secrets
 
     skip = {
         REPO / "tools" / "pinned" / "gitleaks.toml",  # upstream file, see THIRD_PARTY.md
         # Generated regexes. One rule's pattern holds a fixed public prefix (base64 of
         # "bedrock.amazonaws.com"); literal example keys are stored as hashes (next test).
-        REPO / "src" / "keyhush" / "rules.py",
+        REPO / "src" / "denypeek" / "rules.py",
         REPO / ".gitleaks.toml",  # allowlists that same public prefix by exact match
     }
     for path in committed_files():
@@ -116,12 +116,12 @@ def test_no_key_shaped_literal_is_committed():
 
 
 def test_rules_file_holds_no_literal_example_keys():
-    text = (REPO / "src" / "keyhush" / "rules.py").read_text(encoding="utf-8")
+    text = (REPO / "src" / "denypeek" / "rules.py").read_text(encoding="utf-8")
     assert not re.search(r"AIza[0-9A-Za-z_-]{35}", text)
 
 
 def test_tripwire_blocks_the_real_home():
-    probe = Path(conftest.REAL_HOME) / ".keyhush-tripwire-probe"
+    probe = Path(conftest.REAL_HOME) / ".denypeek-tripwire-probe"
     with pytest.raises(PermissionError):
         open(probe)
     assert conftest._state["violations"]

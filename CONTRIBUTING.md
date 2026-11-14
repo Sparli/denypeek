@@ -1,11 +1,11 @@
 # Contributing
 
-Thanks for helping. keyhush handles secrets, so a few rules matter more than usual.
+Thanks for helping. denypeek handles secrets, so a few rules matter more than usual.
 
 ## Rules
 - **No real keys anywhere**: not in code, tests, fixtures, issues or screenshots. Tests assemble fake
   keys at run time from random characters.
-- **Never point keyhush at your real home while developing.** Use `--home <temp folder>`. The test
+- **Never point denypeek at your real home while developing.** Use `--home <temp folder>`. The test
   suite fails if anything touches your real home.
 - **No run-time dependencies and no network code.** The package must stay standard-library only.
 - Diagrams in `diagrams/` must match the code. If you change a flow, change its `.mmd` file and
@@ -20,7 +20,7 @@ python tools/gen_rules.py --check
 ```
 
 ## Changing the rules
-Do not edit `src/keyhush/rules.py`. Change `tools/gen_rules.py` (or the pinned file, with its new
+Do not edit `src/denypeek/rules.py`. Change `tools/gen_rules.py` (or the pinned file, with its new
 hash) and regenerate with `python tools/gen_rules.py`.
 
 ## Commits and pull requests

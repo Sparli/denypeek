@@ -3,7 +3,7 @@
     uv run python tools/capture_demo.py
 
 It builds a fake home under a temp folder, with fake keys assembled at run time, runs real
-keyhush commands against it with HOME pointed there, and writes the captured output to
+denypeek commands against it with HOME pointed there, and writes the captured output to
 docs/assets/demo-run.txt and docs/assets/demo-run.svg. It never touches your real home folder,
 and it refuses to write if your real home path appears in the output.
 """
@@ -108,7 +108,7 @@ def run(home: Path, args: list[str]) -> str:
         "CODEX_HOME": str(home / ".codex"),
     }
     proc = subprocess.run(
-        [sys.executable, "-m", "keyhush.cli", *args, "--home", str(home)],
+        [sys.executable, "-m", "denypeek.cli", *args, "--home", str(home)],
         capture_output=True,
         text=True,
         env=env,
@@ -123,7 +123,7 @@ def to_svg(lines: list[str]) -> str:
     height = len(lines) * line_h + 2 * pad + 28
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {width} {height}" role="img" aria-label="keyhush terminal run">',
+        f'viewBox="0 0 {width} {height}" role="img" aria-label="denypeek terminal run">',
         f'<rect width="{width}" height="{height}" rx="8" fill="#0d1117"/>',
         '<circle cx="18" cy="16" r="5" fill="#ff5f56"/><circle cx="36" cy="16" r="5" '
         'fill="#ffbd2e"/><circle cx="54" cy="16" r="5" fill="#27c93f"/>',
@@ -148,14 +148,14 @@ def to_svg(lines: list[str]) -> str:
 
 def main() -> int:
     real_home = os.path.expanduser("~")
-    tmp = Path(tempfile.mkdtemp(prefix="keyhush-demo-"))
+    tmp = Path(tempfile.mkdtemp(prefix="denypeek-demo-"))
     home = tmp / "home"
     home.mkdir()
     try:
         build_home(home)
         lines = [
             "# DEMO is a throwaway home folder under /tmp, holding fake keys made for this run.",
-            "# keyhush shows paths under --home as ~/...",
+            "# denypeek shows paths under --home as ~/...",
             "",
         ]
         for args in (
@@ -165,7 +165,7 @@ def main() -> int:
             ["redact", "--yes"],
         ):
             shown = " ".join(args)
-            lines.append(f'$ keyhush {shown} --home "$DEMO"')
+            lines.append(f'$ denypeek {shown} --home "$DEMO"')
             lines += run(home, args).splitlines()
             lines.append("")
         text = "\n".join(lines).rstrip() + "\n"

@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from keyhush.scan import find_secrets
+from denypeek.scan import find_secrets
 
 from .conftest import fake_adobe, fake_github, jl, run_cli, symlink_or_skip, write
 

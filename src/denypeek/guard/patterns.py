@@ -1,4 +1,4 @@
-"""The secret-file pattern list, ~/.keyhush/secretfiles. Defaults live in guard.py."""
+"""The secret-file pattern list, ~/.denypeek/secretfiles. Defaults live in guard.py."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .guard import DEFAULT_PATTERNS
 
 
 def patterns_path(home: Home) -> Path:
-    return home.keyhush_dir / "secretfiles"
+    return home.denypeek_dir / "secretfiles"
 
 
 def ensure_patterns(home: Home) -> bool:
@@ -18,6 +18,6 @@ def ensure_patterns(home: Home) -> bool:
     path = patterns_path(home)
     if path.exists():
         return False
-    ensure_private_dir(home.keyhush_dir)
+    ensure_private_dir(home.denypeek_dir)
     write_new_private(path, DEFAULT_PATTERNS.encode())
     return True

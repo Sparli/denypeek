@@ -1,6 +1,6 @@
-# keyhush
+# denypeek
 
-[![CI](https://github.com/Sparli/keyhush/actions/workflows/ci.yml/badge.svg)](https://github.com/Sparli/keyhush/actions/workflows/ci.yml)
+[![CI](https://github.com/Sparli/denypeek/actions/workflows/ci.yml/badge.svg)](https://github.com/Sparli/denypeek/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
@@ -20,8 +20,8 @@ laptop, in files she has never opened:
 ~/Library/Application Support/Cursor/…/state.vscdb           row 1    a Slack bot token
 ```
 
-`keyhush scan` finds them without printing them. `keyhush redact` replaces them with markers,
-keeps a backup and proves the result with a rescan. `keyhush guard install` stops the next
+`denypeek scan` finds them without printing them. `denypeek redact` replaces them with markers,
+keeps a backup and proves the result with a rescan. `denypeek guard install` stops the next
 `.env` read, in all four agents, from one pattern list.
 
 > **Status: v0.1.0, not released.** Guard, scan, redact and undo work and are tested on fixture
@@ -41,7 +41,7 @@ resist common tricks. It is **not a sandbox**: an agent that is determined to ge
 such as a container, a separate user account, or the agent's own sandbox mode, with your secrets
 outside it.
 
-**The design constraint: nothing leaves your machine.** keyhush has no run-time dependencies and
+**The design constraint: nothing leaves your machine.** denypeek has no run-time dependencies and
 no network code. It never prints, logs or stores a full secret. The guard is one file of
 standard-library Python that each agent runs before a tool call.
 
@@ -68,7 +68,7 @@ standard-library Python that each agent runs before a tool call.
 <!-- diagram:01-architecture-overview -->
 ```mermaid
 flowchart LR
-    U(["You or an agent"]) --> CLI["keyhush CLI<br/>cli.py, argparse"]
+    U(["You or an agent"]) --> CLI["denypeek CLI<br/>cli.py, argparse"]
 
     subgraph build["Build time (repo only)"]
         GL[("tools/pinned/gitleaks.toml<br/>gitleaks v8.30.1")] --> GEN["tools/gen_rules.py<br/>Go regex to Python"]
@@ -88,14 +88,14 @@ flowchart LR
     CLI -->|redact, undo| RED["redact.py"]
     RED --> SCAN
     RED -->|"atomic rewrite<br/>JSONL and JSON only"| C1 & C2 & C3
-    RED --> BK[("~/.keyhush/backups/<br/>0700 folders, 0600 files")]
-    SCAN --> SALT[("~/.keyhush/salt<br/>fingerprint key")]
+    RED --> BK[("~/.denypeek/backups/<br/>0700 folders, 0600 files")]
+    SCAN --> SALT[("~/.denypeek/salt<br/>fingerprint key")]
 
     CLI -->|guard install, uninstall| INST["guard/install_*.py"]
-    INST -->|"copy, and write the wrapper"| GP["~/.keyhush/guard.sh wrapper<br/>runs guard.py, stdlib only"]
-    INST -->|"default list if missing"| PAT[("~/.keyhush/secretfiles")]
+    INST -->|"copy, and write the wrapper"| GP["~/.denypeek/guard.sh wrapper<br/>runs guard.py, stdlib only"]
+    INST -->|"default list if missing"| PAT[("~/.denypeek/secretfiles")]
     INST -->|"backup, merge, atomic write"| CFG
-    INST --> CB[("~/.keyhush/config-backups/<br/>~/.keyhush/guard-state.json")]
+    INST --> CB[("~/.denypeek/config-backups/<br/>~/.denypeek/guard-state.json")]
     subgraph CFG["Agent configs"]
         K1["~/.claude/settings.json"]
         K2["~/.codex/hooks.json"]
@@ -104,22 +104,22 @@ flowchart LR
     end
     CFG -.->|"agent runs the hook<br/>before each tool call"| GP
     PAT --> GP
-    GP -.->|"denies any agent access"| PROT["~/.keyhush/** and the<br/>hook config files"]
+    GP -.->|"denies any agent access"| PROT["~/.denypeek/** and the<br/>hook config files"]
 ```
 <!-- /diagram -->
 
 **Three jobs share one detection engine and one pattern list, and every write goes through a
 backup first.** `scan` only reads. `redact` and `guard install` are the only commands that write
-outside `~/.keyhush/`, and both keep a copy of what they change.
+outside `~/.denypeek/`, and both keep a copy of what they change.
 
 | Part | File | Job |
 |---|---|---|
-| CLI | `src/keyhush/cli.py` | Parses commands with `argparse`. |
-| Rules | `src/keyhush/rules.py` | 217 detection rules, generated from gitleaks by `tools/gen_rules.py`. |
-| Scanner | `src/keyhush/scan.py`, `sources/` | Finds history files per agent and matches the rules. |
-| Redaction | `src/keyhush/redact.py`, `backups.py` | Rewrites JSONL and JSON history, backs up, verifies, undoes. |
-| Guard hook | `src/keyhush/guard/guard.py` | The script each agent runs before a tool call. |
-| Installers | `src/keyhush/guard/install_*.py` | Edit each agent's config, one module per agent. |
+| CLI | `src/denypeek/cli.py` | Parses commands with `argparse`. |
+| Rules | `src/denypeek/rules.py` | 217 detection rules, generated from gitleaks by `tools/gen_rules.py`. |
+| Scanner | `src/denypeek/scan.py`, `sources/` | Finds history files per agent and matches the rules. |
+| Redaction | `src/denypeek/redact.py`, `backups.py` | Rewrites JSONL and JSON history, backs up, verifies, undoes. |
+| Guard hook | `src/denypeek/guard/guard.py` | The script each agent runs before a tool call. |
+| Installers | `src/denypeek/guard/install_*.py` | Edit each agent's config, one module per agent. |
 
 ### The guard path
 
@@ -133,14 +133,14 @@ flowchart TD
         E3["Cursor: beforeReadFile,<br/>beforeShellExecution, preToolUse"]
         E4["Gemini CLI: BeforeTool"]
     end
-    EV -->|"JSON on stdin"| W0["/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh<br/>empty environment: no inherited variables<br/>or shell functions (Windows runs Python directly)"]
+    EV -->|"JSON on stdin"| W0["/usr/bin/env -i /bin/sh ~/.denypeek/guard.sh<br/>empty environment: no inherited variables<br/>or shell functions (Windows runs Python directly)"]
     W0 --> W1{"Its Python and<br/>guard.py present?"}
     W1 -->|no| FC
     W1 -->|yes| G["env -i: clean environment, fixed home<br/>python -I -S guard.py --home H --agent NAME<br/>no site-packages, .pth, user site, PYTHONPATH"]
     G -->|"fails to start or load,<br/>or exits 0 with no reply"| FC
     G --> V{"Input usable?<br/>known agent, not empty,<br/>4 MB or less, a JSON object"}
     V -->|no, or any error| FC["Fail closed: exit 2 = block,<br/>message names the fix"]
-    V -->|yes| P["Load ~/.keyhush/secretfiles<br/>or built-in defaults;<br/>start a 2.5 s deadline"]
+    V -->|yes| P["Load ~/.denypeek/secretfiles<br/>or built-in defaults;<br/>start a 2.5 s deadline"]
     P --> S["Walk every string in tool_input"]
     S -->|"deadline passed"| FC
     S --> OFF{"Text that turns hooks off?<br/>disableAllHooks, hooks = false"}
@@ -153,8 +153,8 @@ flowchart TD
     SH --> GR{"Recursive search?<br/>grep -r, -d recurse,<br/>rg, ag, ack, git grep"}
     GR -->|yes| WK["Walk the target folder<br/>for a secret file"]
     K -->|"search tool path, or<br/>read_many_files folder or **"| WK
-    SH -->|"keyhush guard<br/>install or uninstall"| DENY
-    SH & AP & PT --> PR{"Protected path?<br/>~/.keyhush/**, user hook config<br/>files, user Python folders"}
+    SH -->|"denypeek guard<br/>install or uninstall"| DENY
+    SH & AP & PT --> PR{"Protected path?<br/>~/.denypeek/**, user hook config<br/>files, user Python folders"}
     PR -->|yes| DENY
     PR -->|no| ST{"Agent settings file<br/>at any depth?"}
     ST -->|"edit: parse the result; turns<br/>hooks off, sets hook variables,<br/>or unparseable"| DENY
@@ -175,7 +175,7 @@ flowchart TD
 How a blocked `.env` read works:
 
 1. **The agent fires its hook.** Before a tool call, the agent runs
-   `/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh --agent NAME` (on Windows, the Python command
+   `/usr/bin/env -i /bin/sh ~/.denypeek/guard.sh --agent NAME` (on Windows, the Python command
    directly) and writes the call to its stdin as JSON. `env -i` comes first, so the shell that
    runs the wrapper starts with an empty environment: no variable or exported shell function
    (`BASH_FUNC_*`) an agent might set can change it. The event differs per agent: `PreToolUse` in Claude Code and
@@ -190,10 +190,10 @@ How a blocked `.env` read works:
    `HOME`. If the hook's Python or `guard.py` is missing, if Python fails, or if it exits without
    a reply, `guard.sh` exits 2, which every supported agent reads as "block".
 3. **The guard checks the input itself.** Unknown agent, empty input, input over 4 MB, broken
-   JSON, or anything that raises: the guard denies, exits 2, and names `keyhush guard uninstall`.
+   JSON, or anything that raises: the guard denies, exits 2, and names `denypeek guard uninstall`.
    The whole decision has a 2.5-second deadline; past it, the call is denied ("took too long to
    check"), and a watchdog makes sure of that even if the check itself gets stuck.
-4. **It loads the pattern list.** `~/.keyhush/secretfiles`, or the built-in defaults when that file
+4. **It loads the pattern list.** `~/.denypeek/secretfiles`, or the built-in defaults when that file
    is missing.
 5. **It looks at every string in the tool input**, so it does not depend on each agent's field
    names. A `command` field gets the shell check, an `apply_patch` gets its file headers read,
@@ -205,9 +205,9 @@ How a blocked `.env` read works:
    as `.e*` (including hidden files), variables set earlier in the same command
    (`a=.e; cat ${a}nv`), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`),
    folders entered with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`),
-   and scripts nested in `bash -c` or `eval`. Agent-run `keyhush guard install` and `uninstall`
+   and scripts nested in `bash -c` or `eval`. Agent-run `denypeek guard install` and `uninstall`
    are denied.
-7. **The guard protects itself.** Any agent access to `~/.keyhush/**`, to the user-level hook
+7. **The guard protects itself.** Any agent access to `~/.denypeek/**`, to the user-level hook
    config files and to your per-user Python folders is denied, whatever the pattern list says.
    Commands may list or read `~/.claude`, `~/.codex`, `~/.cursor` and `~/.gemini` but not move,
    delete or change them, also when named through a glob, braces or a `find -delete` from the
@@ -235,7 +235,7 @@ How a blocked `.env` read works:
 <!-- diagram:03-scan-redact-flow -->
 ```mermaid
 flowchart TD
-    subgraph SC["keyhush scan (read only)"]
+    subgraph SC["denypeek scan (read only)"]
         S1["Find history files<br/>symlinked folders not followed"] --> S2{"Symlink leading outside<br/>the history folders?"}
         S2 -->|yes| SN["Listed as skipped"]
         S2 -->|no| S3["Read: JSONL split on newline only,<br/>JSON whole, SQLite known tables"]
@@ -248,13 +248,13 @@ flowchart TD
         S6 -->|clean| X0["0, plus: not proof<br/>the machine is clean"]
     end
 
-    subgraph RD["keyhush redact (JSONL and JSON only)"]
+    subgraph RD["denypeek redact (JSONL and JSON only)"]
         R0{"--yes, or yes<br/>at the prompt?"} -->|no| RX["Nothing changed"]
         R0 -->|yes| R1["Scan JSONL and JSON"]
         R1 --> R2{"Skip the file?<br/>outside history folders,<br/>hard links, changed in<br/>last 10 min, unreadable"}
         R2 -->|yes| RS["Listed as skipped"]
         R2 -->|no| R3["Replace each secret with<br/>[REDACTED:rule:fingerprint];<br/>a line that would stop being<br/>valid JSON is left alone"]
-        R3 --> R4[("Backup copy to<br/>~/.keyhush/backups/")]
+        R3 --> R4[("Backup copy to<br/>~/.denypeek/backups/")]
         R4 --> R5{"File changed while<br/>we worked?"}
         R5 -->|yes| RS
         R5 -->|no| R6["Temp file, fsync, rename<br/>over the original"]
@@ -262,13 +262,13 @@ flowchart TD
         R7 --> R8["Report: verified or leftovers,<br/>keys to rotate, backup warning"]
     end
 
-    subgraph UN["keyhush undo"]
+    subgraph UN["denypeek undo"]
         U1["Latest backup set"] --> U2{"File exactly as redact<br/>left it, and backup<br/>copy intact?"}
         U2 -->|no| US["Not restored, listed"]
         U2 -->|yes| U3["Atomic write of the<br/>backup copy: byte-identical"]
     end
     R4 -.-> U1
-    R8 -.->|"backups hold the keys"| PG["keyhush backups purge --yes"]
+    R8 -.->|"backups hold the keys"| PG["denypeek backups purge --yes"]
 ```
 <!-- /diagram -->
 
@@ -277,21 +277,21 @@ flowchart TD
 You need Python 3.9 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
-git clone https://github.com/Sparli/keyhush.git && cd keyhush
+git clone https://github.com/Sparli/denypeek.git && cd denypeek
 ```
 
-Install it as a command, so `keyhush` is on your PATH (the skill, the `AGENTS.md` snippet and
-keyhush's own messages all use the bare `keyhush` command):
+Install it as a command, so `denypeek` is on your PATH (the skill, the `AGENTS.md` snippet and
+denypeek's own messages all use the bare `denypeek` command):
 
 ```bash
 uv tool install .
 ```
 
-If your shell cannot find `keyhush` afterwards, run `uv tool update-shell` once and open a new
+If your shell cannot find `denypeek` afterwards, run `uv tool update-shell` once and open a new
 terminal. To try it without installing, put `uv run` in front of each command below instead.
 
 ```bash
-keyhush scan
+denypeek scan
 ```
 
 That is a read-only scan of your agent history. Exit code 0 means nothing found, 1 means
@@ -300,21 +300,25 @@ findings, 2 means something could not be read.
 Block secret-file reads in your agents, then prove the hook works:
 
 ```bash
-keyhush guard install
+denypeek guard install
 ```
 
 ```bash
-keyhush guard test
+denypeek guard test
 ```
 
 To install a reviewed release without cloning, pin its tag (works once v0.1.0 is tagged and the
 repository is public; the same command was tested against a local clone):
 
 ```bash
-uv tool install git+https://github.com/Sparli/keyhush@v0.1.0
+uv tool install git+https://github.com/Sparli/denypeek@v0.1.0
 ```
 
-Once keyhush is on PyPI, `uvx keyhush scan` will also work.
+Once denypeek is on PyPI, `uvx denypeek scan` will also work.
+
+**Installed the pre-release under its old name, keyhush?** Remove it first, in your own terminal
+(an agent cannot do it; the old guard blocks that): run `keyhush guard uninstall`, then
+`keyhush backups purge --yes` if you used redact. denypeek does not see or remove the old guard.
 
 ### Example run
 
@@ -322,39 +326,39 @@ Real output from `tools/capture_demo.py`, which builds a throwaway home folder u
 fake keys made at run time and runs the commands against it
 ([plain text](docs/assets/demo-run.txt)):
 
-![keyhush scan, guard install, guard test and redact on a fixture home](docs/assets/demo-run.svg)
+![denypeek scan, guard install, guard test and redact on a fixture home](docs/assets/demo-run.svg)
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `keyhush scan [--json]` | Read-only scan of agent history. Shows rule, file, line, length and a fingerprint, plus up to four characters of a fixed public prefix such as `AKIA` (none for rules without one, such as `generic-api-key`). |
-| `keyhush redact [--yes] [--include-active]` | Replaces each found key with `[REDACTED:<rule>:<fingerprint>]` in JSONL and JSON history, after a backup. Then rescans. |
-| `keyhush undo [--set NAME]` | Restores the files changed by the last redact, byte for byte. |
-| `keyhush backups list` / `purge --yes` | Lists or deletes redact backups. They still hold the keys. `purge --config` deletes the copies of agent settings that `guard install` made instead. |
-| `keyhush guard install [--agent NAME]` | Wires the guard into each agent's own pre-tool hook. |
-| `keyhush guard status [--json]` | Shows where it is installed, checks the hook's Python exists and whether your account can modify it, and runs the hook once per agent. Exit 0 only if every asked-for agent is covered and working. |
-| `keyhush guard test` | Feeds each agent's real hook input format to the installed hook and prints blocked or allowed, per agent and case. |
-| `keyhush guard uninstall [--agent NAME]` | Removes only keyhush's entries. Run it in your own terminal: the guard denies it when an agent tries. |
+| `denypeek scan [--json]` | Read-only scan of agent history. Shows rule, file, line, length and a fingerprint, plus up to four characters of a fixed public prefix such as `AKIA` (none for rules without one, such as `generic-api-key`). |
+| `denypeek redact [--yes] [--include-active]` | Replaces each found key with `[REDACTED:<rule>:<fingerprint>]` in JSONL and JSON history, after a backup. Then rescans. |
+| `denypeek undo [--set NAME]` | Restores the files changed by the last redact, byte for byte. |
+| `denypeek backups list` / `purge --yes` | Lists or deletes redact backups. They still hold the keys. `purge --config` deletes the copies of agent settings that `guard install` made instead. |
+| `denypeek guard install [--agent NAME]` | Wires the guard into each agent's own pre-tool hook. |
+| `denypeek guard status [--json]` | Shows where it is installed, checks the hook's Python exists and whether your account can modify it, and runs the hook once per agent. Exit 0 only if every asked-for agent is covered and working. |
+| `denypeek guard test` | Feeds each agent's real hook input format to the installed hook and prints blocked or allowed, per agent and case. |
+| `denypeek guard uninstall [--agent NAME]` | Removes only denypeek's entries. Run it in your own terminal: the guard denies it when an agent tries. |
 
 Every command takes `--home DIR` to work on another home folder (used for testing).
 
 ## The guard in each agent
 
-`guard install` copies `guard.py` to `~/.keyhush/`, writes the `guard.sh` wrapper beside it,
-writes a default pattern list to `~/.keyhush/secretfiles` if there is none, and adds a hook entry
-to each agent. Before each edit it backs the file up to `~/.keyhush/config-backups/`. It merges
+`guard install` copies `guard.py` to `~/.denypeek/`, writes the `guard.sh` wrapper beside it,
+writes a default pattern list to `~/.denypeek/secretfiles` if there is none, and adds a hook entry
+to each agent. Before each edit it backs the file up to `~/.denypeek/config-backups/`. It merges
 without touching your other settings, writes atomically, and can run twice without duplicates. A
 config file that is malformed, too big, oddly typed or read-only, or sits in a folder it cannot
-write to, is left untouched and reported. `uninstall` removes only keyhush's own hook entries,
+write to, is left untouched and reported. `uninstall` removes only denypeek's own hook entries,
 even inside a group you added hooks to.
 
-**Your config file's layout changes.** keyhush writes the file back as standard JSON with
+**Your config file's layout changes.** denypeek writes the file back as standard JSON with
 two-space indentation, so your spacing is not kept, and if the file had the same key twice only
-the last one remains. A file with comments is not valid JSON, so keyhush leaves it untouched and
+the last one remains. A file with comments is not valid JSON, so denypeek leaves it untouched and
 says so. Nothing of yours is lost otherwise, and the
-original is in `~/.keyhush/config-backups/` (delete those copies with
-`keyhush backups purge --config --yes`).
+original is in `~/.denypeek/config-backups/` (delete those copies with
+`denypeek backups purge --config --yes`).
 
 **Which Python runs the hook.** `guard install` prefers a Python your user account cannot
 modify: first `/usr/bin/python3` (root-owned; on macOS it is protected by the system), then other
@@ -375,12 +379,12 @@ yourself.
 
 ### The pattern list
 
-`~/.keyhush/secretfiles` uses gitignore-style lines. Case does not matter. A name with no slash
+`~/.denypeek/secretfiles` uses gitignore-style lines. Case does not matter. A name with no slash
 matches at any depth, `~/` means your home folder, and `!` allows a path again. The defaults
 include `.env`, `.env.*` (but not `.env.example`, `.env.sample` or `.env.template`),
 `.dev.vars`, `*.pem`, `*.key`, `id_rsa*` and other SSH keys (not `*.pub`), `.netrc`, `.npmrc`,
 `.pypirc`, `credentials.json`, `~/.aws/credentials`, `~/.ssh/**`, `~/.docker/config.json`,
-`~/.kube/config` and `~/.config/gcloud/**`. Edit the file, then run `keyhush guard test`.
+`~/.kube/config` and `~/.config/gcloud/**`. Edit the file, then run `denypeek guard test`.
 
 ## Scan, rules and redaction
 
@@ -400,7 +404,7 @@ file is not empty the database is listed as not fully scanned (exit code 2). Clo
 folds those changes into the main file, and scan again. Every file or line that could not be read (broken JSON, bad UTF-8, no
 permission) is listed, and the exit code is 2. A line holding a U+2028 character is read as one
 line, not split, and noted. Fingerprints are a keyed hash with a random per-machine salt in
-`~/.keyhush/salt`, so a short key cannot be worked back from its fingerprint.
+`~/.denypeek/salt`, so a short key cannot be worked back from its fingerprint.
 
 ### Detection rules
 
@@ -419,11 +423,11 @@ apply to agent history:
 `redact` works on JSONL and JSON history only, never on Cursor's database.
 
 - It asks first (or takes `--yes`) and never runs without confirmation in a non-interactive shell.
-- It backs up each file to `~/.keyhush/backups/<time>-<id>/`. Those folders and files are created
+- It backs up each file to `~/.denypeek/backups/<time>-<id>/`. Those folders and files are created
   owner-only (0700 and 0600) on macOS and Linux, not beside the original. Windows ignores these
   modes; there the backups rely on your user folder's permissions.
 - It writes to a temporary file and renames it over the original, so a crash leaves the original
-  intact. If the file changed while keyhush worked (an agent writing to it), that file is skipped.
+  intact. If the file changed while denypeek worked (an agent writing to it), that file is skipped.
 - It skips files changed in the last 10 minutes unless you pass `--include-active`. It also skips
   symlinks that lead outside the history folders and files with other hard links.
 - It keeps each file's modification time, so agents' session lists keep their order, and `undo`
@@ -432,7 +436,7 @@ apply to agent history:
   alone and listed.
 - It rescans the changed files, says whether anything is left, and lists the keys to rotate.
 
-**The backups still hold the keys.** Check your history, then run `keyhush backups purge --yes`.
+**The backups still hold the keys.** Check your history, then run `denypeek backups purge --yes`.
 
 ## Design decisions
 
@@ -452,9 +456,9 @@ on crafted input (a deadline, then a watchdog) rather than crashing or hanging. 
 open with a warning.
 
 **The guard protects itself.** A guard an agent can edit is not a guard: one `echo` into the
-pattern list, or one line in a settings file, would switch it off. So `~/.keyhush/**` and the hook
+pattern list, or one line in a settings file, would switch it off. So `~/.denypeek/**` and the hook
 config files are always denied to agents, calls that turn hooks off are denied, and so is
-`keyhush guard uninstall` when an agent runs it. You make those changes in your own terminal.
+`denypeek guard uninstall` when an agent runs it. You make those changes in your own terminal.
 Rejected: trusting the agent's own permission prompt to catch it.
 
 **A shell wrapper starts the hook.** If the hook's Python disappears (a deleted virtual
@@ -476,18 +480,18 @@ versions. The guard checks every string in the tool input, so a renamed field do
 hole. Rejected: one parser per tool and field name.
 
 **Backups away from the history, owner-only from the start.** Files are created with 0600 and
-folders with 0700, never loosened and then fixed. They live under `~/.keyhush/backups/`, not as
+folders with 0700, never loosened and then fixed. They live under `~/.denypeek/backups/`, not as
 `.bak` files beside the original, where an agent or a sync tool would pick them up. Rejected:
 in-place `.bak` files.
 
 ## Failure modes
 
-| What goes wrong | What keyhush does |
+| What goes wrong | What denypeek does |
 |---|---|
-| The guard gets empty, broken or huge input, or crashes | Denies, exits 2, names `keyhush guard uninstall`. |
+| The guard gets empty, broken or huge input, or crashes | Denies, exits 2, names `denypeek guard uninstall`. |
 | A grep targets a folder too big to walk in 0.4 seconds | Denies and asks for a narrower path. |
 | An agent config is not valid JSON, too big, read-only, or has an unexpected type | `guard install` leaves that file untouched, reports it, and still installs the others. Exit code 2. |
-| An agent tries to edit `~/.keyhush/`, a hook config file, or run `keyhush guard uninstall` | Denied, with a message to make the change in your own terminal. |
+| An agent tries to edit `~/.denypeek/`, a hook config file, or run `denypeek guard uninstall` | Denied, with a message to make the change in your own terminal. |
 | An agent edits an agent settings file in a project so that it turns hooks off, sets `env` variables that change how the hook or the shell runs (`PYTHON*`, `HOME`, `PATH`, `LD_*`, `DYLD_*`, `BASH_FUNC_*`, `BASH_ENV`, `SHELLOPTS`...), or cannot be parsed | Denied. Ordinary edits with the file tools are allowed. |
 | An agent sets an exported shell function (`BASH_FUNC_printf%%`) or other shell variable for the hook (macOS, Linux) | No effect: the hook command starts with `/usr/bin/env -i`, so the wrapper's shell sees an empty environment. |
 | An agent writes a project settings file or folder with a shell command (`cp x .claude/`, `dd of=...`, `git mv`, `tar -C .claude`) | Denied. Writing other files inside those folders, such as `.claude/commands/*.md`, is allowed. |
@@ -501,7 +505,7 @@ in-place `.bak` files.
 | An agent config folder is not writable | `guard install` reports "cannot write" for that agent and carries on with the others. |
 | The hook's Python or `guard.py` is deleted (macOS, Linux) | The wrapper blocks every tool call and names the fix; `guard status` shows BROKEN. |
 | The hook's Python is deleted (Windows) | The hook fails to start. Cursor blocks (`failClosed`); Claude Code, Codex and Gemini let the call through. `guard status` shows BROKEN. |
-| `~/.keyhush/secretfiles` is missing | The guard uses its built-in defaults. |
+| `~/.denypeek/secretfiles` is missing | The guard uses its built-in defaults. |
 | A history line is broken JSON or bad UTF-8 | Scanned as text where possible, listed as not fully checked, exit code 2. |
 | A history file cannot be read | Listed, exit code 2. Never silently skipped. |
 | An agent writes to a file during `redact` | The change is detected before the rename; that file is left alone and listed. |
@@ -535,7 +539,7 @@ in-place `.bak` files.
   - MCP tools, and a user who approves a read the hook did not see.
 - **A Python your account can modify weakens the guard.** If the only usable Python has a
   program file or standard library your account can write to, an agent allowed to write there
-  can still make the hook allow everything. keyhush warns at install and in `guard status`;
+  can still make the hook allow everything. denypeek warns at install and in `guard status`;
   prefer a root-owned Python such as `/usr/bin/python3`.
 - **Windows support for the guard is experimental.** Windows path forms (`C:\...`, UNC shares,
   `%USERPROFILE%`, `$env:USERPROFILE`) are handled and tested by feeding them to the parser on
@@ -543,12 +547,12 @@ in-place `.bak` files.
   POSIX-only and skip there, and no real agent has been run on Windows.
 - **Windows: a missing Python fails open.** Windows has no `/bin/sh`, so the hook command runs
   Python directly. If that Python is removed, Claude Code, Codex CLI and Gemini CLI let tool calls
-  through (only Cursor blocks). Run `keyhush guard status` after changing Python.
+  through (only Cursor blocks). Run `denypeek guard status` after changing Python.
 - **Windows: no clean environment.** Without the wrapper, the hook inherits the agent's
   environment there; `-I -S` still ignores `PYTHONPATH` and site packages, but the home folder
   comes from `USERPROFILE`, which an agent could change for the hook. Project settings that set
   such variables are denied.
-- **Self-protection is about known files and settings.** It covers keyhush's folder, the
+- **Self-protection is about known files and settings.** It covers denypeek's folder, the
   user-level hook files and their folders, your user Python folders, and agent settings files
   in projects (edits checked by parsing). On Python 3.9 and 3.10, Codex `config.toml` edits are
   checked by a text pattern instead of a TOML parser. An agent with another way to change your
@@ -556,10 +560,10 @@ in-place `.bak` files.
 - **Cursor:** Cursor's own docs say terminal and MCP protection is not guaranteed. Whether Cursor's
   own approval prompt still appears after the guard's `allow` on a shell command is not documented.
 - **Codex:** the hook does nothing until you trust it with `/hooks`. Codex lets a tool run if a
-  hook errors or times out; keyhush answers within about 3 seconds to avoid that. Codex's hook
+  hook errors or times out; denypeek answers within about 3 seconds to avoid that. Codex's hook
   docs name only `command` for its shell tool; a `workdir` field is checked in case it is sent.
 - **Gemini's `read_many_files`:** its current docs do not describe its parameters or default
-  ignore list, so keyhush walks any folder or `**` glob it is given, whether or not Gemini would
+  ignore list, so denypeek walks any folder or `**` glob it is given, whether or not Gemini would
   skip `.env` on its own.
 - **Grep:** the guard blocks a search over any folder that holds a secret file, including the
   agent's own search tool over your whole project. Narrow the path (for example `src/`) to search.
@@ -569,7 +573,7 @@ in-place `.bak` files.
   any field whose name contains `path`, `file`, `dir`, `include`, `target`, `source` or
   `destination` is denied too.
 - **`find -delete` from the home folder is denied** (for example `find ~ -name '*.pyc' -delete`),
-  because keyhush cannot tell in advance whether it would reach an agent folder. Cursor sends a file's contents with
+  because denypeek cannot tell in advance whether it would reach an agent folder. Cursor sends a file's contents with
   each read, so reading a file over 4 MB in Cursor is blocked.
 - **Paths:** history locations for Codex, Gemini CLI, Cursor and Claude's `history.jsonl` come
   from community sources, not vendor docs. Windows paths are unverified. Windows is tested on
@@ -579,7 +583,7 @@ in-place `.bak` files.
   it is shown without its `ghp_` prefix, because generic rules show no characters.
 - **Speed:** very long history lines packed with key-like words scan slowly, about 7 seconds per
   400 KB in our worst-case test.
-- **Windows file permissions:** keyhush sets owner-only modes on its backups and salt, which
+- **Windows file permissions:** denypeek sets owner-only modes on its backups and salt, which
   Windows ignores. There they are protected only by your user folder's permissions.
 - Secrets with no known shape, and secrets split across messages, are not found.
 - **Redaction changes your history files**, and the backups hold the secrets until you purge them.
@@ -609,19 +613,19 @@ in-place `.bak` files.
 
 ## Use from an agent
 
-`skills/keyhush/SKILL.md` is a skill file for Claude Code, Codex, Cursor and Gemini CLI.
+`skills/denypeek/SKILL.md` is a skill file for Claude Code, Codex, Cursor and Gemini CLI.
 `AGENTS-snippet.md` is a block to paste into `AGENTS.md`. Both tell the agent to run
-`keyhush scan --json` and `keyhush guard status`, and never `keyhush redact` without your yes.
+`denypeek scan --json` and `denypeek guard status`, and never `denypeek redact` without your yes.
 
-Copy the `skills/keyhush/` folder (with its `SKILL.md`) to the user-level skills folder of each
+Copy the `skills/denypeek/` folder (with its `SKILL.md`) to the user-level skills folder of each
 agent you use. Paths are from each vendor's docs; none has been tried in a live agent yet.
 
 | Agent | Skill folder | Source |
 |---|---|---|
-| Claude Code | `~/.claude/skills/keyhush/SKILL.md` | [Claude Code docs](https://code.claude.com/docs/en/skills) |
-| Codex CLI | `~/.agents/skills/keyhush/SKILL.md` | **[unverified]** read from a summary of [OpenAI's skills page](https://developers.openai.com/codex/skills), not its full text; community guides also name `~/.codex/skills/` |
-| Cursor | `~/.cursor/skills/keyhush/SKILL.md` (or `~/.agents/skills/`) | [Cursor docs](https://cursor.com/docs/skills) |
-| Gemini CLI | `~/.gemini/skills/keyhush/SKILL.md` (or `~/.agents/skills/`) | [Gemini CLI docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
+| Claude Code | `~/.claude/skills/denypeek/SKILL.md` | [Claude Code docs](https://code.claude.com/docs/en/skills) |
+| Codex CLI | `~/.agents/skills/denypeek/SKILL.md` | **[unverified]** read from a summary of [OpenAI's skills page](https://developers.openai.com/codex/skills), not its full text; community guides also name `~/.codex/skills/` |
+| Cursor | `~/.cursor/skills/denypeek/SKILL.md` (or `~/.agents/skills/`) | [Cursor docs](https://cursor.com/docs/skills) |
+| Gemini CLI | `~/.gemini/skills/denypeek/SKILL.md` (or `~/.agents/skills/`) | [Gemini CLI docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
 
 ## Development
 
@@ -645,7 +649,7 @@ and fail if anything touches your real home folder. `python tools/gen_rules.py -
 
 ## About this project
 
-keyhush is a small open-source tool from Sparli Aman's studio. It builds on gitleaks' rules and on
+denypeek is a small open-source tool from Sparli Aman's studio. It builds on gitleaks' rules and on
 the hook systems the four agent vendors document, and it was made with AI-assisted tooling; every
 design choice is written down above and in `specs/`. Maya and her keys are made up.
 

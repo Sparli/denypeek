@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""keyhush guard: a pre-tool hook that stops coding agents reading secret files.
+"""denypeek guard: a pre-tool hook that stops coding agents reading secret files.
 
-One file, Python 3.9+ standard library only. `keyhush guard install` copies it to
-~/.keyhush/guard.py and wires it into each agent:
+One file, Python 3.9+ standard library only. `denypeek guard install` copies it to
+~/.denypeek/guard.py and wires it into each agent:
 
-    python3 ~/.keyhush/guard.py --agent claude|codex|cursor|gemini
+    python3 ~/.denypeek/guard.py --agent claude|codex|cursor|gemini
 
 It reads the agent's hook JSON on stdin and denies:
-- file reads, edits and writes of a path that matches ~/.keyhush/secretfiles;
+- file reads, edits and writes of a path that matches ~/.denypeek/secretfiles;
 - shell commands that name such a path (after quotes, ~, $HOME, $IFS and globs);
 - recursive grep (or ripgrep) over a folder that holds such a file.
 Anything else is allowed. On any error of its own it blocks (fails closed) and says how to
-remove it: keyhush guard uninstall.
+remove it: denypeek guard uninstall.
 """
 
 from __future__ import annotations
@@ -59,12 +59,12 @@ def tick():
 MAX_INPUT = 4_000_000  # bytes; bigger hook inputs are blocked, not parsed
 WALK_LIMIT = 20_000  # entries checked when a grep targets a folder
 WALK_SECONDS = 0.4
-UNINSTALL = "keyhush guard uninstall"
+UNINSTALL = "denypeek guard uninstall"
 
 DEFAULT_PATTERNS = """\
-# keyhush secret files: gitignore-style patterns, one per line. Case does not matter.
+# denypeek secret files: gitignore-style patterns, one per line. Case does not matter.
 # A name with no slash matches at any depth. `~/` is your home folder.
-# A line starting with ! allows a path again. Edit, then run: keyhush guard test
+# A line starting with ! allows a path again. Edit, then run: denypeek guard test
 .env
 .env.*
 !.env.example
@@ -128,7 +128,7 @@ def home_dir():
 
 
 def load_patterns(path=None):
-    path = path or os.path.join(home_dir(), ".keyhush", "secretfiles")
+    path = path or os.path.join(home_dir(), ".denypeek", "secretfiles")
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -234,13 +234,13 @@ def is_secret(path, rules):
 
 
 # --- self-protection -------------------------------------------------------------------
-# An agent must not be able to switch the guard off. keyhush's own folder and the files that
+# An agent must not be able to switch the guard off. denypeek's own folder and the files that
 # hold the agents' hook settings are always denied, whatever the pattern list says. The user
 # changes them in their own terminal, where no hook runs.
 
 
 def protected_paths():
-    """(keyhush folder, set of protected files), normalised. Includes symlink targets."""
+    """(denypeek folder, set of protected files), normalised. Includes symlink targets."""
     home = home_dir()
     claude_dirs = {os.path.join(home, ".claude")}
     codex_dirs = {os.path.join(home, ".codex")}
@@ -263,7 +263,7 @@ def protected_paths():
             norm.add(_norm(os.path.realpath(f)))
         except (OSError, ValueError):
             pass
-    kdir = os.path.join(home, ".keyhush")
+    kdir = os.path.join(home, ".denypeek")
     dirs = {_norm(os.path.normpath(kdir))}
     # Per-user Python folders: a usercustomize.py, sitecustomize.py or .pth file there runs
     # before any script in Pythons that load the user site (G1).
@@ -459,7 +459,7 @@ def _find_key(value, key):
 
 def settings_problem(kind, text):
     """Why this settings content would switch hooks off or cannot be checked, or None."""
-    off = "the change would switch agent hooks off, which would disable keyhush"
+    off = "the change would switch agent hooks off, which would disable denypeek"
     if kind == "codex":
         try:
             import tomllib  # Python 3.11+
@@ -501,7 +501,7 @@ def settings_problem(kind, text):
             return (
                 "the change would set "
                 + ", ".join(sorted(map(str, risky)))
-                + " for the agent, which could change how the keyhush hook runs"
+                + " for the agent, which could change how the denypeek hook runs"
             )
     if kind == "gemini" and isinstance(data, dict):
         cfg = data.get("hooksConfig")
@@ -509,7 +509,7 @@ def settings_problem(kind, text):
             if cfg.get("enabled") is False:
                 return off
             disabled = cfg.get("disabled")
-            if isinstance(disabled, list) and any("keyhush" in str(x).lower() for x in disabled):
+            if isinstance(disabled, list) and any("denypeek" in str(x).lower() for x in disabled):
                 return off
     return None
 
@@ -556,7 +556,7 @@ def patch_settings_problem(text, cwd):
         if header == "add":
             return settings_problem(settings_kind(current), "\n".join(lines) + "\n")
         return (
-            "a patch changes an agent settings file, which keyhush cannot check; "
+            "a patch changes an agent settings file, which denypeek cannot check; "
             "edit it in your own terminal"
         )
 
@@ -751,7 +751,7 @@ def _find_reaches_agent_dir(words, folders):
 def shell_folder_problem(command, folders):
     message = (
         "the command may move, delete or change an agent's settings folder, which "
-        "would remove the keyhush hook; do that in your own terminal"
+        "would remove the denypeek hook; do that in your own terminal"
     )
     for raw in SHELL_OPERATORS.split(command):
         text = REDIRECT_TARGET.sub(" ", raw)
@@ -786,7 +786,7 @@ def blocked_path(path, rules):
 def reason_for(path, verb="names"):
     if is_protected(path):
         return (
-            f"the call {verb} {os.path.basename(path.rstrip('/')) or path}, which keyhush "
+            f"the call {verb} {os.path.basename(path.rstrip('/')) or path}, which denypeek "
             "protects so an agent cannot switch the guard off; change it in your own terminal"
         )
     return f"the call {verb} a secret file ({os.path.basename(path.rstrip('/'))})"
@@ -1068,10 +1068,10 @@ def cd_targets(parts, cwd):
 
 
 def switches_guard(tokens):
-    """True for `keyhush guard install|uninstall` in any form (keyhush, python -m keyhush...)."""
+    """True for `denypeek guard install|uninstall` in any form (denypeek, python -m denypeek...)."""
     low = [os.path.basename(t).lower() for t in tokens]
     return (
-        any("keyhush" in t for t in low)
+        any("denypeek" in t for t in low)
         and "guard" in low
         and ("uninstall" in low or "install" in low)
     )
@@ -1081,7 +1081,7 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=()):
     tokens, parts = split_tokens(command)
     if switches_guard(tokens):
         return (
-            "keyhush guard install and uninstall change the guard itself; "
+            "denypeek guard install and uninstall change the guard itself; "
             "run them yourself in a terminal"
         )
     # `cd dir && cat .env`: relative paths are checked against every folder the command
@@ -1171,7 +1171,7 @@ def decide(event, rules):
         if switches_hooks_off(s[:1_000_000]):
             return (
                 "the call would switch agent hooks off (disableAllHooks or hooks = false), "
-                "which would disable keyhush; change hook settings in your own terminal"
+                "which would disable denypeek; change hook settings in your own terminal"
             )
         if key in SHELL_KEYS and len(s) > MAX_COMMAND:
             return f"the command is too long to check ({len(s)} characters)"
@@ -1256,7 +1256,7 @@ def decide(event, rules):
 
 def deny_output(agent, event_name, reason):
     """(stdout, exit code) that each agent reads as a denial."""
-    msg = f"keyhush blocked this: {reason}. If this is wrong, edit ~/.keyhush/secretfiles."
+    msg = f"denypeek blocked this: {reason}. If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":
         return json.dumps({"permission": "deny", "user_message": msg, "agent_message": msg}), 0
     if agent == "gemini":
@@ -1283,7 +1283,7 @@ def allow_output(agent):
 
 
 def fail_closed(agent, why):
-    msg = f"keyhush guard error ({why}); blocked to be safe. To remove the guard: {UNINSTALL}"
+    msg = f"denypeek guard error ({why}); blocked to be safe. To remove the guard: {UNINSTALL}"
     out, _ = deny_output(agent, "PreToolUse", why)
     data = json.loads(out)
     for k in ("user_message", "agent_message", "reason"):

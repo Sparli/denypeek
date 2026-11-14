@@ -1,5 +1,5 @@
 flowchart LR
-    U(["You or an agent"]) --> CLI["keyhush CLI<br/>cli.py, argparse"]
+    U(["You or an agent"]) --> CLI["denypeek CLI<br/>cli.py, argparse"]
 
     subgraph build["Build time (repo only)"]
         GL[("tools/pinned/gitleaks.toml<br/>gitleaks v8.30.1")] --> GEN["tools/gen_rules.py<br/>Go regex to Python"]
@@ -19,14 +19,14 @@ flowchart LR
     CLI -->|redact, undo| RED["redact.py"]
     RED --> SCAN
     RED -->|"atomic rewrite<br/>JSONL and JSON only"| C1 & C2 & C3
-    RED --> BK[("~/.keyhush/backups/<br/>0700 folders, 0600 files")]
-    SCAN --> SALT[("~/.keyhush/salt<br/>fingerprint key")]
+    RED --> BK[("~/.denypeek/backups/<br/>0700 folders, 0600 files")]
+    SCAN --> SALT[("~/.denypeek/salt<br/>fingerprint key")]
 
     CLI -->|guard install, uninstall| INST["guard/install_*.py"]
-    INST -->|"copy, and write the wrapper"| GP["~/.keyhush/guard.sh wrapper<br/>runs guard.py, stdlib only"]
-    INST -->|"default list if missing"| PAT[("~/.keyhush/secretfiles")]
+    INST -->|"copy, and write the wrapper"| GP["~/.denypeek/guard.sh wrapper<br/>runs guard.py, stdlib only"]
+    INST -->|"default list if missing"| PAT[("~/.denypeek/secretfiles")]
     INST -->|"backup, merge, atomic write"| CFG
-    INST --> CB[("~/.keyhush/config-backups/<br/>~/.keyhush/guard-state.json")]
+    INST --> CB[("~/.denypeek/config-backups/<br/>~/.denypeek/guard-state.json")]
     subgraph CFG["Agent configs"]
         K1["~/.claude/settings.json"]
         K2["~/.codex/hooks.json"]
@@ -35,4 +35,4 @@ flowchart LR
     end
     CFG -.->|"agent runs the hook<br/>before each tool call"| GP
     PAT --> GP
-    GP -.->|"denies any agent access"| PROT["~/.keyhush/** and the<br/>hook config files"]
+    GP -.->|"denies any agent access"| PROT["~/.denypeek/** and the<br/>hook config files"]

@@ -51,10 +51,10 @@ def seed(home: Path) -> dict[Path, dict]:
 
 
 def count_ours(obj) -> int:
-    """Hook entries pointing at keyhush: guard.sh (macOS, Linux) or guard.py (Windows)."""
+    """Hook entries pointing at denypeek: guard.sh (macOS, Linux) or guard.py (Windows)."""
     text = json.dumps(obj)
     return sum(
-        text.count(f".keyhush{sep}guard.{ext}") for sep in ("/", "\\\\") for ext in ("py", "sh")
+        text.count(f".denypeek{sep}guard.{ext}") for sep in ("/", "\\\\") for ext in ("py", "sh")
     )
 
 
@@ -64,7 +64,7 @@ def our_commands(obj) -> list[str]:
     def walk(v):
         if isinstance(v, dict):
             for k, x in v.items():
-                if k == "command" and isinstance(x, str) and "keyhush" in x:
+                if k == "command" and isinstance(x, str) and "denypeek" in x:
                     found.append(x)
                 else:
                     walk(x)
@@ -110,10 +110,10 @@ def test_a10_install_twice_keeps_other_settings(isolated):
     gemini = json.loads((home / ".gemini/settings.json").read_text())
     assert gemini["general"] == {"vimMode": True} and count_ours(gemini) == 1
 
-    backups = list((home / ".keyhush/config-backups").iterdir())
+    backups = list((home / ".denypeek/config-backups").iterdir())
     for path in configs:
         assert any(b.name.endswith(f"{path.parent.name}-{path.name}") for b in backups), path
-    assert (home / ".keyhush/guard.py").exists() and (home / ".keyhush/secretfiles").exists()
+    assert (home / ".denypeek/guard.py").exists() and (home / ".denypeek/secretfiles").exists()
 
 
 def test_a11_uninstall_restores_each_config(isolated):
@@ -125,7 +125,7 @@ def test_a11_uninstall_restores_each_config(isolated):
     assert code == 0, out + err
     for path, original in configs.items():
         assert json.loads(path.read_text()) == original, path
-    assert not (home / ".keyhush/guard.py").exists()
+    assert not (home / ".denypeek/guard.py").exists()
 
 
 def test_a11_files_created_by_install_are_removed(isolated):
@@ -204,7 +204,7 @@ def test_unexpected_types_are_never_touched(isolated):
 
 
 def test_temporary_python_is_never_used():
-    from keyhush.guard.install_base import _temporary
+    from denypeek.guard.install_base import _temporary
 
     assert _temporary("/Users/a/.cache/uv/archive-v0/abc/bin/python")
     assert not _temporary("/usr/bin/python3")
@@ -226,7 +226,7 @@ def test_a10_read_only_config_is_left_untouched(isolated):
     assert "read-only; not touched" in err and "opus" not in err + out
     assert cfg.read_bytes() == before
     assert stat.S_IMODE(cfg.stat().st_mode) == 0o444
-    state = json.loads((home / ".keyhush/guard-state.json").read_text())
+    state = json.loads((home / ".denypeek/guard-state.json").read_text())
     assert "claude" not in state
     gem = json.loads((home / ".gemini/settings.json").read_text())  # others still installed
     assert count_ours(gem) == 1
@@ -274,8 +274,8 @@ def test_header_says_how_many_agents_were_installed(isolated):
     bad.write_text("{broken")
     code, out, err = run_cli("guard", "install", "--home", str(isolated), "--python", PY)
     assert code == 2
-    assert "keyhush guard installed for 3 of 4 agent(s):" in out
-    assert "keyhush guard installed:" not in out
+    assert "denypeek guard installed for 3 of 4 agent(s):" in out
+    assert "denypeek guard installed:" not in out
     assert "claude: NOT changed" in err
 
 
@@ -284,10 +284,10 @@ def test_uninstall_removes_state_and_offers_config_purge(isolated):
     run_cli("guard", "install", "--home", str(isolated), "--python", PY)
     code, out, _ = run_cli("guard", "uninstall", "--home", str(isolated))
     assert code == 0
-    assert not (isolated / ".keyhush/guard-state.json").exists()
-    assert not (isolated / ".keyhush/guard.sh").exists()
-    assert "keyhush backups purge --config --yes" in out
-    cfg = isolated / ".keyhush/config-backups"
+    assert not (isolated / ".denypeek/guard-state.json").exists()
+    assert not (isolated / ".denypeek/guard.sh").exists()
+    assert "denypeek backups purge --config --yes" in out
+    cfg = isolated / ".denypeek/config-backups"
     assert any(cfg.iterdir())
     code, out, _ = run_cli("backups", "list", "--home", str(isolated))
     assert "copy(ies) of earlier agent settings" in out
@@ -299,7 +299,7 @@ def test_uninstall_removes_state_and_offers_config_purge(isolated):
 def test_partial_uninstall_keeps_state_for_the_rest(isolated):
     run_cli("guard", "install", "--home", str(isolated), "--python", PY)
     run_cli("guard", "uninstall", "--home", str(isolated), "--agent", "claude")
-    state = json.loads((isolated / ".keyhush/guard-state.json").read_text())
+    state = json.loads((isolated / ".denypeek/guard-state.json").read_text())
     assert "claude" not in state and "gemini" in state
 
 
@@ -320,12 +320,12 @@ def test_g12_user_hook_in_our_group_survives_reinstall_and_uninstall(isolated):
 
 
 def test_g12_loose_names_are_not_ours():
-    from keyhush.guard.install_base import is_ours
+    from denypeek.guard.install_base import is_ours
 
-    assert not is_ours("python3 ~/tools/keyhush-notes/guard.py")
-    assert not is_ours("echo keyhush guard.py")
-    assert is_ours('/bin/sh "/Users/x/.keyhush/guard.sh" --agent claude')
-    windows = r'"C:\Python\python.exe" -I -S "C:\Users\x\.keyhush\guard.py" --agent codex'
+    assert not is_ours("python3 ~/tools/denypeek-notes/guard.py")
+    assert not is_ours("echo denypeek guard.py")
+    assert is_ours('/bin/sh "/Users/x/.denypeek/guard.sh" --agent claude')
+    windows = r'"C:\Python\python.exe" -I -S "C:\Users\x\.denypeek\guard.py" --agent codex'
     assert is_ours(windows)
 
 

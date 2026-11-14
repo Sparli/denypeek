@@ -2,7 +2,7 @@
 
 Every edit: back the file up first, merge without touching other keys, write atomically,
 recognise our own entries so uninstall removes only ours, and stay idempotent.
-What we created or added is recorded in ~/.keyhush/guard-state.json.
+What we created or added is recorded in ~/.denypeek/guard-state.json.
 """
 
 from __future__ import annotations
@@ -26,18 +26,18 @@ from ..fsutil import atomic_write, ensure_private_dir, write_new_private
 from ..sources import Home
 
 MAX_CONFIG_BYTES = 5_000_000
-MARKER = "keyhush"
+MARKER = "denypeek"
 
 
 class ConfigError(Exception):
     """A config file we will not touch (malformed, too big, not an object)."""
 
 
-OUR_HOOK = re.compile(r"[/\\]\.keyhush[/\\]guard\.(?:py|sh)\b")
+OUR_HOOK = re.compile(r"[/\\]\.denypeek[/\\]guard\.(?:py|sh)\b")
 
 
 def is_ours(command: str) -> bool:
-    """Our hook command names ~/.keyhush/guard.sh or guard.py exactly (G12)."""
+    """Our hook command names ~/.denypeek/guard.sh or guard.py exactly (G12)."""
     return bool(OUR_HOOK.search(command or ""))
 
 
@@ -63,17 +63,17 @@ def remove_ours(entries: list) -> None:
 
 
 def guard_path(home: Home) -> Path:
-    return home.keyhush_dir / "guard.py"
+    return home.denypeek_dir / "guard.py"
 
 
 def wrapper_path(home: Home) -> Path:
-    return home.keyhush_dir / "guard.sh"
+    return home.denypeek_dir / "guard.sh"
 
 
 USE_WRAPPER = os.name == "posix"  # /bin/sh exists on macOS and Linux, not on Windows
 
 WRAPPER = """#!/bin/sh
-# keyhush guard wrapper, written by `keyhush guard install`.
+# denypeek guard wrapper, written by `denypeek guard install`.
 # Exit 2 means "block this tool call" to every supported agent. It is used if the hook's Python
 # or guard.py is missing, if Python fails, or if the hook gives no answer.
 PY={py}
@@ -82,8 +82,8 @@ KHOME={home}
 CCD={claude_dir}
 CXH={codex_dir}
 if [ ! -x "$PY" ] || [ ! -f "$GUARD" ]; then
-  echo "keyhush guard cannot run: its Python or guard.py is missing. Blocked to be safe. \\
-Fix it in your own terminal: keyhush guard status (or keyhush guard uninstall)." >&2
+  echo "denypeek guard cannot run: its Python or guard.py is missing. Blocked to be safe. \\
+Fix it in your own terminal: denypeek guard status (or denypeek guard uninstall)." >&2
   exit 2
 fi
 # The hook command starts this script with `/usr/bin/env -i`, so no variable or exported
@@ -94,11 +94,11 @@ OUT=$(/usr/bin/env -i HOME="$KHOME" PATH=/usr/bin:/bin CLAUDE_CONFIG_DIR="$CCD" 
   CODEX_HOME="$CXH" "$PY" -I -S "$GUARD" --home "$KHOME" "$@")
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
-  echo "keyhush guard failed (exit $rc). Blocked to be safe. Run: keyhush guard status" >&2
+  echo "denypeek guard failed (exit $rc). Blocked to be safe. Run: denypeek guard status" >&2
   exit 2
 fi
 if [ "$rc" -eq 0 ] && [ -z "$OUT" ]; then
-  echo "keyhush guard gave no answer. Blocked to be safe. Run: keyhush guard status" >&2
+  echo "denypeek guard gave no answer. Blocked to be safe. Run: denypeek guard status" >&2
   exit 2
 fi
 printf '%s\\n' "$OUT"
@@ -134,7 +134,7 @@ def wrapper_python(home: Home) -> Optional[str]:
 
 
 def state_path(home: Home) -> Path:
-    return home.keyhush_dir / "guard-state.json"
+    return home.denypeek_dir / "guard-state.json"
 
 
 def load_state(home: Home) -> dict:
@@ -145,7 +145,7 @@ def load_state(home: Home) -> dict:
 
 
 def save_state(home: Home, state: dict) -> None:
-    ensure_private_dir(home.keyhush_dir)
+    ensure_private_dir(home.denypeek_dir)
     path = state_path(home)
     data = json.dumps(state, indent=2).encode()
     if path.exists():
@@ -248,7 +248,7 @@ def stable_python(explicit: Optional[str] = None) -> tuple[str, Optional[str]]:
         why = _fragile(sys.executable) or "no system Python was found"
         return sys.executable, (
             f"no stable Python found, so the hook uses {sys.executable} ({why}). If that folder "
-            "is moved or deleted, the guard stops working: run keyhush guard install again "
+            "is moved or deleted, the guard stops working: run denypeek guard install again "
             "with --python /path/to/python3."
         )
     raise ConfigError("no working Python 3.9+ found; pass --python /path/to/python3")
@@ -342,7 +342,7 @@ def read_only_reason(path: Path) -> Optional[str]:
     if not os.access(real, os.W_OK) or not (mode & stat.S_IWUSR):
         return (
             f"{path} is read-only; not touched. Make it writable yourself if you want "
-            "keyhush to change it"
+            "denypeek to change it"
         )
     return None
 
@@ -350,8 +350,8 @@ def read_only_reason(path: Path) -> Optional[str]:
 def backup_config(home: Home, path: Path) -> Optional[Path]:
     if not path.exists():
         return None
-    base = home.keyhush_dir / "config-backups"
-    ensure_private_dir(home.keyhush_dir)
+    base = home.denypeek_dir / "config-backups"
+    ensure_private_dir(home.denypeek_dir)
     ensure_private_dir(base)
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     target = base / f"{stamp}-{path.parent.name}-{path.name}"

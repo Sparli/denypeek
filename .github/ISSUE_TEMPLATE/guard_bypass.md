@@ -12,4 +12,4 @@ vulnerability reporting instead (see SECURITY.md).
 ## The tool call or command
 (Use fake file names and no real keys.)
 
-## Output of `keyhush guard test`
+## Output of `denypeek guard test`

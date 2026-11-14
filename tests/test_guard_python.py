@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import SPECS, blocked, sample_inputs
-from keyhush.guard.install_base import ours_commands, stable_python
-from keyhush.sources import resolve_home
+from denypeek.guard import SPECS, blocked, sample_inputs
+from denypeek.guard.install_base import ours_commands, stable_python
+from denypeek.sources import resolve_home
 
 from .conftest import run_cli
 
@@ -63,13 +63,13 @@ def test_missing_python_blocks_every_call(agent, isolated, tmp_path, proj):
         proc = run_installed(isolated, agent, case, proj)
         assert proc.returncode == 2, (agent, case, proc.returncode)
         assert blocked(agent, proc.stdout.decode(), proc.returncode)
-        assert "keyhush guard" in proc.stderr.decode()
+        assert "denypeek guard" in proc.stderr.decode()
 
 
 @posix_only
 def test_guard_that_cannot_load_blocks(isolated, proj):
     install_with_python(isolated, sys.executable)
-    (isolated / ".keyhush" / "guard.py").write_text("def broken(:\n")
+    (isolated / ".denypeek" / "guard.py").write_text("def broken(:\n")
     proc = run_installed(isolated, "claude", "ls", proj)
     assert proc.returncode == 2 and "Blocked to be safe" in proc.stderr.decode()
 
@@ -102,7 +102,7 @@ def test_install_warns_about_a_virtualenv_python(isolated):
 
 def test_default_choice_avoids_virtualenvs_or_warns():
     python, warning = stable_python()
-    from keyhush.guard.install_base import in_virtualenv
+    from denypeek.guard.install_base import in_virtualenv
 
     assert in_virtualenv(python) is None or warning
 

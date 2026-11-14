@@ -22,7 +22,7 @@ def _entry(command: str) -> dict:
                 "type": "command",
                 "command": command,
                 "timeout": 10,
-                "statusMessage": "keyhush: checking for secret files",
+                "statusMessage": "denypeek: checking for secret files",
             }
         ],
     }
@@ -41,7 +41,7 @@ SPEC = AgentSpec(
     hook_lists=[(["hooks", "PreToolUse"], _entry)],
     entry_commands=_commands,
     notes=[
-        "Open Codex and run /hooks to trust the keyhush hook. Codex skips it until you do.",
+        "Open Codex and run /hooks to trust the denypeek hook. Codex skips it until you do.",
         "Hooks are on by default. If you turned them off, set `[features] hooks = true` "
         "in ~/.codex/config.toml.",
         "Codex reads files through the shell, so the guard checks shell commands and patches.",

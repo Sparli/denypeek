@@ -10,19 +10,19 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import blocked
+from denypeek.guard import blocked
 
-GUARD = Path(__file__).resolve().parents[1] / "src" / "keyhush" / "guard" / "guard.py"
+GUARD = Path(__file__).resolve().parents[1] / "src" / "denypeek" / "guard" / "guard.py"
 AGENTS = ["claude", "codex", "cursor", "gemini"]
 
 
 def protected_files(home: Path) -> list[Path]:
     return [
-        home / ".keyhush" / "secretfiles",
-        home / ".keyhush" / "guard.py",
-        home / ".keyhush" / "guard-state.json",
-        home / ".keyhush" / "backups" / "20261113T000000Z-abc123" / "blob-0001",
-        home / ".keyhush" / "config-backups" / "x-.claude-settings.json",
+        home / ".denypeek" / "secretfiles",
+        home / ".denypeek" / "guard.py",
+        home / ".denypeek" / "guard-state.json",
+        home / ".denypeek" / "backups" / "20261113T000000Z-abc123" / "blob-0001",
+        home / ".denypeek" / "config-backups" / "x-.claude-settings.json",
         home / ".claude" / "settings.json",
         home / ".codex" / "hooks.json",
         home / ".codex" / "config.toml",
@@ -107,29 +107,29 @@ def test_a19_tool_access_to_protected_files_is_denied(agent, kind, project, isol
 
 
 SHELL_ATTACKS = [
-    "echo x > ~/.keyhush/secretfiles",
-    "printf '' >| $HOME/.keyhush/secretfiles",
-    "rm ~/.keyhush/guard.py",
-    "rm -rf ~/.keyhush",
-    "cat ~/.keyhush/secretfiles",
+    "echo x > ~/.denypeek/secretfiles",
+    "printf '' >| $HOME/.denypeek/secretfiles",
+    "rm ~/.denypeek/guard.py",
+    "rm -rf ~/.denypeek",
+    "cat ~/.denypeek/secretfiles",
     "cp /dev/null ~/.codex/hooks.json",
-    "sed -i '' 's/keyhush//' ~/.claude/settings.json",
+    "sed -i '' 's/denypeek//' ~/.claude/settings.json",
     "python3 -c 'print(1)' > ~/.gemini/settings.json",
     "mv ~/.cursor/hooks.json /tmp/x",
     "echo '[features]' >> ~/.codex/config.toml",
-    "cd ~ && rm .keyhush/guard.py",
-    "keyhush guard uninstall",
-    "uv run keyhush guard uninstall --agent claude",
-    "python -m keyhush.cli guard uninstall",
-    "keyhush guard install --python /bin/true",
-    "bash -c 'keyhush guard uninstall'",
+    "cd ~ && rm .denypeek/guard.py",
+    "denypeek guard uninstall",
+    "uv run denypeek guard uninstall --agent claude",
+    "python -m denypeek.cli guard uninstall",
+    "denypeek guard install --python /bin/true",
+    "bash -c 'denypeek guard uninstall'",
 ]
 
 
 @pytest.mark.parametrize("agent", AGENTS)
 @pytest.mark.parametrize("command", SHELL_ATTACKS)
 def test_a19_shell_commands_on_protected_files_are_denied(agent, command, project, isolated):
-    (isolated / ".keyhush").mkdir(exist_ok=True)
+    (isolated / ".denypeek").mkdir(exist_ok=True)
     payload = event(agent, "shell", command, project)
     denied, out = run(agent, payload, project, isolated)
     assert denied, (agent, command, out)
@@ -137,9 +137,15 @@ def test_a19_shell_commands_on_protected_files_are_denied(agent, command, projec
 
 @pytest.mark.parametrize(
     "command",
-    ["keyhush scan --json", "keyhush guard status", "keyhush guard test", "ls ~", "cat README.md"],
+    [
+        "denypeek scan --json",
+        "denypeek guard status",
+        "denypeek guard test",
+        "ls ~",
+        "cat README.md",
+    ],
 )
-def test_keyhush_read_only_commands_still_allowed(command, project, isolated):
+def test_denypeek_read_only_commands_still_allowed(command, project, isolated):
     denied, out = run("claude", event("claude", "shell", command, project), project, isolated)
     assert not denied, (command, out)
 
@@ -174,11 +180,11 @@ def test_custom_config_dirs_are_protected(project, isolated, tmp_path):
 
 
 def test_user_pattern_list_cannot_unprotect(project, isolated):
-    (isolated / ".keyhush").mkdir()
-    (isolated / ".keyhush" / "secretfiles").write_text("!**\n!~/.keyhush/**\n")
+    (isolated / ".denypeek").mkdir()
+    (isolated / ".denypeek" / "secretfiles").write_text("!**\n!~/.denypeek/**\n")
     denied, _ = run(
         "claude",
-        event("claude", "edit", str(isolated / ".keyhush" / "guard.py"), project),
+        event("claude", "edit", str(isolated / ".denypeek" / "guard.py"), project),
         project,
         isolated,
     )

@@ -1,6 +1,6 @@
 # Security policy
 
-keyhush is a security tool, so please report problems with it privately.
+denypeek is a security tool, so please report problems with it privately.
 
 ## Reporting a vulnerability
 
@@ -21,5 +21,5 @@ We aim to reply within 7 days.
 
 ## Known limits (not vulnerabilities)
 
-The README's "Limitations (honest)" section lists what keyhush does not claim to stop, for example scripts that
+The README's "Limitations (honest)" section lists what denypeek does not claim to stop, for example scripts that
 open files themselves, MCP tools, and secrets with no known shape.

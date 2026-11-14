@@ -19,7 +19,7 @@ def _entry(command: str) -> dict:
     return {
         "matcher": MATCHER,
         "hooks": [
-            {"name": "keyhush-guard", "type": "command", "command": command, "timeout": 10000}
+            {"name": "denypeek-guard", "type": "command", "command": command, "timeout": 10000}
         ],
     }
 

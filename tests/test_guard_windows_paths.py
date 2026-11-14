@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from keyhush.guard import guard as g
+from denypeek.guard import guard as g
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_windows_absolute_paths_are_denied(command, windows, rules, tmp_path, mo
         r"type %HOMEDRIVE%%HOMEPATH%\.aws\credentials",
         r"gc $env:USERPROFILE\.aws\credentials",
         r"gc ${env:USERPROFILE}\.ssh\id_ed25519",
-        r"type %userprofile%\.keyhush\secretfiles",
+        r"type %userprofile%\.denypeek\secretfiles",
     ],
 )
 def test_windows_home_variables_are_expanded(command, rules, tmp_path, monkeypatch, isolated):

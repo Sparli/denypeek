@@ -61,7 +61,7 @@ def _digest(path: Path) -> str:
 
 
 def copy_guard(home: Home) -> None:
-    ensure_private_dir(home.keyhush_dir)
+    ensure_private_dir(home.denypeek_dir)
     atomic_write(guard_path(home), GUARD_SOURCE.read_bytes(), mode=0o600)
 
 
@@ -158,7 +158,7 @@ DENY_CASES = [
     "grep -r KEY . (folder holds .env)",
     "edit .dev.vars",
     "read ~/.ssh/id_rsa",
-    "overwrite ~/.keyhush/secretfiles",
+    "overwrite ~/.denypeek/secretfiles",
 ]
 ALLOW_CASES = ["read .env.example", "read src/app.py", "ls", "grep -r KEY src/ (no secret file)"]
 
@@ -167,7 +167,7 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
     """One hook input per case, in the agent's documented format."""
     p = lambda *parts: str(proj.joinpath(*parts))  # noqa: E731
     ssh = str(home.root / ".ssh" / "id_rsa")
-    base = {"session_id": "keyhush-test", "transcript_path": None, "cwd": str(proj)}
+    base = {"session_id": "denypeek-test", "transcript_path": None, "cwd": str(proj)}
 
     if agent in ("claude", "codex"):
 
@@ -177,12 +177,12 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
                 "hook_event_name": "PreToolUse",
                 "tool_name": name,
                 "tool_input": ti,
-                "tool_use_id": "keyhush-test",
+                "tool_use_id": "denypeek-test",
             }
             if agent == "claude":
                 ev["permission_mode"] = "default"
             else:
-                ev.update(turn_id="keyhush-test", model="test", permission_mode="default")
+                ev.update(turn_id="denypeek-test", model="test", permission_mode="default")
             return ev
 
         if agent == "claude":
@@ -195,7 +195,7 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
         sh = lambda c: tool("Bash", {"command": c})  # noqa: E731
     elif agent == "cursor":
         cbase = {
-            "conversation_id": "keyhush-test",
+            "conversation_id": "denypeek-test",
             "generation_id": "g",
             "model": "test",
             "cursor_version": "test",
@@ -227,7 +227,7 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
             "hook_event_name": "preToolUse",
             "tool_name": "Write",
             "tool_input": {"file_path": p(".dev.vars"), "content": "A=2"},
-            "tool_use_id": "keyhush-test",
+            "tool_use_id": "denypeek-test",
             "cwd": str(proj),
         }
     else:  # gemini
@@ -251,7 +251,7 @@ def sample_inputs(agent: str, proj: Path, home: Home) -> dict[str, dict]:
         "grep -r KEY . (folder holds .env)": sh("grep -r KEY ."),
         "edit .dev.vars": edit,
         "read ~/.ssh/id_rsa": reads(ssh),
-        "overwrite ~/.keyhush/secretfiles": sh("echo '!*' > ~/.keyhush/secretfiles"),
+        "overwrite ~/.denypeek/secretfiles": sh("echo '!*' > ~/.denypeek/secretfiles"),
         "read .env.example": reads(p(".env.example")),
         "read src/app.py": reads(p("src", "app.py")),
         "ls": sh("ls"),
@@ -292,7 +292,7 @@ def _argv(command: str) -> list[str] | str:
 
 def do_test(home: Home, agents=None) -> list[TestRow]:
     rows: list[TestRow] = []
-    proj = Path(tempfile.mkdtemp(prefix="keyhush-test-"))
+    proj = Path(tempfile.mkdtemp(prefix="denypeek-test-"))
     try:
         (proj / "src").mkdir()
         for name in (".env", ".env.example", ".dev.vars"):
@@ -334,11 +334,11 @@ def hook_health(spec, home: Home) -> Optional[str]:
     """Run the installed hook once on a deny case and an allow case. None means healthy."""
     commands = ours_commands(spec, home)
     if not commands:
-        return "no keyhush hook command found"
+        return "no denypeek hook command found"
     python = hook_python(commands[0], home)
     if not python or not os.path.exists(python):
-        return f"the hook's Python is missing ({python or 'unknown'}); run keyhush guard install"
-    proj = Path(tempfile.mkdtemp(prefix="keyhush-status-"))
+        return f"the hook's Python is missing ({python or 'unknown'}); run denypeek guard install"
+    proj = Path(tempfile.mkdtemp(prefix="denypeek-status-"))
     try:
         (proj / "src").mkdir()
         (proj / "src" / "app.py").write_text("x\n")

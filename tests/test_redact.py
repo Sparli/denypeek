@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.redact import redact
-from keyhush.sources import resolve_home
+from denypeek.redact import redact
+from denypeek.sources import resolve_home
 
 from .conftest import fake_github, jl, run_cli, write
 
@@ -78,20 +78,20 @@ def test_a8_backup_location_permissions_and_warning(four_store_home):
     home = four_store_home
     code, out, _ = run_cli("redact", "--home", str(home), "--yes")
     assert "WARNING: the backup still holds the secrets" in out
-    assert "keyhush backups purge" in out
-    base = home / ".keyhush" / "backups"
+    assert "denypeek backups purge" in out
+    base = home / ".denypeek" / "backups"
     sets = [p for p in base.iterdir() if p.is_dir()]
     assert len(sets) == 1
     blobs = sorted(sets[0].glob("blob-*"))
     assert len(blobs) == 3
     if sys.platform != "win32":
-        for d in (home / ".keyhush", base, sets[0]):
+        for d in (home / ".denypeek", base, sets[0]):
             assert stat.S_IMODE(d.stat().st_mode) == 0o700, d
         for f in [*blobs, sets[0] / "manifest.json"]:
             assert stat.S_IMODE(f.stat().st_mode) == 0o600, f
     for path in history_files(home):
         siblings = [p.name for p in path.parent.iterdir()]
-        assert all(not n.startswith((".keyhush", path.name + ".")) for n in siblings), siblings
+        assert all(not n.startswith((".denypeek", path.name + ".")) for n in siblings), siblings
 
     code, out, _ = run_cli("backups", "purge", "--home", str(home), "--yes")
     assert code == 0 and "Deleted 1 backup set(s)." in out
@@ -106,7 +106,7 @@ def test_a8_backup_created_owner_only_even_with_loose_umask(four_store_home):
         run_cli("redact", "--home", str(four_store_home), "--yes")
     finally:
         os.umask(old)
-    for p in (four_store_home / ".keyhush").rglob("*"):
+    for p in (four_store_home / ".denypeek").rglob("*"):
         mode = stat.S_IMODE(p.stat().st_mode)
         assert mode & 0o077 == 0, (p, oct(mode))
 
@@ -155,7 +155,7 @@ def test_redact_refuses_without_yes_when_not_interactive(four_store_home, monkey
 
 def test_file_changed_during_redact_is_left_alone(isolated, monkeypatch):
     f = write(isolated / ".claude/projects/p/a.jsonl", jl({"t": fake_github()}))
-    import keyhush.backups as backups
+    import denypeek.backups as backups
 
     real_add = backups.BackupSet.add
 

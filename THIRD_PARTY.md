@@ -2,7 +2,7 @@
 
 ## gitleaks
 
-keyhush's detection rules (`src/keyhush/rules.py`) are generated from the gitleaks default
+denypeek's detection rules (`src/denypeek/rules.py`) are generated from the gitleaks default
 configuration, `config/gitleaks.toml` at tag **v8.30.1**, fetched from
 <https://raw.githubusercontent.com/gitleaks/gitleaks/v8.30.1/config/gitleaks.toml>.
 An unmodified copy is kept at `tools/pinned/gitleaks.toml` (sha256

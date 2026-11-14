@@ -6,16 +6,16 @@ user can run to prove it. Users asked for a hard block that also covers shell, g
 not only the agent's file tool.
 
 ## Shape
-- One file, `src/keyhush/guard/guard.py`, Python 3.9+ standard library only. `guard install`
-  copies it to `~/.keyhush/guard.py` so it works whatever installed the CLI, and runs it with a
+- One file, `src/denypeek/guard/guard.py`, Python 3.9+ standard library only. `guard install`
+  copies it to `~/.denypeek/guard.py` so it works whatever installed the CLI, and runs it with a
   stable Python, never the temporary one `uvx` uses.
-- One pattern list, `~/.keyhush/secretfiles`, gitignore-style, case-insensitive. Built-in
+- One pattern list, `~/.denypeek/secretfiles`, gitignore-style, case-insensitive. Built-in
   defaults apply when the file is missing.
 - One installer module per agent (`install_claude.py`, `install_codex.py`, `install_cursor.py`,
   `install_gemini.py`), sharing `install_base.py`.
 
 ## How it starts
-On macOS and Linux each agent runs `/usr/bin/env -i /bin/sh ~/.keyhush/guard.sh --agent NAME`, so
+On macOS and Linux each agent runs `/usr/bin/env -i /bin/sh ~/.denypeek/guard.sh --agent NAME`, so
 the wrapper's shell starts from an empty environment: no exported function (`BASH_FUNC_*`) or
 variable can replace its builtins (F1). The wrapper holds
 the absolute path of the hook's Python and the home folder at install time, and starts
@@ -44,17 +44,17 @@ covers a check stuck inside C code (G2).
   search over a folder that holds one.
 - **Allow without approving:** no decision on harmless calls, so the agent's own prompts still run.
   Cursor needs an explicit `allow` because it blocks empty output.
-- **Fail closed:** on its own error the hook denies and names `keyhush guard uninstall`.
+- **Fail closed:** on its own error the hook denies and names `denypeek guard uninstall`.
 - **Field-agnostic:** every string in the tool input is checked, so renamed fields do not open
   holes.
 - **Over-limit input (G3):** commands over 100,000 characters and paths over 4,096 are denied as
   too long to check; path fields are trimmed of surrounding whitespace only.
 - **Working folders (G4):** relative names are checked against the session cwd and the tool's
   `workdir`, `dir_path`, `directory`, `working_directory` or `cwd` fields, and any `cd` target.
-- **Self-protection (A19):** any agent access to `~/.keyhush/**` and to the hook config files
+- **Self-protection (A19):** any agent access to `~/.denypeek/**` and to the hook config files
   (`~/.claude/settings.json` or `$CLAUDE_CONFIG_DIR`, `~/.codex/hooks.json` and `config.toml` or
   `$CODEX_HOME`, `~/.cursor/hooks.json`, `~/.gemini/settings.json`, and their symlink targets) is
-  denied, whatever the pattern list says. Agent-run `keyhush guard install|uninstall` is denied.
+  denied, whatever the pattern list says. Agent-run `denypeek guard install|uninstall` is denied.
   Shell commands may only read `~/.claude`, `~/.codex`, `~/.cursor`, `~/.gemini`. The user's
   Python folders (`~/Library/Python`, `~/.local/lib/python*`, `%APPDATA%\Python`) are protected
   (G1). Agent settings files at any depth (G5): an edit or write is checked by parsing the file it
@@ -88,13 +88,13 @@ covers a check stuck inside C code (G2).
 
 ## Config edits
 Back up first, merge without touching other keys, write atomically, recognise our entries by the
-hook command, record what was created in `~/.keyhush/guard-state.json`, and be idempotent.
+hook command, record what was created in `~/.denypeek/guard-state.json`, and be idempotent.
 Malformed, oversized, oddly typed or read-only configs are refused, never rewritten. The state
-file and the wrapper are removed once nothing is installed; `keyhush backups purge --config`
+file and the wrapper are removed once nothing is installed; `denypeek backups purge --config`
 deletes the copies of earlier settings.
 
 ## Proof
-`keyhush guard test` sends each agent's documented hook input for five deny cases and four allow
+`denypeek guard test` sends each agent's documented hook input for five deny cases and four allow
 cases to the installed hook and prints a table.
 
 ## Out of scope (v0.1)

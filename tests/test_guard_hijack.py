@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from keyhush.guard import SPECS, blocked, sample_inputs
-from keyhush.guard import guard as g
-from keyhush.guard.install_base import ours_commands
-from keyhush.sources import resolve_home
+from denypeek.guard import SPECS, blocked, sample_inputs
+from denypeek.guard import guard as g
+from denypeek.guard.install_base import ours_commands
+from denypeek.sources import resolve_home
 
 from .conftest import run_cli
 
@@ -77,7 +77,7 @@ def test_user_site_cannot_hijack_the_hook(isolated, proj):
 @posix_only
 def test_silent_exit_zero_is_treated_as_failure(isolated, proj):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
-    (isolated / ".keyhush" / "guard.py").write_text("import sys\nsys.exit(0)\n")
+    (isolated / ".denypeek" / "guard.py").write_text("import sys\nsys.exit(0)\n")
     proc = installed_run(isolated, proj, "ls", {})
     assert proc.returncode == 2 and "no answer" in proc.stderr.decode()
 
@@ -105,8 +105,8 @@ def test_allow_always_prints_a_reply():
 
 
 def test_install_and_status_warn_about_a_writable_python(isolated, monkeypatch):
-    import keyhush.guard as guard_pkg
-    import keyhush.guard.install_base as base
+    import denypeek.guard as guard_pkg
+    import denypeek.guard.install_base as base
 
     monkeypatch.setattr(base, "writable_parts", lambda py: ["/fake/lib/python3.x"])
     monkeypatch.setattr(guard_pkg, "writable_parts", lambda py: ["/fake/lib/python3.x"])
@@ -120,7 +120,7 @@ def test_install_and_status_warn_about_a_writable_python(isolated, monkeypatch):
 
 
 def test_default_choice_prefers_a_python_the_user_cannot_modify():
-    from keyhush.guard.install_base import stable_python, writable_parts
+    from denypeek.guard.install_base import stable_python, writable_parts
 
     python, warning = stable_python()
     assert not writable_parts(python) or warning
@@ -129,7 +129,7 @@ def test_default_choice_prefers_a_python_the_user_cannot_modify():
 @posix_only
 def test_old_wrapper_without_isolation_is_reported_out_of_date(isolated):
     run_cli("guard", "install", "--home", str(isolated), "--python", sys.executable)
-    w = isolated / ".keyhush" / "guard.sh"
+    w = isolated / ".denypeek" / "guard.sh"
     w.write_text(w.read_text().replace("-I -S ", ""))
     code, out, _ = run_cli("guard", "status", "--home", str(isolated))
     assert code == 1 and "out of date" in out

@@ -1,4 +1,4 @@
-"""keyhush command line. Standard library only."""
+"""denypeek command line. Standard library only."""
 
 from __future__ import annotations
 
@@ -59,10 +59,11 @@ def cmd_redact(args) -> int:
         print(report.NOT_PROOF)
         return 2 if preview.incomplete else 0
     print(
-        f"keyhush will redact {len(preview.findings)} possible secret(s) in {len(files)} file(s)."
+        f"denypeek will redact {len(preview.findings)} possible secret(s) in {len(files)} file(s)."
     )
     print(
-        "A backup of each file goes to ~/.keyhush/backups/ first. Cursor's database is not changed."
+        "A backup of each file goes to ~/.denypeek/backups/ first. "
+        "Cursor's database is not changed."
     )
     if not _confirm(args, "Redact now?"):
         return 2
@@ -87,8 +88,8 @@ def cmd_redact(args) -> int:
         print(
             "WARNING: the backup still holds the secrets. Check your history, then delete it with:"
         )
-        print("  keyhush backups purge --yes")
-        print("To put everything back instead: keyhush undo")
+        print("  denypeek backups purge --yes")
+        print("To put everything back instead: denypeek undo")
     return res.exit_code
 
 
@@ -116,8 +117,8 @@ def cmd_backups_list(args) -> int:
     if configs:
         print(
             f"{len(configs)} copy(ies) of earlier agent settings in "
-            f"{home.display(home.keyhush_dir / 'config-backups')} "
-            "(delete with: keyhush backups purge --config --yes)"
+            f"{home.display(home.denypeek_dir / 'config-backups')} "
+            "(delete with: denypeek backups purge --config --yes)"
         )
     if not sets:
         print("No redact backups.")
@@ -132,7 +133,7 @@ def cmd_backups_list(args) -> int:
             f"{bs.name}  {len(bs.manifest.get('files', []))} file(s)  "
             f"{size_of(bs.path)} bytes  {state}"
         )
-    print("These backups still hold the secrets. Delete them with: keyhush backups purge --yes")
+    print("These backups still hold the secrets. Delete them with: denypeek backups purge --yes")
     return 0
 
 
@@ -147,7 +148,7 @@ def cmd_backups_purge(args) -> int:
             return 0
         print(
             f"This deletes {len(configs)} copy(ies) of earlier agent settings in "
-            f"{home.display(home.keyhush_dir / 'config-backups')}."
+            f"{home.display(home.denypeek_dir / 'config-backups')}."
         )
         if not _confirm(args, "Delete them?"):
             return 2
@@ -159,9 +160,9 @@ def cmd_backups_purge(args) -> int:
         return 0
     print(
         f"This deletes {len(sets)} backup set(s) under "
-        f"{home.display(home.keyhush_dir / 'backups')}."
+        f"{home.display(home.denypeek_dir / 'backups')}."
     )
-    print("After this, `keyhush undo` cannot restore those files.")
+    print("After this, `denypeek undo` cannot restore those files.")
     if not _confirm(args, "Delete them?"):
         return 2
     n = purge(home)
@@ -186,9 +187,9 @@ def cmd_guard_install(args) -> int:
     changes, warning = do_install(home, args.agent, args.python)
     ok = [c for c in changes if not c.error]
     if len(ok) == len(changes):
-        print("keyhush guard installed:")
+        print("denypeek guard installed:")
     else:
-        print(f"keyhush guard installed for {len(ok)} of {len(changes)} agent(s):")
+        print(f"denypeek guard installed for {len(ok)} of {len(changes)} agent(s):")
     for c in changes:
         if c.error:
             continue
@@ -197,10 +198,10 @@ def cmd_guard_install(args) -> int:
         print(f"  {SPECS[c.agent].label:<12} {home.display(c.path)}  {what}{extra}")
         for note in SPECS[c.agent].notes:
             print(f"      note: {note}")
-    print(f"Secret-file patterns: {home.display(home.keyhush_dir / 'secretfiles')}")
+    print(f"Secret-file patterns: {home.display(home.denypeek_dir / 'secretfiles')}")
     if warning:
         print(f"WARNING: {warning}")
-    print("Restart open agent sessions, then check it works: keyhush guard test")
+    print("Restart open agent sessions, then check it works: denypeek guard test")
     return _guard_errors(changes)
 
 
@@ -211,19 +212,19 @@ def cmd_guard_uninstall(args) -> int:
     changes = do_uninstall(home, args.agent)
     ok = [c for c in changes if not c.error]
     if len(ok) == len(changes):
-        print("keyhush guard removed:")
+        print("denypeek guard removed:")
     else:
-        print(f"keyhush guard removed for {len(ok)} of {len(changes)} agent(s):")
+        print(f"denypeek guard removed for {len(ok)} of {len(changes)} agent(s):")
     for c in changes:
         if not c.error:
             what = "removed our entries" if c.changed else "nothing of ours found"
             print(f"  {SPECS[c.agent].label:<12} {home.display(c.path)}  {what}")
-    print("Your pattern list was kept: " + home.display(home.keyhush_dir / "secretfiles"))
-    cfg = home.keyhush_dir / "config-backups"
+    print("Your pattern list was kept: " + home.display(home.denypeek_dir / "secretfiles"))
+    cfg = home.denypeek_dir / "config-backups"
     if cfg.is_dir() and any(cfg.iterdir()):
         print(
             f"Copies of your earlier agent settings are in {home.display(cfg)}. "
-            "Delete them with: keyhush backups purge --config --yes"
+            "Delete them with: denypeek backups purge --config --yes"
         )
     return _guard_errors(changes)
 
@@ -255,7 +256,7 @@ def cmd_guard_status(args) -> int:
             )
         )
     else:
-        print("keyhush guard status:")
+        print("denypeek guard status:")
         for r in rows:
             state = (
                 "installed"
@@ -272,7 +273,7 @@ def cmd_guard_status(args) -> int:
                     print(f"      note: {note}")
         guard_state = "present" if info["guard_present"] else "missing"
         if info["guard_present"] and not info["guard_current"]:
-            guard_state = "present but out of date: run keyhush guard install"
+            guard_state = "present but out of date: run denypeek guard install"
         print(f"  Hook script: {guard_state}")
         if info.get("python"):
             print(f"  Hook Python: {info['python']}")
@@ -281,7 +282,7 @@ def cmd_guard_status(args) -> int:
                 "  WARNING: your user account can modify the hook's Python "
                 f"({', '.join(info['python_writable'])}). An agent allowed to write there could "
                 "make the hook allow everything. Reinstall with a root-owned Python, for "
-                "example: keyhush guard install --python /usr/bin/python3"
+                "example: denypeek guard install --python /usr/bin/python3"
             )
         print(f"  Patterns:    {'present' if info['patterns_present'] else 'defaults (no file)'}")
     all_ok = (
@@ -320,9 +321,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p = argparse.ArgumentParser(
-        prog="keyhush", description="Keep API keys out of your coding agents.", epilog=EPILOG
+        prog="denypeek", description="Keep API keys out of your coding agents.", epilog=EPILOG
     )
-    p.add_argument("--version", action="version", version=f"keyhush {__version__}")
+    p.add_argument("--version", action="version", version=f"denypeek {__version__}")
     sub = p.add_subparsers(dest="command", metavar="command")
 
     s = sub.add_parser("scan", parents=[common], help="find keys in agent history (read-only)")
@@ -375,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gt.add_argument("--agent", action="append", help=agent_help)
     gt.set_defaults(func=cmd_guard_test)
-    gu = gsub.add_parser("uninstall", parents=[common], help="remove only keyhush's entries")
+    gu = gsub.add_parser("uninstall", parents=[common], help="remove only denypeek's entries")
     gu.add_argument("--agent", action="append", help=agent_help)
     gu.set_defaults(func=cmd_guard_uninstall)
     return p
@@ -392,7 +393,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         return args.func(args)
     except ConfigError as exc:
-        print(f"keyhush: {exc}", file=sys.stderr)
+        print(f"denypeek: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 130

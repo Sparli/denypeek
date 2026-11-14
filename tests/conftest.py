@@ -121,7 +121,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(socket, "create_connection", no_network)
     # The guard takes its home folder from --home or the account record, never from HOME (R1).
     # In-process calls in tests use the fixture home; subprocess calls pass --home.
-    from keyhush.guard import guard as guard_module
+    from denypeek.guard import guard as guard_module
 
     monkeypatch.setattr(guard_module, "_home", [str(home)])
     _state["violations"].clear()
@@ -247,7 +247,7 @@ def run_cli(*args: str) -> tuple[int, str, str]:
     import contextlib
     import io
 
-    from keyhush.cli import main
+    from denypeek.cli import main
 
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

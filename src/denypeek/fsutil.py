@@ -36,7 +36,7 @@ def write_new_private(path: Path, data: bytes) -> None:
 def atomic_write(path: Path, data: bytes, mode: int | None = None) -> None:
     """Write next to the target, fsync, then rename over it. A crash leaves the old file."""
     path = Path(path)
-    fd, tmp = tempfile.mkstemp(prefix=".keyhush-", suffix=".tmp", dir=str(path.parent))
+    fd, tmp = tempfile.mkstemp(prefix=".denypeek-", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)

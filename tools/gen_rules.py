@@ -1,4 +1,4 @@
-"""Generate src/keyhush/rules.py from the pinned gitleaks rule file.
+"""Generate src/denypeek/rules.py from the pinned gitleaks rule file.
 
     python tools/gen_rules.py           # write rules.py
     python tools/gen_rules.py --check   # exit 1 if rules.py is out of date
@@ -34,7 +34,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "pinned" / "gitleaks.toml"
-TARGET = ROOT / "src" / "keyhush" / "rules.py"
+TARGET = ROOT / "src" / "denypeek" / "rules.py"
 PINNED_TAG = "v8.30.1"
 PINNED_SHA256 = "e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf"
 

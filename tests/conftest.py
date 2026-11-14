@@ -141,32 +141,47 @@ def _rand(alphabet: str, n: int) -> str:
 ALNUM = string.ascii_letters + string.digits
 
 
+def _a_finding(draw) -> str:
+    """Redraw until the key is a finding. Random keys sometimes fall under a rule's entropy
+    threshold (about 1 in 2,200 fake AWS keys), and a fixture that silently holds a key the
+    scanner rightly ignores makes count-based tests fail at random (CI, 9982943)."""
+    from denypeek.scan import find_secrets
+
+    for _ in range(100):
+        key = draw()
+        if any(h.secret == key for h in find_secrets(f"value {key} end")):
+            return key
+    raise AssertionError("could not draw a fake key that is a finding")
+
+
 def fake_github() -> str:
-    return "gh" + "p_" + _rand(ALNUM, 36)
+    return _a_finding(lambda: "gh" + "p_" + _rand(ALNUM, 36))
 
 
 def fake_aws() -> str:
-    return "AK" + "IA" + _rand(string.ascii_uppercase + "234567", 16)
+    return _a_finding(lambda: "AK" + "IA" + _rand(string.ascii_uppercase + "234567", 16))
 
 
 def fake_stripe() -> str:
-    return "sk" + "_live_" + _rand(ALNUM, 24)
+    return _a_finding(lambda: "sk" + "_live_" + _rand(ALNUM, 24))
 
 
 def fake_slack() -> str:
-    return (
-        "xo"
-        + "xb-"
-        + _rand(string.digits, 12)
-        + "-"
-        + _rand(string.digits, 12)
-        + "-"
-        + _rand(ALNUM, 24)
+    return _a_finding(
+        lambda: (
+            "xo"
+            + "xb-"
+            + _rand(string.digits, 12)
+            + "-"
+            + _rand(string.digits, 12)
+            + "-"
+            + _rand(ALNUM, 24)
+        )
     )
 
 
 def fake_adobe() -> str:
-    return "p8" + "e-" + _rand(string.ascii_letters + string.digits, 32)
+    return _a_finding(lambda: "p8" + "e-" + _rand(string.ascii_letters + string.digits, 32))
 
 
 # --- fixture homes ----------------------------------------------------------------------

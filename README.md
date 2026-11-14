@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Sparli/keyhush/actions/workflows/ci.yml/badge.svg)](https://github.com/Sparli/keyhush/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
 **Keep API keys out of your coding agents: block secret-file reads in Claude Code, Codex CLI,
 Cursor and Gemini CLI, then find and scrub the keys that already leaked into their history.**
@@ -648,5 +649,5 @@ keyhush is a small open-source tool from Sparli Aman's studio. It builds on gitl
 the hook systems the four agent vendors document, and it was made with AI-assisted tooling; every
 design choice is written down above and in `specs/`. Maya and her keys are made up.
 
-Licence: MIT. The licence file will be added before the first release. Third-party notices are in
+Licence: [MIT](LICENSE), copyright (c) 2026 Sparli Aman. Third-party notices are in
 [THIRD_PARTY.md](THIRD_PARTY.md). Security reports: see [SECURITY.md](SECURITY.md).

@@ -5,6 +5,7 @@ description = "Keep API keys out of your coding agents: block secret-file reads,
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
+authors = [{ name = "Sparli Aman", email = "hello@sparli.dev" }]
 dependencies = []
 keywords = ["secrets", "claude-code", "codex", "cursor", "gemini-cli", "security", "hooks"]
 classifiers = [
@@ -12,6 +13,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Security",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Sparli/keyhush"
+Repository = "https://github.com/Sparli/keyhush"
+Issues = "https://github.com/Sparli/keyhush/issues"
+Changelog = "https://github.com/Sparli/keyhush/blob/main/CHANGELOG.md"
 
 [project.scripts]
 keyhush = "keyhush.cli:main"

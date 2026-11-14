@@ -612,6 +612,16 @@ in-place `.bak` files.
 `AGENTS-snippet.md` is a block to paste into `AGENTS.md`. Both tell the agent to run
 `keyhush scan --json` and `keyhush guard status`, and never `keyhush redact` without your yes.
 
+Copy the `skills/keyhush/` folder (with its `SKILL.md`) to the user-level skills folder of each
+agent you use. Paths are from each vendor's docs; none has been tried in a live agent yet.
+
+| Agent | Skill folder | Source |
+|---|---|---|
+| Claude Code | `~/.claude/skills/keyhush/SKILL.md` | [Claude Code docs](https://code.claude.com/docs/en/skills) |
+| Codex CLI | `~/.agents/skills/keyhush/SKILL.md` | **[unverified]** read from a summary of [OpenAI's skills page](https://developers.openai.com/codex/skills), not its full text; community guides also name `~/.codex/skills/` |
+| Cursor | `~/.cursor/skills/keyhush/SKILL.md` (or `~/.agents/skills/`) | [Cursor docs](https://cursor.com/docs/skills) |
+| Gemini CLI | `~/.gemini/skills/keyhush/SKILL.md` (or `~/.agents/skills/`) | [Gemini CLI docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
+
 ## Development
 
 ```bash

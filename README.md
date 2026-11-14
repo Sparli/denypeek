@@ -24,8 +24,9 @@ keeps a backup and proves the result with a rescan. `keyhush guard install` stop
 `.env` read, in all four agents, from one pattern list.
 
 > **Status: v0.1.0, not released.** Guard, scan, redact and undo work and are tested on fixture
-> homes on macOS and Linux. **Windows support for the guard is experimental**: its CI is not yet
-> green, and a missing hook Python fails open there. **None of the four
+> homes on macOS and Linux. **Windows support for the guard is experimental**: it passes CI on
+> Windows on fixtures, but the clean-environment wrapper and its tests are POSIX-only, and a
+> missing hook Python fails open there. **None of the four
 > agents is live-tested yet**: the hooks follow each vendor's documented format, but nobody has
 > run them inside a real Claude Code, Codex CLI,
 > Cursor or Gemini CLI session. Not on PyPI. Detection is best effort: a clean scan is not proof
@@ -448,7 +449,7 @@ which starts from an empty environment and blocks when
 its Python or `guard.py` is missing or fails to load, or when the hook exits without a reply. It
 also starts Python isolated (`-I -S`, `PYTHON*` variables cleared), so files and variables an
 agent can set cannot change what the hook runs. Rejected: a Python-only wrapper, which cannot
-help when Python itself is gone. Windows has no `/bin/sh`, so there the gap remains (see Limits).
+help when Python itself is gone. Windows has no `/bin/sh`, so there the gap remains (see [Limitations (honest)](#limitations-honest)).
 
 **Allow without a decision.** On a harmless call the guard replies with an empty JSON object, no
 decision, so the agent's own permission prompts still run. Always replying lets the wrapper treat
@@ -523,7 +524,8 @@ in-place `.bak` files.
   prefer a root-owned Python such as `/usr/bin/python3`.
 - **Windows support for the guard is experimental.** Windows path forms (`C:\...`, UNC shares,
   `%USERPROFILE%`, `$env:USERPROFILE`) are handled and tested by feeding them to the parser on
-  every platform, but the guard has not yet passed CI on Windows.
+  every platform, and the suite passes CI on Windows on fixtures. The `/bin/sh` wrapper tests are
+  POSIX-only and skip there, and no real agent has been run on Windows.
 - **Windows: a missing Python fails open.** Windows has no `/bin/sh`, so the hook command runs
   Python directly. If that Python is removed, Claude Code, Codex CLI and Gemini CLI let tool calls
   through (only Cursor blocks). Run `keyhush guard status` after changing Python.

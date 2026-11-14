@@ -279,8 +279,18 @@ You need Python 3.9 or newer and [uv](https://docs.astral.sh/uv/getting-started/
 git clone https://github.com/Sparli/keyhush.git && cd keyhush
 ```
 
+Install it as a command, so `keyhush` is on your PATH (the skill, the `AGENTS.md` snippet and
+keyhush's own messages all use the bare `keyhush` command):
+
 ```bash
-uv run keyhush scan
+uv tool install .
+```
+
+If your shell cannot find `keyhush` afterwards, run `uv tool update-shell` once and open a new
+terminal. To try it without installing, put `uv run` in front of each command below instead.
+
+```bash
+keyhush scan
 ```
 
 That is a read-only scan of your agent history. Exit code 0 means nothing found, 1 means
@@ -289,17 +299,21 @@ findings, 2 means something could not be read.
 Block secret-file reads in your agents, then prove the hook works:
 
 ```bash
-uv run keyhush guard install
+keyhush guard install
 ```
 
 ```bash
-uv run keyhush guard test
+keyhush guard test
 ```
 
-Once keyhush is on PyPI, `uvx keyhush scan` will work without cloning. Until then, pin the
-release tag so you run the version you reviewed:
-`uvx --from git+https://github.com/Sparli/keyhush@v0.1.0 keyhush scan` (works once v0.1.0 is
-tagged and the repository is public).
+To install a reviewed release without cloning, pin its tag (works once v0.1.0 is tagged and the
+repository is public; the same command was tested against a local clone):
+
+```bash
+uv tool install git+https://github.com/Sparli/keyhush@v0.1.0
+```
+
+Once keyhush is on PyPI, `uvx keyhush scan` will also work.
 
 ### Example run
 

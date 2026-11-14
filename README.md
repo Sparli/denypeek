@@ -201,8 +201,11 @@ How a blocked `.env` read works:
    tool names (`workdir`, `dir_path`...). A command over 100,000 characters or a path over 4,096
    is denied as too long to check, never skipped.
 6. **The shell check undoes common disguises.** Quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`,
-   `$IFS`, `{a,b}` braces, backslash line continuations, redirections such as `<.env`, globs such
-   as `.e*` (including hidden files), variables set earlier in the same command
+   `$IFS`, `{a,b}` braces and `{m..o}` sequences, backslash line continuations, redirections such
+   as `<.env`, globs such as `.e*` (including hidden files), bracket expressions such as `[!x]`,
+   `[^x]` and `[[:alpha:]]` (each read as "any one character", so the check never matches less
+   than the shell), recursive `**/`, zsh `(a|b)` groups, and the extglob and zsh EXTENDED_GLOB
+   forms an agent can switch on (`@(…)`, `!(…)`, `^x`, `x#`, `(#i)`), variables set earlier in the same command
    (`a=.e; cat ${a}nv`), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`),
    folders entered with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`),
    and scripts nested in `bash -c` or `eval`. Agent-run `denypeek guard install` and `uninstall`
@@ -522,7 +525,8 @@ in-place `.bak` files.
   on fixtures.
 - **The guard is a heuristic.** The shell check will miss some tricks. **Known misses:**
   - names built at run time: `cat $(ls -a | grep env)`, a name decoded from base64, variables
-    whose value comes from command substitution or arithmetic;
+    whose value comes from command substitution or arithmetic, and patterns that only become
+    globs at run time (zsh `$~var` or `GLOB_SUBST`);
   - commands that dump a whole tree without naming files: `find . -type f -exec cat {} +`,
     `tar cf - . | tar xOf -`, `zip -r` then `unzip -p`;
   - scripts and programs that open files on their own (a script file, or code that builds the
@@ -598,6 +602,7 @@ in-place `.bak` files.
 | Agents | Claude Code, Codex CLI, Cursor, Gemini CLI | Any other agent | One `install_<agent>.py` module and its sample inputs in `guard test`. |
 | Hook input | Up to 4 MB, parsed whole | Larger inputs are blocked | Check only the tool name and path fields of big inputs before parsing the rest. |
 | Folder search check | 20,000 entries or 0.4 seconds | Bigger folders are denied | A cached index of secret-file locations per project. |
+| Glob check | Up to 2,000 matches per word, recursive for `**` | A glob with more matches, such as `**/*` in a big tree, is denied | The same cached index. |
 | Scan speed | Whole-line regex with a keyword prefilter | Seconds per MB on dense lines | Run each rule only on a window around its keyword hit. |
 | Redaction | JSONL and JSON | Cursor's SQLite is read only | A SQLite writer that takes Cursor's lock and handles its WAL, once the schema is verified. |
 | Detection | Known key shapes | Unknown shapes, split secrets | Optional entropy-only mode, with its false-positive rate measured first. |

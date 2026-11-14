@@ -1,8 +1,11 @@
 """Python 3.9: a word that is not a valid glob crashed the hook, which then blocked.
 
 `["z-a"]` in a written settings file made fnmatch raise `re.error` (bad character range) on 3.9,
-so an ordinary settings edit was denied with "guard error". Such a word is now compared as plain
-text. Real hook errors still block (see test_guard_hook.py, A14).
+so an ordinary settings edit was denied with "guard error". The first fix compared such a word
+as plain text, which let `cat .en[!z-a]` through on 3.9 (the review's L1). Now every bracket
+expression is turned into `?` before matching (see test_guard_glob_syntax.py), so fnmatch never
+sees a bracket, and a pattern that still fails to compile counts as a match. Real hook errors
+still block (see test_guard_hook.py, A14).
 """
 
 from __future__ import annotations
@@ -41,13 +44,18 @@ def write_event(path: Path, content: str) -> dict:
     }
 
 
-def test_name_matches_treats_an_invalid_glob_as_plain_text(monkeypatch):
+def test_a_pattern_that_fails_to_compile_counts_as_a_match(monkeypatch):
     def broken(name, pattern):
         raise re.error("bad character range z-a")
 
     monkeypatch.setattr(g.fnmatch, "fnmatchcase", broken)
-    assert g.name_matches("[Z-A]", "[z-a]") is True
-    assert g.name_matches("notes.md", "[z-a]") is False
+    assert g.name_matches("notes.md", "anything") is True
+
+
+def test_brackets_never_reach_fnmatch():
+    assert g.shell_glob(".en[!z-a]") == ".en?"
+    assert g.name_matches(".env", ".en[!z-a]")
+    assert g.name_matches(".env", ".en[^x]")
 
 
 def test_name_matches_still_globs_ignoring_case():

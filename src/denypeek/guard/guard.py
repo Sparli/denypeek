@@ -152,14 +152,58 @@ def parse_patterns(text):
     return rules
 
 
+def _bracket_end(pat, i):
+    """Index just past the shell bracket expression starting at pat[i] == "[", or -1.
+
+    Follows bash, zsh and sh: an optional `!` or `^`, then a `]` right after it is a member,
+    `[:class:]`, `[=c=]` and `[.c.]` hold their own `]`, and a `/` ends the attempt (the `[`
+    is then literal)."""
+    j = i + 1
+    if j < len(pat) and pat[j] in "!^":
+        j += 1
+    if j < len(pat) and pat[j] == "]":
+        j += 1
+    while j < len(pat):
+        c = pat[j]
+        if c == "/":
+            return -1
+        if c == "[" and j + 1 < len(pat) and pat[j + 1] in ":=.":
+            close = pat.find(pat[j + 1] + "]", j + 2)
+            if close != -1:
+                j = close + 2
+                continue
+        if c == "]":
+            return j + 1
+        j += 1
+    return -1
+
+
+def shell_glob(pattern):
+    """A Python glob that matches at least everything the shell glob can (L1, L2).
+
+    Every bracket expression becomes `?`, and so does a `[` with no closing `]` (the shell
+    reads it as a literal `[`, which `?` also matches). Python then never sees `[`: its fnmatch
+    reads `[^x]` as a literal `^` or `x`, and Python 3.9 raises on `[z-a]`. This can only make
+    the guard block more, never less."""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern[i] == "[":
+            end = _bracket_end(pattern, i)
+            out.append("?")
+            i = end if end != -1 else i + 1
+        else:
+            out.append(pattern[i])
+            i += 1
+    return "".join(out)
+
+
 def name_matches(name, pattern):
-    """Glob match, ignoring case. A word that is not a valid glob (Python 3.9's fnmatch raises
-    on a reversed range such as `[z-a]`) is compared as plain text instead of crashing the hook.
-    Real hook errors still block (fail closed); this only stops ordinary text from causing one."""
+    """Shell glob match of one name, ignoring case, as a superset of what the shell matches.
+    A pattern that still fails to compile counts as a match, so the guard blocks."""
     try:
-        return fnmatch.fnmatchcase(name.lower(), pattern.lower())
+        return fnmatch.fnmatchcase(name.lower(), shell_glob(pattern).lower())
     except re.error:
-        return name.lower() == pattern.lower()
+        return True
 
 
 def _norm(path):
@@ -717,7 +761,8 @@ def _names_agent_dir(word, folders):
                 return True
             if any(ch in variant for ch in "*?["):
                 try:
-                    for n, match in enumerate(glob.iglob(full)):
+                    pat = expand(variant, f, True)
+                    for n, match in enumerate(glob.iglob(pat, recursive=True)):
                         tick()
                         if n >= MAX_GLOB_RESULTS:
                             raise HookTimeout("a glob matches too many files to check")
@@ -727,7 +772,8 @@ def _names_agent_dir(word, folders):
                     pass
                 folder, pattern = os.path.split(full)
                 try:
-                    names = os.listdir(folder) if not any(c in folder for c in "*?[") else []
+                    literal_folder = not any(c in os.path.dirname(variant) for c in "*?[")
+                    names = os.listdir(folder) if literal_folder else []
                 except OSError:
                     names = []
                 for n in names:  # glob skips hidden names for a leading *
@@ -803,11 +849,17 @@ def reason_for(path, verb="names"):
 # --- resolving paths in tool input ---------------------------------------------------
 
 
-def expand(token, cwd):
+def expand(token, cwd, for_glob=False):
+    """The absolute path a token names. With `for_glob`, a Python glob pattern instead: the
+    token's own glob syntax is converted by shell_glob, and the home and working folders are
+    escaped, because the shell never treats those as patterns."""
     t = token.strip().strip("'\"")
     if not t:
         return None
     home = home_dir()
+    if for_glob:
+        t = shell_glob(t)
+        home, cwd = glob.escape(home), glob.escape(cwd)
     for var in ("${HOME}", "$HOME"):
         t = t.replace(var, home)
     for var in ("${PWD}", "$PWD"):
@@ -832,9 +884,38 @@ def path_hits(token, cwd, rules):
     return found
 
 
+BRACE_SEQ = re.compile(r"\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.(-?\d+))?\}")
+
+
+def _brace_sequence(m, limit):
+    """Items of a bash/zsh sequence such as {m..o}, {1..9..2}, {z..a}; None if not one."""
+    a, b, step = m.group(1), m.group(2), abs(int(m.group(3) or 1)) or 1
+    if a.lstrip("-").isdigit() and b.lstrip("-").isdigit():
+        lo, hi, fmt = int(a), int(b), str
+    elif len(a) == 1 and len(b) == 1 and a.isalpha() and b.isalpha():
+        lo, hi, fmt = ord(a), ord(b), chr
+    else:
+        return None
+    rng = range(lo, hi + 1, step) if lo <= hi else range(lo, hi - 1, -step)
+    return [fmt(v) for _, v in zip(range(limit), rng)]
+
+
 def expand_braces(word, limit=256):
-    """Bash brace expansion of {a,b} (nested allowed), capped at `limit` results."""
+    """Bash brace expansion of {a,b} (nested allowed) and sequences such as {m..o}, capped at
+    `limit` results."""
+    seq = BRACE_SEQ.search(word)
     m = re.search(r"\{([^{}]*,[^{}]*)\}", word)
+    if seq and (not m or seq.start() < m.start()):
+        items = _brace_sequence(seq, limit)
+        if items is not None:
+            out = []
+            for item in items:
+                tick()
+                for w in expand_braces(word[: seq.start()] + item + word[seq.end() :], limit):
+                    out.append(w)
+                    if len(out) >= limit:
+                        return out
+            return out
     if not m:
         return [word]
     out = []
@@ -857,7 +938,8 @@ def _path_hits(token, cwd, rules):
     if any(ch in token for ch in "*?["):
         candidates = []
         try:
-            for n, match in enumerate(glob.iglob(full)):
+            # recursive: zsh (and bash with globstar) read `**/` as any number of folders
+            for n, match in enumerate(glob.iglob(expand(token, cwd, True), recursive=True)):
                 tick()
                 if n >= MAX_GLOB_RESULTS:
                     raise HookTimeout("a glob matches too many files to check")
@@ -867,7 +949,8 @@ def _path_hits(token, cwd, rules):
         # glob skips hidden files for `*`; check names in the folder directly too.
         folder, pattern = os.path.split(full)
         try:
-            names = os.listdir(folder) if not any(ch in folder for ch in "*?[") else []
+            literal_folder = not any(ch in os.path.dirname(token) for ch in "*?[")
+            names = os.listdir(folder) if literal_folder else []
         except OSError:
             names = []
         candidates += [os.path.join(folder, n) for n in names if name_matches(n, pattern)]
@@ -932,6 +1015,87 @@ def _ansi_c(match):
     return shlex.quote(decoded)
 
 
+# Glob syntax the shell expands only in some modes, rewritten as `*` (a superset). Run over a
+# mask in which every quoted character is "a", so only unquoted syntax counts.
+GLOB_FLAGS = re.compile(r"\(#[A-Za-z0-9.,:]*\)")  # zsh (#i) and similar
+GLOB_GROUP = re.compile(r"(?<![$=<>\\])[@+!?*]?\([^()\s]*\)")  # zsh (a|b), bash/ksh @(...)
+GLOB_EXTENDED = re.compile(r"\^[^/]*|##?")  # zsh EXTENDED_GLOB: ^x (rest of the name is
+# "not x"), x# and x## (repeats)
+
+
+def _unquote_with_mask(word):
+    """(text without quotes, mask): the mask has "a" for every character that was quoted."""
+    text, mask, i, quote = [], [], 0, None
+    while i < len(word):
+        c = word[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+            else:
+                text.append(c)
+                mask.append("a")
+        elif c == "\\" and i + 1 < len(word) and quote != "'":
+            text.append(word[i + 1])
+            mask.append("a")
+            i += 1
+        elif quote == '"':
+            if c == '"':
+                quote = None
+            else:
+                text.append(c)
+                mask.append("a" if c != "$" else "$")
+        elif c in "'\"":
+            quote = c
+        else:
+            text.append(c)
+            mask.append(c)
+        i += 1
+    return "".join(text), "".join(mask)
+
+
+def _rewrite(text, mask, rx, repl):
+    while True:
+        m = rx.search(mask)
+        if not m:
+            return text, mask
+        text = text[: m.start()] + repl + text[m.end() :]
+        mask = mask[: m.start()] + repl + mask[m.end() :]
+
+
+def glob_variants(text):
+    """Argument words rewritten so the guard's glob check covers shell modes it cannot see.
+
+    zsh, the macOS default shell, expands `(a|b)` groups in arguments by default; with options
+    an agent can turn on in the same command, bash and zsh also expand `@(...)`, `+(...)`,
+    `!(...)` (extglob, kshglob) and zsh's `^x`, `x#`, `x~y` and `(#i)` (EXTENDED_GLOB). Each
+    unquoted use becomes `*` (and `~y` is dropped), so the result matches at least what the
+    shell could. The operator split below would otherwise cut `(a|b)` words apart. Words in
+    command position (`(ls|wc)` is a subshell there) and comments are left alone."""
+    out = []
+    text = re.sub(r"(?:^|(?<=\s))#[^\n]*", "", text)  # comments
+    for m in re.finditer(r"\S+", text):
+        word = m.group(0)
+        if not any(c in word for c in "()^#~"):
+            continue
+        before = text[: m.start()].rstrip()
+        if not before or before[-1] in ";&|(\n":
+            continue  # command position
+        plain, mask = _unquote_with_mask(word)
+        new, nmask = _rewrite(plain, mask, GLOB_FLAGS, "")
+        for _ in range(8):  # nested groups, innermost first
+            before_pass = new
+            new, nmask = _rewrite(new, nmask, GLOB_GROUP, "*")
+            if new == before_pass:
+                break
+        new, nmask = _rewrite(new, nmask, GLOB_EXTENDED, "*")
+        cut = nmask.find("~", 1)
+        if cut > 0:
+            new, nmask = new[:cut], nmask[:cut]
+        if new != plain and "(" not in nmask and ")" not in nmask:
+            out.append(new)
+    return out
+
+
 def split_tokens(command, _resolve=True):
     """Shell-ish tokens. Splits on operators, quotes and $IFS tricks. Never runs anything."""
     text = unicodedata.normalize("NFC", command)
@@ -941,13 +1105,18 @@ def split_tokens(command, _resolve=True):
     text = windows_paths(text)
     text = text.replace('$"', '"')  # $"..." locale quoting is plain quoting here
     text = text.replace("${IFS}", " ").replace("$IFS", " ")
+    groups = glob_variants(text)
     text = re.sub(r"[<>]+&?\d*", " ", text)  # redirections: cat<.env, >out
     tokens = []
-    for part in SHELL_OPERATORS.split(text):
-        try:
-            words = shlex.split(part, posix=True)
-        except ValueError:
-            words = part.split()
+    parts = SHELL_OPERATORS.split(text)
+    for part in parts + [None]:
+        if part is None:
+            words = groups  # already unquoted
+        else:
+            try:
+                words = shlex.split(part, posix=True)
+            except ValueError:
+                words = part.split()
         for w in words:
             tokens.append(w)
             if "=" in w and not w.startswith("="):  # --file=.env, VAR=.env, f=@.env

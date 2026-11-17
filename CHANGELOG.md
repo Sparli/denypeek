@@ -40,6 +40,10 @@ Hardened before release through QA passes and security reviews of the guard, sca
 - Deleting, moving or locking the home folder or a folder above it (`rm -rf ~`, `rm -rf ..`,
   `mv ~ /tmp/x`, `chmod -R 000 ~`, `git clean` there) is denied, because it would remove the
   guard and every agent folder at once.
+- Hidden file names: `guard install` picks a setting from your bash and zsh startup files.
+  With `auto`, `cat *` passes beside a `.env`, as it does in the shell, and turning
+  `dotglob` or `globdots` on is denied; with `always`, hidden names always count.
+  `--hidden always` forces it.
 - File names are escaped in all output, and a Cursor database with a non-empty `-wal` file is
   reported as not fully scanned.
 - CI pins actions to commit SHAs and runs on Linux, macOS and Windows, and on Python 3.9.

@@ -124,6 +124,9 @@ def isolated(tmp_path, monkeypatch):
     from denypeek.guard import guard as guard_module
 
     monkeypatch.setattr(guard_module, "_home", [str(home)])
+    # decide() sets the hook's deadline and never clears it (one decision per process). In
+    # tests, a later direct call to the word functions must not inherit an expired one.
+    monkeypatch.setattr(guard_module, "_deadline", [float("inf")])
     # G8: install reads bash and zsh startup files; never the real /etc ones in tests.
     from denypeek.guard import install_base
 

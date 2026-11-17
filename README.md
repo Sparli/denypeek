@@ -211,9 +211,15 @@ How a blocked `.env` read works:
    - Any other pattern syntax a covered mode can read (`(…)`, `#`, `^`, `x~y`, `<1-9>`, `@(…)`,
      `{....}`) widens the rest of that path part to "anything". If it could reach past a `/`, it
      widens to everything under that point.
-   - Quoted text is literal, so `echo '*'`, `grep -o '[a-z]*' README.md` and
-     `find . -name '*.py'` pass. Quoting is judged where a value is used: in
-     `a='[!x]'; cat .en$a`, the `[!x]` counts.
+   - Quoted text is literal when it reaches a program as an argument, so `echo '*'`,
+     `grep -o '[a-z]*' README.md` and `find . -name '*.py'` pass. It is a live pattern again
+     when the same command lets a shell read it again:
+     - bound, then used unquoted: an assignment (`a='[!x]'; cat .en$a`), an array element, a
+       `for … in` list, `set --`, and the arguments after a `-c` script;
+     - parsed again: the string after `-c` for sh, bash, zsh, dash or ksh (also behind
+       `sudo`, `env`, `timeout`, `xargs` or `find -exec`), every argument of `eval`, a
+       here-string to a shell, and the strings in a pipeline that ends in a shell
+       (`echo 'cat .e*' | sh`).
    - Each word is checked as written and as widened.
    - Also followed:
      - quoting: `$'...'`;
@@ -227,13 +233,22 @@ How a blocked `.env` read works:
      - folders entered with `cd`;
      - Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`).
    - Real bash, zsh and sh check this in CI: the glob oracle in `tests/oracle` expands thousands
-     of generated words in every covered mode. Agent-run `denypeek guard install` and
-     `uninstall` are denied.
+     of generated words in every covered mode. The `.` and `..` cases are proved on macOS only,
+     because bash 3.2 exists only there; dash (Linux `/bin/sh`) is untested until the first
+     Linux CI run. Agent-run `denypeek guard install` and `uninstall` are denied.
 7. **The guard protects itself.** Any agent access to `~/.denypeek/**`, to the user-level hook
    config files and to your per-user Python folders is denied, whatever the pattern list says.
    Commands may list or read `~/.claude`, `~/.codex`, `~/.cursor` and `~/.gemini` but not move,
    delete or change them, also when named through a glob, braces or a `find -delete` from the
-   home folder. Agent settings files inside projects may be read and edited with the agent's
+   home folder. Deleting, moving or locking your home folder or a folder above it is denied too,
+   because that would remove `~/.denypeek` and every agent folder at once: a simple command
+   holding `rm`, `rmdir`, `unlink`, `shred`, `srm`, `trash`, `chmod`, `chown`, `chgrp` or
+   `chflags` (also after `sudo` or `env`, or as `/bin/rm` or `\rm`) with an operand that names
+   such a folder (`..`, `.?`, `~`, `$HOME`); `mv` with such a folder as a source; `rsync` with a
+   `--del…` flag or `--remove-source-files`; `git clean` there; `find -delete` from there; and
+   an agent's own delete or move tool. `mv notes.txt ~`, `cp x ~`, `ls ..`, `cd ~ && ls` and
+   `chmod +x ~/bin/tool` stay allowed.
+   Agent settings files inside projects may be read and edited with the agent's
    file tools, but an edit is checked by parsing the file it would produce: one that turns hooks
    off (`disableAllHooks`, Codex `hooks = false`, Gemini `hooksConfig.enabled: false`), sets an
    `env` variable that could change how the hook or the agent's shell runs (`PYTHON*`, `HOME`,
@@ -550,7 +565,9 @@ in-place `.bak` files.
   - a pattern inside `[[ … ]]`;
   - a pattern part starting with `.` when the parent folder holds a secret file: `ls .*`;
   - as before, `ls .e*` and a recursive search over the folder;
-  - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree.
+  - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree;
+  - anywhere, a command that holds one of the delete, move or lock verbs above and names your
+    home folder or a folder above it: `chmod 700 ~`, `grep -r rm ~`.
 
   Quote the pattern (`grep '^foo' file`), or name the files, and the command passes.
 - **The guard is a heuristic.** The shell check will miss some tricks. **Known misses:**
@@ -561,7 +578,8 @@ in-place `.bak` files.
     - `eval` of computed text;
     - decoded text (base64, hex) and arithmetic;
     - any variable not given a literal value in the same command, including zsh `$~var` and
-      `GLOB_SUBST` on such a variable, `read`, and loop variables;
+      `GLOB_SUBST` on such a variable, `read`, and loops over run-time values;
+    - a script file run by a shell (`sh run.sh`, `cat run.sh | sh`);
   - shell settings outside the covered modes: zsh `BRACE_CCL`, `SH_WORD_SPLIT` and a changed
     `IFS`; aliases and functions; `emulate`;
   - shells other than bash, zsh and sh: fish, ksh, nushell, and the wildcard rules of
@@ -576,7 +594,12 @@ in-place `.bak` files.
   - project settings written without naming the folder or file: extracting an archive in the
     project root (`tar xf conf.tar`), `git checkout .` or `git stash pop` restoring a settings
     file, `cp -r tmpl/. .`, or a program the agent runs;
-  - deleting or moving your home folder itself (`rm -rf ~`), left to the agent's own prompt;
+  - deleting, moving or locking your home folder or a folder above it by any means other than
+    the commands above: a program or script that does it itself (`python`, `perl`,
+    `make clean`, `tar --remove-files`), git commands other than `git clean` in a home-folder
+    repository (`git stash -u`, `git reset --hard`), disk tools, and the Finder; also writing
+    into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
+    `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see.
 - **A Python your account can modify weakens the guard.** If the only usable Python has a
   program file or standard library your account can write to, an agent allowed to write there

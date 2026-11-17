@@ -34,7 +34,12 @@ Hardened before release through QA passes and security reviews of the guard, sca
   `curl -F f=@.env` and others). The README lists the misses that remain.
 - The shell check follows one written rule for globs (the shell-word rule): if bash, zsh or sh,
   in any covered mode, can expand a word to a protected path, the command is denied. Real
-  shells check it in CI (the glob oracle in `tests/oracle`). Quoted patterns are literal.
+  shells check it in CI (the glob oracle in `tests/oracle`). Quoted patterns are literal unless
+  the shell reads them again (a bound value used unquoted, `-c` strings, `eval`, a pipe into a
+  shell).
+- Deleting, moving or locking the home folder or a folder above it (`rm -rf ~`, `rm -rf ..`,
+  `mv ~ /tmp/x`, `chmod -R 000 ~`, `git clean` there) is denied, because it would remove the
+  guard and every agent folder at once.
 - File names are escaped in all output, and a Cursor database with a non-empty `-wal` file is
   reported as not fully scanned.
 - CI pins actions to commit SHAs and runs on Linux, macOS and Windows, and on Python 3.9.

@@ -53,7 +53,8 @@ jobs:
 
   # A23 to A25: the review's glob oracle (tests/oracle). Real bash, zsh and sh expand every generated
   # word; a word that reaches a protected path must be denied, and everyday commands allowed.
-  # A missing shell or mode is a failure (--require auto). The hook runs on Python 3.9 (macOS
+  # A missing shell or mode is a failure (--require auto, which on macOS includes the system
+  # /bin/bash 3.2, where .* and .? match . and ..). The hook runs on Python 3.9 (macOS
   # ships it as /usr/bin/python3, the hook's default there) and on the newest Python.
   # Windows has none of these shells and does not run it; the Windows guard stays experimental.
   oracle:
@@ -81,16 +82,9 @@ jobs:
       - run: uv python install ${{ matrix.hook-python }}
       - id: py
         run: echo "path=$(uv python find ${{ matrix.hook-python }})" >> "$GITHUB_OUTPUT"
-      # macOS: /bin/bash 3.2 is required too (it reads `.*` and `.?` as `.` and `..`).
-      # Linux has no bash 3.2; there /bin/sh is dash.
-      - id: shells
-        run: |
-          if [ "$RUNNER_OS" = macOS ]; then echo "need=bash3,bash5,zsh,sh" >> "$GITHUB_OUTPUT"
-          else echo "need=bash5,zsh,sh" >> "$GITHUB_OUTPUT"; fi
       - name: Full oracle run
         run: >-
-          "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py
-          --require "${{ steps.shells.outputs.need }}"
+          "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --require auto
           --hook "$PWD/src/denypeek/guard/guard.py" --python "${{ steps.py.outputs.path }}"
           --report oracle-failures.txt | tee oracle-output.txt
       # Fail if the run checked nothing: every tier must have run cases, none skipped.

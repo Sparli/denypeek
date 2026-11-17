@@ -421,7 +421,9 @@ matches at any depth, `~/` means your home folder, and `!` allows a path again. 
 include `.env`, `.env.*` (but not `.env.example`, `.env.sample` or `.env.template`),
 `.dev.vars`, `*.pem`, `*.key`, `id_rsa*` and other SSH keys (not `*.pub`), `.netrc`, `.npmrc`,
 `.pypirc`, `credentials.json`, `~/.aws/credentials`, `~/.ssh/**`, `~/.docker/config.json`,
-`~/.kube/config` and `~/.config/gcloud/**`. Edit the file, then run `denypeek guard test`.
+`~/.kube/config` and `~/.config/gcloud/**`. Public keys (`*.pub`) are allowed everywhere, also
+inside `~/.ssh`; the rest of `~/.ssh` stays protected. Edit the file, then run
+`denypeek guard test`.
 
 ## Scan, rules and redaction
 

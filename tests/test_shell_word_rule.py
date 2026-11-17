@@ -27,14 +27,23 @@ def lab(isolated, tmp_path):
     (home / ".claude").mkdir()
     (home / ".denypeek").mkdir()
     (home / ".denypeek" / "secretfiles").write_text(".env\n")
+    (home / ".gemini").mkdir()
+    (home / ".gemini" / "settings.json").write_text("{}\n")
     proj = tmp_path / "proj"
-    for d in ("src/deep", "tests", "docs", "out"):
+    for d in ("src/deep", "tests", "docs", "out", "app/[lang]/[id]"):
         (proj / d).mkdir(parents=True)
     (proj / ".env").write_text("X=1\n")
     (proj / ".env.example").write_text("X=\n")
     (proj / "src" / ".env").write_text("X=1\n")
     (proj / "src" / "deep" / ".env").write_text("X=1\n")
-    for f in ("README.md", "app.py", "app.pyc", "src/app.py", "tests/test_app.py"):
+    for f in (
+        "README.md",
+        "app.py",
+        "app.pyc",
+        "src/app.py",
+        "tests/test_app.py",
+        "app/[lang]/[id]/page.tsx",
+    ):
         (proj / f).write_text("x\n")
     return home, proj
 
@@ -87,6 +96,15 @@ SPEC_MUST_ALLOW = [
     "grep -E '(API|KEY)' app.py",
     'grep -E "^(foo|bar)$" app.py',
     "python3 -c 'print([1, 2][0])'",
+    # a pattern part, then a name: only paths that exist (the review, confirmation pass at 0ea7c2b)
+    "ls */README.md",
+    "rm -rf */__pycache__",
+    "ls src/*/x.py",
+    # G2: a part that begins with *, ? or a bracket never stands for . or .. (the spec)
+    "ls */",
+    "ls -d */",
+    # G3c trips, but nothing under app/ is protected (the spec)
+    "cat app/[lang]/[id]/page.tsx",
 ]
 
 
@@ -117,6 +135,9 @@ MUST_DENY_PROJ = [
     "a='.e*'; cat $~a",
     # section 3a "Open today"
     "cat .env[x]#",
+    # the review's C1 and C2: a widened part, then a bracket holding `/` later in the word
+    "cat .e##[^/][^x]",
+    "cat s(r)c/.e[^/]v",
     "cat .*/.en?",
     # names written out in code and in nested shells
     "python3 -c \"open('.env')\"",
@@ -155,6 +176,7 @@ def test_dot_dot_from_a_subfolder(lab):
         "mv ~/.c(l)aude /tmp/x",
         "rm -rf ~/.[c/]laude",
         "rm -rf ~/x~/../.claude",
+        "cat ~/.gemini/se(t)tings.[^/]son",
     ],
 )
 def test_must_deny_from_home(command, lab):
@@ -204,3 +226,29 @@ def test_fuzz_the_word_reader_never_crashes(lab):
         finally:
             g._deadline[0] = float("inf")
     assert time.monotonic() - start < 120
+
+
+@pytest.fixture
+def ssh_lab(isolated, tmp_path):
+    ssh = isolated / ".ssh"
+    ssh.mkdir()
+    for name in ("id_ed25519", "id_ed25519.pub", "known_hosts", "config"):
+        (ssh / name).write_text("x\n")
+    return isolated, tmp_path
+
+
+@pytest.mark.parametrize("command", ["cat ~/.ssh/id_ed25519.pub", "cat ~/.ssh/*.pub"])
+def test_public_keys_are_allowed_inside_ssh(command, ssh_lab):
+    home, cwd = ssh_lab
+    denied, out = run_hook(command, home, cwd)
+    assert not denied, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["cat ~/.ssh/id_ed25519", "cat ~/.ssh/id_ed25519*", "cat ~/.ssh/*", "cat ~/.ssh/known_hosts"],
+)
+def test_the_rest_of_ssh_stays_protected(command, ssh_lab):
+    home, cwd = ssh_lab
+    denied, out = run_hook(command, home, cwd)
+    assert denied, (command, out)

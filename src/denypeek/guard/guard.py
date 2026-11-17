@@ -77,7 +77,6 @@ id_rsa*
 id_dsa*
 id_ecdsa*
 id_ed25519*
-!*.pub
 .netrc
 .npmrc
 .pypirc
@@ -90,6 +89,8 @@ secrets.yaml
 ~/.docker/config.json
 ~/.kube/config
 ~/.config/gcloud/**
+# Last, so it also allows public keys inside ~/.ssh (the last matching line wins).
+!*.pub
 """
 
 AGENTS = ("claude", "codex", "cursor", "gemini")
@@ -213,11 +214,25 @@ def compile_pattern(pat):
     return by_name
 
 
+def is_network(path):
+    """A Windows network path (\\\\host\\share, //host/share). Touching one makes Windows try
+    to reach the host, which can take many seconds, so the guard never resolves or lists
+    these: it judges them by name only. A URL split at `:` (https://x/y) also looks like one."""
+    return WINDOWS and _norm(str(path)).startswith("//")
+
+
+def resolved(path):
+    """os.path.realpath, except for network paths (see is_network)."""
+    if is_network(path):
+        return path
+    return os.path.realpath(path)
+
+
 def is_secret(path, rules):
     """True if this path is a secret file (last matching pattern wins, like gitignore)."""
     candidates = {_norm(path)}
     try:
-        candidates.add(_norm(os.path.realpath(path)))
+        candidates.add(_norm(resolved(path)))
     except (OSError, ValueError):
         pass
     for cand in candidates:
@@ -302,7 +317,7 @@ def is_protected(path):
     dirs, files = protected_paths()
     candidates = {_norm(path)}
     try:
-        candidates.add(_norm(os.path.realpath(path)))
+        candidates.add(_norm(resolved(path)))
     except (OSError, ValueError):
         pass
     for cand in candidates:
@@ -766,10 +781,10 @@ def is_ancestor(path):
     if not path:
         return False
     try:
-        resolved = os.path.realpath(path)
+        real = resolved(path)
     except (OSError, ValueError):
-        resolved = path
-    return (_norm(resolved).rstrip("/") or "/") in ancestor_dirs()
+        real = path
+    return (_norm(real).rstrip("/") or "/") in ancestor_dirs()
 
 
 def _ancestor_problem(words, folders):
@@ -1399,10 +1414,27 @@ MAX_FORKS = 64  # readings of one command when variables have several possible v
 
 def shell_words(command, cwd, env=None):
     """Lex a command (SPEC 3a G1). A variable that may hold several values (a `for` list,
-    `set --`, an array) is read once per value, and the words of every reading are kept."""
+    `set --`, an array) is read once per value, and the words of every reading are kept.
+    On Windows a backslash is a path separator to cmd and PowerShell but an escape to bash
+    (Git Bash, which agents use there), so both readings are kept."""
     text = unicodedata.normalize("NFC", command)
     text = text.replace("\\\r\n", "").replace("\\\n", "")
-    text = windows_paths(text)
+    readings = [windows_paths(text)]
+    if WINDOWS and "\\" in text:
+        readings.append(WIN_PATH.sub(lambda m: m.group(0).replace("\\", "/"), text))
+    out = None
+    for reading in readings:
+        more = _read_all(reading, cwd, env)
+        if out is None:
+            out = more
+        else:
+            out.segments += more.segments
+            out.pipes += more.pipes
+            out.nested += more.nested
+    return out
+
+
+def _read_all(text, cwd, env):
     home = home_dir()
     base = dict(env or {})
     first = _Lexer(text, cwd, home, dict(base))
@@ -1587,10 +1619,30 @@ def _operator_at(chars, i):
     return False
 
 
+_CLOSER = {"[": "]", "(": ")", "{": "}", "<": ">"}
+
+
+def _g3c_at(chars, i):
+    """Is the unquoted character at i a bracket, group, brace or <...> that could close after a
+    `/` (G3c)? For a bracket: any later `/` followed by a `]`, as shells disagree on its end."""
+    c, k = chars[i]
+    if k != U:
+        return False
+    if c == "[":
+        return _closes_after_slash(chars, i, "[", "]")
+    if c in "@+!?*<>" and i + 1 < len(chars) and chars[i + 1] == ("(", U):
+        return _closes_after_slash(chars, i + 1, "(", ")")
+    if c in "({<" and _operator_at(chars, i):
+        return _closes_after_slash(chars, i, c, _CLOSER[c])
+    return False
+
+
 def widen(chars):
     """The widened pattern of a word (G2, G3): a list of path parts, each ("lit", text),
-    ("pat", regex) or ("any", regex-or-None), and a flag: the last part also stands for
-    everything under it (G3c). None if the word holds no glob syntax."""
+    ("pat", regex, dot) or ("any", regex-or-None, dot), and a flag: the last part also stands
+    for everything under it, at any depth. `dot`: the part may also stand for `.` and `..`
+    (G2: only a part that begins with a literal `.` or with a G3 operator). None if the word
+    holds no glob syntax."""
     if not _has_glob(chars):
         return None
     # G3b: an unquoted `~` that is not at the start of the word cuts the whole word
@@ -1598,7 +1650,11 @@ def widen(chars):
         if chars[n] == ("~", U) and chars[n - 1][0] not in "=:":
             chars = chars[:n]
             break
+    # G3c: when a bracket, group or brace anywhere in the word could close after a `/`, the
+    # cut is word-wide, at the earliest G3 or G3c operator; all after it is any text, any depth
+    wordwide = any(_g3c_at(chars, n) for n in range(len(chars)))
     parts, cur, tree = [], [], False
+    op_start = [False]
     i = 0
 
     def close_part():
@@ -1610,44 +1666,47 @@ def widen(chars):
             parts.append(("lit", "".join(t[1] for t in toks)))
             return
         rx = "".join(re.escape(t[1]) if t[0] == "lit" else t[1] for t in toks)
-        first_dot = toks[0][0] == "lit" and toks[0][1] == "."
+        dot = (toks[0][0] == "lit" and toks[0][1] == ".") or op_start[0]
         if any(
             t == ("star", ".*") and n + 1 < len(toks) and toks[n + 1] == ("star", ".*")
             for n, t in enumerate(toks)
         ):
-            parts.append(("any", None if rx == ".*.*" else rx, first_dot))
+            parts.append(("any", None if rx == ".*.*" else rx, dot))
         else:
-            parts.append(("pat", rx, first_dot))
+            parts.append(("pat", rx, dot))
+
+    def cut(at_hash, operator=True):
+        if at_hash and cur:
+            cur.pop()  # G3a: `#` repeats the unit before it, which may be absent
+        if not cur and operator:
+            op_start[0] = True  # G2: a part that begins with a G3 operator; not a bracket
+        cur.append(("star", ".*"))
 
     while i < len(chars):
         c, k = chars[i]
         if c == "/":
             close_part()
-            cur = []
+            cur, op_start[0] = [], False
             i += 1
             continue
+        if wordwide and _g3c_at(chars, i):
+            cut(False, operator=c != "[")
+            tree = True
+            break
+        is_op = k == U and c in OPERATOR_CHARS | set("@+!?*>") and _operator_at(chars, i)
+        if is_op and wordwide:
+            cut(c == "#")
+            tree = True
+            break
+        if is_op:
+            cut(c == "#")
+            while i < len(chars) and chars[i][0] != "/":
+                i += 1  # G3: the rest of this path part is any text
+            continue
         if k == U and c == "[":
-            if _closes_after_slash(chars, i, "[", "]"):
-                cur.append(("star", ".*"))
-                tree = True
-                break
             end = _bracket_close(chars, i)
             cur.append(("one", "."))
             i = end + 1 if end != -1 else i + 1
-            continue
-        if k == U and c in OPERATOR_CHARS | set("@+!?*>") and _operator_at(chars, i):
-            nxt_open = i + 1 < len(chars) and chars[i + 1] == ("(", U)
-            open_ch = "(" if c in "@+!?*>" or (c == "<" and nxt_open) else c
-            close_ch = {"(": ")", "{": "}", "<": ">"}.get(open_ch)
-            if close_ch and _closes_after_slash(chars, i, open_ch, close_ch):
-                cur.append(("star", ".*"))
-                tree = True
-                break
-            if c == "#" and cur:
-                cur.pop()  # G3a: `#` repeats the unit before it, which may be absent
-            cur.append(("star", ".*"))
-            while i < len(chars) and chars[i][0] != "/":
-                i += 1
             continue
         if k == U and c == "*":
             cur.append(("star", ".*"))
@@ -1672,6 +1731,8 @@ class _Budget:
 
 
 def _entries(folder, budget):
+    if is_network(folder):
+        return []  # never list a network share (see is_network)
     try:
         with os.scandir(folder) as it:
             names = []
@@ -1688,7 +1749,7 @@ def _descendants(path, budget, include_self=True):
     stack = [path]
     while stack:
         d = stack.pop()
-        if not os.path.isdir(d) or os.path.islink(d) and d != path:
+        if is_network(d) or not os.path.isdir(d) or os.path.islink(d) and d != path:
             continue
         for n in _entries(d, budget):
             p = os.path.join(d, n)
@@ -1701,12 +1762,18 @@ def _descendants(path, budget, include_self=True):
 def walk_pattern(bases, parts, tree, budget):
     """Every existing path the widened pattern can reach from the base folders."""
     cur = list(dict.fromkeys(bases))
+    globbed = False
     for n, part in enumerate(parts):
         kind = part[0]
         nxt = []
         if kind == "lit":
             nxt = [os.path.join(d, part[1]) if part[1] else d for d in cur]
+            if globbed:  # a shell expands a pattern only to paths that exist
+                nxt = [x for x in nxt if not is_network(x) and os.path.lexists(x)]
+                if not part[1]:  # `*/`: a trailing slash matches folders only
+                    nxt = [x for x in nxt if os.path.isdir(x)]
         else:
+            globbed = True
             rx = part[1]
             first_dot = part[2]
             if kind == "any":
@@ -1905,7 +1972,7 @@ def grep_targets(part, cwd):
     out = []
     for p in paths:
         full = expand(p, cwd)
-        if full and os.path.isdir(full):
+        if full and not is_network(full) and os.path.isdir(full):
             out.append((full, honours_ignores))
     return out
 
@@ -2160,7 +2227,7 @@ def decide(event, rules):
             # Gemini read_many_files reads whole folders and recursive globs (G8)
             base = s.split("**", 1)[0] if "**" in s else s
             folder = expand(base or ".", cwd)
-            if folder and os.path.isdir(folder):
+            if folder and not is_network(folder) and os.path.isdir(folder):
                 try:
                     if folder_holds_secret(folder, rules, deadline):
                         return f"reading many files under {folder}, which holds a secret file"
@@ -2168,7 +2235,7 @@ def decide(event, rules):
                     return f"reading many files under {folder}: too many to check; narrow it"
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
-            if folder and os.path.isdir(folder):
+            if folder and not is_network(folder) and os.path.isdir(folder):
                 try:
                     if folder_holds_secret(folder, rules, deadline):
                         return f"search over {folder}, which holds a secret file; narrow the path"

@@ -116,3 +116,49 @@ def test_windows_patch_paths_are_matched(rules, tmp_path):
         "tool_input": {"command": patch},
     }
     assert g.decide(event, rules)
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize("command", ["eval cat .e\\*", "cat .e\\nv", "cat .en\\v"])
+def test_backslash_escape_is_read_as_bash_reads_it_on_windows_too(
+    command, windows, rules, tmp_path, monkeypatch
+):
+    """On Windows agents run bash (Git Bash), where `\\*` is an escaped `*`; cmd and
+    PowerShell read the backslash as a separator. The guard keeps both readings."""
+    monkeypatch.setattr(g, "WINDOWS", windows)
+    (tmp_path / ".env").write_text("X=1\n")
+    assert decide_shell(command, tmp_path, rules), command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "curl https://example.com/a?b=1#frag",
+        "curl 'https://example.com/a?b=1#frag'",
+        "git clone https://github.com/x/y.git",
+        "cat //server/share/notes.txt",
+    ],
+)
+def test_network_paths_are_never_touched_on_windows(command, rules, tmp_path, monkeypatch):
+    """CI on Windows: a URL split at `:` gives `//example.com/...`, a network path there.
+    Resolving or listing it makes Windows try to reach the host, and the hook timed out."""
+    monkeypatch.setattr(g, "WINDOWS", True)
+    (tmp_path / ".env").write_text("X=1\n")
+    real = {"realpath": g.os.path.realpath, "isdir": g.os.path.isdir, "scandir": g.os.scandir}
+
+    def trap(name):
+        def f(p, *a, **k):
+            assert not str(p).replace("\\", "/").startswith("//"), f"{name} touched {p}"
+            return real[name](p, *a, **k)
+
+        return f
+
+    monkeypatch.setattr(g.os.path, "realpath", trap("realpath"))
+    monkeypatch.setattr(g.os.path, "isdir", trap("isdir"))
+    monkeypatch.setattr(g.os, "scandir", trap("scandir"))
+    assert decide_shell(command, tmp_path, rules) is None, command
+
+
+def test_a_secret_name_on_a_network_share_is_still_denied(rules, tmp_path, monkeypatch):
+    monkeypatch.setattr(g, "WINDOWS", True)
+    assert decide_shell("cat //server/share/.env", tmp_path, rules)

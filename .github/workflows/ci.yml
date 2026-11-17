@@ -81,10 +81,28 @@ jobs:
       - run: uv python install ${{ matrix.hook-python }}
       - id: py
         run: echo "path=$(uv python find ${{ matrix.hook-python }})" >> "$GITHUB_OUTPUT"
+      # macOS: /bin/bash 3.2 is required too (it reads `.*` and `.?` as `.` and `..`).
+      # Linux has no bash 3.2; there /bin/sh is dash.
+      - id: shells
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then echo "need=bash3,bash5,zsh,sh" >> "$GITHUB_OUTPUT"
+          else echo "need=bash5,zsh,sh" >> "$GITHUB_OUTPUT"; fi
       - name: Full oracle run
         run: >-
-          "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --require auto
+          "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py
+          --require "${{ steps.shells.outputs.need }}"
           --hook "$PWD/src/denypeek/guard/guard.py" --python "${{ steps.py.outputs.path }}"
-          --report oracle-failures.txt
+          --report oracle-failures.txt | tee oracle-output.txt
+      # Fail if the run checked nothing: every tier must have run cases, none skipped.
+      - name: The oracle ran words
+        run: >-
+          "${{ steps.py.outputs.path }}" -c "import re,sys;
+          t=open('oracle-output.txt').read();
+          r=[l for l in t.splitlines() if l.startswith('RESULT')];
+          assert r, 'no RESULT line';
+          n={k:int(v) for k,v in re.findall(r'(NAMED|GENERATED|SENTINEL|MUST-ALLOW) \\d+/(\\d+)', r[-1])};
+          print(r[-1], n);
+          assert len(n)==4 and all(v>0 for v in n.values()), 'a tier ran no cases';
+          assert ' 0 failed' in r[-1] and 'skipped cases: 0' in r[-1] and 'skipped modes: none' in r[-1]"
       - name: Oracle self-test
         run: '"${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --self-test --quick'

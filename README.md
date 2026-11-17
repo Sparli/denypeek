@@ -546,7 +546,7 @@ in-place `.bak` files.
   commands are denied:
   - a word that starts with a group or an extended operator: `ls (src|tests)`, an unquoted
     `grep ^foo file`;
-  - a `#` after a one-character name: `echo C#`;
+  - a `#` after a one-character name: `echo C#`, `echo a#b`;
   - a pattern inside `[[ … ]]`;
   - a pattern part starting with `.` when the parent folder holds a secret file: `ls .*`;
   - as before, `ls .e*` and a recursive search over the folder;

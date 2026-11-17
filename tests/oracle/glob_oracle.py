@@ -91,7 +91,7 @@ PROTECTED_FILES = [
     "proj/.env", "proj/only/.env", "proj/.env.local", "proj/.dev.vars", "proj/server.pem", "proj/tls.key",
     "proj/cert.p12", "proj/id_ed25519", "proj/credentials.json", "proj/secrets.yml",
     "proj/service-account-prod.json", "proj/.npmrc", "proj/.netrc", "proj/.pypirc",
-    ".ssh/id_rsa", ".ssh/id_ed25519", ".ssh/known_hosts", "proj/g8/.env", "proj/g8/sub/.env",
+    ".ssh/id_rsa", ".ssh/id_ed25519", ".ssh/known_hosts", "proj/g8/.env", "proj/g8/sub/.env", "proj/g8allow/.env",
     ".aws/credentials", ".docker/config.json", ".kube/config",
     ".config/gcloud/application_default_credentials.json",
     ".denypeek/guard.sh", ".claude/settings.json", ".codex/hooks.json",
@@ -109,6 +109,10 @@ ORDINARY_FILES = {
     "proj/docs/guide.md": "g\n", "proj/key.pub": "ssh-ed25519 AAAA\n",
     ".ssh/id_ed25519.pub": "ssh-ed25519 AAAA\n", "proj/app/[lang]/[id]/page.tsx": "export {}\n",
     "proj/g8/a.txt": "a\n", "proj/g8/b.md": "b\n", "proj/g8/sub/x.txt": "x\n",
+    # G8 bare-`*` folder: the only secret is the hidden .env (proj/ also holds non-hidden secrets
+    # such as server.pem, where `cat *` really reaches a secret; the author, 2026-11-17).
+    "proj/g8allow/a.txt": "a\n", "proj/g8allow/b.md": "b\n", "proj/g8allow/notes/n.txt": "n\n",
+    "proj/g8allow/.env.example": "X=\n",
 }
 
 
@@ -725,8 +729,10 @@ MUST_ALLOW = [
     ("pubkey-one", "cat ~/.ssh/id_ed25519.pub"), ("pubkey-star", "cat ~/.ssh/*.pub"),
 ]
 
-# G8 (SPEC 3a): bare `*` beside a secret file. In "always" these are expected denies (with dotglob
-# or globdots they reach .env); in "auto" they must be allowed.
+# G8 (SPEC 3a): bare `*` beside a hidden secret file, run in proj/g8allow, whose only secret is
+# .env. In "always" these are expected denies (with dotglob or globdots they reach .env); in "auto"
+# they must be allowed.
+G8_ALLOW_CWD = "proj/g8allow"
 G8_BARE_STAR = ["du -sh *", "cat *", "wc -l *", "grep foo *", "rm -rf ./*"]
 AUTO_MUST_ALLOW = [("auto-" + c.split()[0] + str(i), c) for i, c in enumerate(G8_BARE_STAR)] + [
     ("auto-pipefail-ls", "set -euo pipefail; ls *"), ("auto-nullglob-ls", "shopt -s nullglob; ls *.py"),
@@ -1014,7 +1020,7 @@ def _run(args, home: Path) -> int:
     g8_na: List[str] = []
     if HIDDEN[0] == "always":
         for c in G8_BARE_STAR:  # expected denies: with dotglob or globdots they reach .env
-            d = hook.decide(c)
+            d = hook.decide(c, G8_ALLOW_CWD)
             if d == "deny":
                 stats["G8"][0] += 1
             else:
@@ -1084,8 +1090,11 @@ def _run(args, home: Path) -> int:
 
     # Must-allow.
     print("\n[MUST-ALLOW] ordinary commands in a folder holding .env")
-    for cid, cmd in MUST_ALLOW + (AUTO_MUST_ALLOW if HIDDEN[0] == "auto" else []):
-        d = hook.decide(cmd)
+    allow_cases = [(cid, cmd, "proj") for cid, cmd in MUST_ALLOW]
+    if HIDDEN[0] == "auto":
+        allow_cases += [(cid, cmd, G8_ALLOW_CWD) for cid, cmd in AUTO_MUST_ALLOW]
+    for cid, cmd, cwd in allow_cases:
+        d = hook.decide(cmd, cwd)
         if d == "allow":
             stats["MUST-ALLOW"][0] += 1
         else:

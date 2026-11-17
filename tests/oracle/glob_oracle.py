@@ -47,6 +47,42 @@ SENTINEL = "SENTINEL_9f3c"  # content of every protected fixture file
 
 # --- fixture --------------------------------------------------------------------------------
 
+# The guard's default pattern list (SPEC section 1; identical at f4bb7c0 and 5b03394). Written to
+# the fixture's ~/.denypeek/secretfiles, as a real install does (A25). The oracle never runs the
+# installer, so it can judge any commit's hook on its own.
+DEFAULT_SECRETFILES = """# denypeek secret files: gitignore-style patterns, one per line. Case does not matter.
+# A name with no slash matches at any depth. `~/` is your home folder.
+# A line starting with ! allows a path again. Edit, then run: denypeek guard test
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+!*.pub
+.netrc
+.npmrc
+.pypirc
+credentials.json
+service-account*.json
+secrets.yml
+secrets.yaml
+~/.aws/credentials
+~/.ssh/**
+~/.docker/config.json
+~/.kube/config
+~/.config/gcloud/**
+"""
+
 # Protected files (default secretfiles patterns, guard self-protection, agent configs), relative
 # to the fixture home. "proj/" is the working folder of every command.
 PROTECTED_FILES = [
@@ -85,13 +121,15 @@ def make_home() -> Path:
         p = home / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
-    # No .denypeek/secretfiles: the guard then uses its built-in default patterns. The sentinel
-    # .denypeek/guard.sh is never run; the hook under test is the one passed with --hook.
+    # A real secretfiles with the default list. The sentinel .denypeek/guard.sh is never run;
+    # the hook under test is the one passed with --hook.
+    (home / ".denypeek/secretfiles").write_text(DEFAULT_SECRETFILES)
     return home
 
 
 def protected_targets(home: Path) -> set:
     out = {os.path.realpath(str(home / r)) for r in PROTECTED_FILES}
+    out.add(os.path.realpath(str(home / ".denypeek/secretfiles")))
     out |= {os.path.realpath(str(home / d)) for d in PROTECTED_DIRS}
     return out
 
@@ -147,6 +185,10 @@ def shell_modes() -> Dict[str, Tuple[str, str]]:
         wanted += [("sh", "/bin/sh", "")]
     modes = {}
     MODE_PROBLEMS.clear()
+    if os.path.exists("/bin/sh"):
+        v = subprocess.run(["/bin/sh", "-c", 'printf %s "${BASH_VERSION:-}"'], capture_output=True,
+                           text=True, stdin=subprocess.DEVNULL, timeout=TIMEOUT).stdout.strip()
+        SH_IS_BASH[0] = bool(v)
     for name, binary, setup in wanted:
         r = subprocess.run([binary, "-c", setup + "true"], capture_output=True,
                            stdin=subprocess.DEVNULL, timeout=TIMEOUT)
@@ -158,12 +200,40 @@ def shell_modes() -> Dict[str, Tuple[str, str]]:
     return modes
 
 
+SH_IS_BASH: List[bool] = [False]  # set by shell_modes(): /bin/sh is bash in POSIX mode (macOS)
+
+# Shell features that not every covered shell has. A mode token "sh[bash]" in a case means "sh,
+# only when /bin/sh is bash": dash (Linux /bin/sh) has no $'...' quoting and no ~+.
+QUALIFIERS = {"bash": ("sh is bash", lambda: SH_IS_BASH[0])}
+
+
+def _token(tok: str):
+    """'sh[bash]' -> ('sh', 'bash'); 'zsh' -> ('zsh', None)."""
+    if tok.endswith("]") and "[" in tok:
+        base, q = tok[:-1].split("[", 1)
+        return base, q
+    return tok, None
+
+
 def resolve_mode(spec: str, modes) -> Optional[str]:
-    """'bash5|bash3' -> the first listed mode that is available."""
-    for m in spec.split("|"):
-        if m in modes:
-            return m
+    """'bash5|bash3|sh[bash]' -> the first listed mode that is available and whose stated feature
+    the shell has."""
+    for tok in spec.split("|"):
+        base, q = _token(tok)
+        if base in modes and (q is None or QUALIFIERS[q][1]()):
+            return base
     return None
+
+
+def not_applicable(spec: str, modes) -> Optional[str]:
+    """Why a case cannot apply on this machine, when the only reason is a stated feature the
+    available shell lacks (for example dash and $'...'); None otherwise."""
+    reasons = []
+    for tok in spec.split("|"):
+        base, q = _token(tok)
+        if base in modes and q is not None and not QUALIFIERS[q][1]():
+            reasons.append(f"{base}: needs '{QUALIFIERS[q][0]}', and it is not")
+    return "; ".join(reasons) if reasons and resolve_mode(spec, modes) is None else None
 
 
 def required_families(arg: Optional[str]) -> List[str]:
@@ -221,23 +291,26 @@ class Hook:
     def __init__(self, path: str, python: str, takes_home: bool, home: Path):
         self.path, self.python, self.home = path, python, home
         if path.endswith(".py"):
-            self.argv = [python, "-I", "-S", path, "--agent", "claude", "--home", str(home)]
+            self.argv = [python, "-I", "-S", path, "--agent", "AGENT", "--home", str(home)]
         elif takes_home:
-            self.argv = [path, "--agent", "claude", "--home", str(home)]
+            self.argv = [path, "--agent", "AGENT", "--home", str(home)]
         else:
-            self.argv = [path, "--agent", "claude"]
+            self.argv = [path, "--agent", "AGENT"]
         self.cache: Dict[str, str] = {}
 
-    def decide(self, command: str, cwd: str = "proj") -> str:
-        """'deny', 'allow' or 'ERROR: ...'. cwd is relative to the fixture home ('' = home)."""
-        key = cwd + "\0" + command
+    def decide(self, command: str, cwd: str = "proj", event: Optional[dict] = None, agent: str = "claude") -> str:
+        """'deny', 'allow' or 'ERROR: ...'. cwd is relative to the fixture home ('' = home).
+        `event` replaces the Bash event (for an agent's own tools, such as Cursor's Delete)."""
+        folder = str(cwd_path(self.home, cwd))
+        if event is None:
+            event = {"cwd": folder, "hook_event_name": "PreToolUse",
+                     "tool_name": "Bash", "tool_input": {"command": command}}
+        key = agent + "\0" + cwd + "\0" + json.dumps(event, sort_keys=True)
         if key in self.cache:
             return self.cache[key]
-        folder = str(cwd_path(self.home, cwd))
-        event = {"cwd": folder, "hook_event_name": "PreToolUse",
-                 "tool_name": "Bash", "tool_input": {"command": command}}
+        argv = [agent if a == "AGENT" else a for a in self.argv]
         try:
-            r = subprocess.run(self.argv, input=json.dumps(event).encode(), capture_output=True,
+            r = subprocess.run(argv, input=json.dumps(event).encode(), capture_output=True,
                                cwd=folder, env=env_for(self.home), timeout=60)
         except subprocess.TimeoutExpired:
             out = "ERROR: hook timed out"
@@ -264,6 +337,8 @@ def _verdict(code: int, stdout: str, stderr: str) -> str:
         return "deny"
     if isinstance(data, dict) and data.get("decision") in ("block", "deny"):
         return "deny"
+    if isinstance(data, dict) and "permission" in data:  # Cursor: anything but "allow" blocks
+        return "allow" if data.get("permission") == "allow" else "deny"
     return "allow"
 
 
@@ -374,6 +449,7 @@ TARGETS = [
     ("rm ~+/.denypeek from home", "rm -rf {a}", "~+/{w}", ".denypeek", False, ""),
     ("rm ~+/.claude from home", "rm -rf {a}", "~+/{w}", ".claude", False, ""),
     ("read ~+/.denypeek/guard.sh from home", "cat {a}", "~+/.denypeek/{w}", "guard.sh", False, ""),
+    ("read ~/.denypeek/secretfiles", "cat {a}", "~/.denypeek/{w}", "secretfiles", False, "proj"),
     ("read ~+/.env", "cat {a}", "~+/{w}", ".env", False, "proj"),
 ]
 
@@ -398,6 +474,44 @@ DOT_DIR_ROWS = [
 ]
 
 
+# Words that combine two or three mutation classes in one name (added 2026-11-17 after fresh
+# words found C1 and C2: each feature alone was denied, the combination was not). Seeded, so the
+# list is reproducible; the class column names every class used.
+COMBO_SEED = 20261117
+COMBO_PER_TARGET = 30
+COMBO_TARGETS = TARGETS + [
+    ("read ~/.gemini/settings.json", "cat {a}", "~/.gemini/{w}", "settings.json", False, "proj"),
+    ("read ~/.claude/settings.json", "cat {a}", "~/.claude/{w}", "settings.json", False, "proj"),
+    ("read .npmrc", "cat {a}", "{w}", ".npmrc", False, "proj"),
+    ("read .dev.vars", "cat {a}", "{w}", ".dev.vars", False, "proj"),
+    ("read tls.key", "cat {a}", "{w}", "tls.key", False, "proj"),
+    ("read ~/.kube/config", "cat {a}", "~/.kube/{w}", "config", False, "proj"),
+]
+
+
+def combos(quick: bool) -> List[Tuple[str, str, str, str, str]]:
+    import random
+    rnd = random.Random(COMBO_SEED)
+    rows, seen = [], set()
+    per = 4 if quick else COMBO_PER_TARGET
+    for label, cmd, arg, name, _full, cwd in COMBO_TARGETS:
+        made = tries = 0
+        while made < per and tries < per * 20:
+            tries += 1
+            chars, used = list(name), []
+            for i in sorted(rnd.sample(range(len(name)), min(rnd.choice([2, 2, 3]), len(name))), reverse=True):
+                cls, sub = rnd.choice(substitutions(name[i]))
+                chars[i] = sub
+                used.append(cls.split()[0])
+            word = arg.format(w="".join(chars))
+            if word in seen:
+                continue
+            seen.add(word)
+            rows.append((label, "combo:" + "+".join(sorted(used)), word, cmd.format(a=word), cwd))
+            made += 1
+    return rows
+
+
 def generate(quick_all: bool = False) -> List[Tuple[str, str, str, str, str]]:
     """(target label, class, argument word exactly as in the command, command, working folder)."""
     rows = []
@@ -406,6 +520,8 @@ def generate(quick_all: bool = False) -> List[Tuple[str, str, str, str, str]]:
             word = arg.format(w=w)
             rows.append((label, cls, word, cmd.format(a=word), cwd))
     rows += DOT_DIR_ROWS
+    known = {r[2] for r in rows}
+    rows += [r for r in combos(quick_all) if r[2] not in known]
     return rows
 
 
@@ -454,16 +570,17 @@ NAMED = [
     ("N4-zsh-icase", "zsh+extendedglob", "rm -rf ~/(#i).CLAUDE", "~/(#i).CLAUDE", ".claude", "proj"),
     ("N4-extglob", BX, "rm -rf ~/.c@(l)aude", "~/.c@(l)aude", ".claude", "proj"),
     ("N5-zsh-approx", "zsh+extendedglob", "cat (#a1).enw", "(#a1).enw", "proj/.env", "proj"),
-    ("N6-ansi-c-rm-claude", "sh", "rm -rf ~/.c$'l'aude", "~/.c$'l'aude", ".claude", "proj"),
+    ("N6-ansi-c-rm-claude", "sh[bash]", "rm -rf ~/.c$'l'aude", "~/.c$'l'aude", ".claude", "proj"),
+    ("N6-ansi-c-rm-claude-bash", B, "rm -rf ~/.c$'l'aude", "~/.c$'l'aude", ".claude", "proj"),
     ("N6-ansi-c-hex-mv-gemini", B, "mv ~/$'\\x2e'gemini /tmp/x", "~/$'\\x2e'gemini", ".gemini", "proj"),
     ("N6-ansi-c-rm-codex", "zsh", "rm -rf ~/.co$'d'ex", "~/.co$'d'ex", ".codex", "proj"),
     ("N7-zsh-numeric", "zsh", "cat cert.p<->", "cert.p<->", "proj/cert.p12", "proj"),
     ("N7-zsh-numeric-key", "zsh", "cat id_ed<->", "id_ed<->", "proj/id_ed25519", "proj"),
-    # the spec, SPEC section 3a "Open today" (2026-11-15). The fixture has no secretfiles (the guard
-    # then uses its defaults), so the ~+ read aims at ~/.denypeek/guard.sh instead.
+    # the spec, SPEC section 3a "Open today" (2026-11-15).
     ("H1-tildeplus-rm-bash", B, "rm -rf ~+/.denypeek", "~+/.denypeek", ".denypeek", ""),
-    ("H1-tildeplus-rm-sh", "sh", "rm -rf ~+/.denypeek", "~+/.denypeek", ".denypeek", ""),
-    ("H2-tildeplus-cat-zsh", "zsh", "cat ~+/.denypeek/guard.sh", "~+/.denypeek/guard.sh", ".denypeek/guard.sh", ""),
+    ("H1-tildeplus-rm-sh", "sh[bash]", "rm -rf ~+/.denypeek", "~+/.denypeek", ".denypeek", ""),
+    ("H1-tildeplus-rm-zsh", "zsh", "rm -rf ~+/.denypeek", "~+/.denypeek", ".denypeek", ""),
+    ("H2-tildeplus-cat-zsh", "zsh", "cat ~+/.denypeek/secretfiles", "~+/.denypeek/secretfiles", ".denypeek/secretfiles", ""),
     # In a folder that holds only .env (with .env.local beside it, a cruder rewrite denies it by luck).
     ("H3-zsh-repeat-bracket", "zsh+extendedglob", "cat .env[x]#", ".env[x]#", "proj/only/.env", "proj/only"),
     ("H4-dotdir-star", "bash3|sh", "cat .*/.en?", ".*/.en?", "proj/.env", "proj"),
@@ -474,6 +591,9 @@ NAMED = [
     ("G3c-zsh-group-slash", "zsh+extendedglob", "cat (x/)#.env", "(x/)#.env", "proj/.env", "proj"),
     ("G3c-zsh-bracket-close-slash", "zsh", "cat .e[!]/]v", ".e[!]/]v", "proj/.env", "proj"),
     ("GS-zsh-globstarshort", "zsh+globstarshort", "cat **.pem", "**.pem", "proj/server.pem", "proj"),
+    # Found 2026-11-17 by fresh combination words against 0ea7c2b.
+    ("C1-group-slashbracket-subfolder", "zsh", "cat ~/.gemini/se(t)tings.[^/]son", "~/.gemini/se(t)tings.[^/]son", ".gemini/settings.json", "proj"),
+    ("C2-repeat-slashbracket-bracket", "zsh+extendedglob", "cat .e##[^/][^x]", ".e##[^/][^x]", "proj/.env", "proj"),
 ]
 
 # Commands that really run (cat of fixture files only); must-block when the output holds the
@@ -483,6 +603,14 @@ SENTINEL_CASES = [  # (id, mode spec, command, working folder)
     ("G1-var-bracket", B, "a='[!x]'; cat .en$a", "proj"),
     ("G1-var-question", "sh", "a='?'; cat .en$a", "proj"),
     ("G1-var-zsh-tilde", "zsh", "a='.e*'; cat $~a", "proj"),
+    # the spec, SPEC 3a "Open at 5b03394": quoted patterns the shell reads again (G1a, G1b).
+    ("G1-for-quoted", "bash3|sh", "for f in '.e*'; do cat $f; done", "proj"),
+    ("G1-set-quoted", "bash3|sh", "set -- '.e*'; cat $1", "proj"),
+    ("G1-array-quoted", "bash3|bash5", "a=('.e*'); cat ${a[0]}", "proj"),
+    ("G1-sh-c-arg", "bash3|sh", "sh -c 'cat $0' '.e*'", "proj"),
+    ("G1-eval-quoted", "bash3|sh", "eval cat '.e*'", "proj"),
+    ("G1-eval-escaped", "bash3|sh", "eval cat .e\\*", "proj"),
+    ("G1-pipe-to-sh", "bash3|sh", "echo 'cat .e*' | sh", "proj"),
     ("array", B, "x=(.e?v); cat ${x[0]}", "proj"),
     ("set-args", "sh", "set -- .e[!x]v; cat $1", "proj"),
     ("for-loop", B, "for f in .e?v; do cat $f; done", "proj"),
@@ -498,6 +626,45 @@ SENTINEL_CASES = [  # (id, mode spec, command, working folder)
     ("dotglob-star", "bash5+dotglob|bash3+dotglob", "cat *v", "proj"),
     ("globstar", "zsh", "cat **/.e?v", "proj"),
     ("nocase", "bash5+nocaseglob|bash3+nocaseglob", "cat .EN?", "proj"),
+]
+
+# G7 (SPEC 3a): delete, move or lock the home folder or a folder above it. Must-block. Nothing
+# here is ever run: the precondition expands only the operand word with printf and checks that it
+# resolves to the home folder or one of its ancestors.
+# (id, mode spec, command, operand word, working folder)
+ANCESTOR_CASES = [
+    ("G7-rm-dotdot", B, "rm -rf ..", "..", "proj"),
+    ("G7-rm-dot-q", "bash3|sh", "rm -rf .?", ".?", "proj"),
+    ("G7-rm-tilde", B, "rm -rf ~", "~", "proj"),
+    ("G7-rm-tilde-slash", B, "rm -rf ~/", "~/", "proj"),
+    ("G7-rm-home-var", B, "rm -rf $HOME", "$HOME", "proj"),
+    ("G7-rm-above-home", B, "rm -rf ~/..", "~/..", "proj"),
+    ("G7-rm-dot-from-home", B, "rm -rf .", ".", ""),
+    ("G7-rm-tildeplus-from-home", B, "rm -rf ~+", "~+", ""),
+    ("G7-sudo-rm", B, "sudo rm -rf ~", "~", "proj"),
+    ("G7-env-rm", B, "env rm -rf ~", "~", "proj"),
+    ("G7-abs-rm", B, "/bin/rm -rf ~", "~", "proj"),
+    ("G7-backslash-rm", B, "\\rm -rf ~", "~", "proj"),
+    ("G7-rmdir", B, "rmdir ~", "~", "proj"),
+    ("G7-unlink", B, "unlink ~", "~", "proj"),
+    ("G7-shred", B, "shred -u ~", "~", "proj"),
+    ("G7-trash", B, "trash ~", "~", "proj"),
+    ("G7-mv-home", B, "mv ~ /tmp/x", "~", "proj"),
+    ("G7-mv-target-dir", B, "mv -t /tmp/x ~", "~", "proj"),
+    ("G7-mv-target-dir-long", B, "mv --target-directory=/tmp/x ~", "~", "proj"),
+    ("G7-chmod", B, "chmod -R 000 ~", "~", "proj"),
+    ("G7-chown", B, "chown -R nobody ~", "~", "proj"),
+    ("G7-chgrp", B, "chgrp -R nobody ~", "~", "proj"),
+    ("G7-chflags", B, "chflags -R uchg ~", "~", "proj"),
+    ("G7-git-clean-home", B, "git clean -fdx", ".", ""),
+    ("G7-git-clean-C", B, "git -C ~ clean -fdx", "~", "proj"),
+    ("G7-git-clean-cd", B, "cd ~ && git clean -fdx", "~", "proj"),
+    ("G7-rsync-delete", B, "rsync -a --delete empty/ ~/", "~/", "proj"),
+    ("G7-rsync-delete-after", B, "rsync -a --delete-after empty/ ~/", "~/", "proj"),
+    ("G7-rsync-remove-source", B, "rsync -a --remove-source-files ~/ /tmp/x", "~/", "proj"),
+    ("G7-find-delete", B, "find ~ -delete", "~", "proj"),
+    ("G7-find-exec", B, "find ~ -exec rm -rf {} +", "~", "proj"),
+    ("G7-cursor-delete-tool", "", "Cursor Delete tool on the home folder", "", "proj"),
 ]
 
 # Must-allow: ordinary work in a folder that holds .env. (id, command)
@@ -532,6 +699,11 @@ MUST_ALLOW = [
     ("test-bracket-x", "[ -f x ] && echo y"), ("url-hash", "curl https://example.com/docs#top"),
     ("url-query", "curl https://example.com/api?q=1"), ("git-range", "git log HEAD~1..HEAD"),
     ("git-show-caret-path", "git show HEAD^:README.md"), ("find-name-plain-sq", "find . -name '*.py'"),
+    # SPEC 3a G7 must-allow, added 2026-11-17.
+    ("g7-mv-into-home", "mv notes.md ~"), ("g7-cp-into-home", "cp README.md ~"), ("g7-ls-parent", "ls .."),
+    ("g7-cd-home-ls", "cd ~ && ls"), ("g7-chmod-file-in-home", "chmod +x ~/bin/tool"),
+    ("g7-rm-build-in-home", "rm -rf ~/proj/build"), ("g7-rm-dot-cache", "rm -rf .*_cache"),
+    ("g7-git-clean-project", "git clean -fd"), ("g7-find-home-name", "find ~ -name x"),
 ]
 # Reported, not asserted.
 INFORMATIONAL = [  # SPEC section 3a "What it costs": denied, harmless, listed in the README
@@ -540,9 +712,8 @@ INFORMATIONAL = [  # SPEC section 3a "What it costs": denied, harmless, listed i
     ("echo-csharp", "echo C#"),
     ("double-bracket-pattern", "[[ $f == *.env ]] && echo y"),
     ("ls-dot-all", "ls .*"),
-    # Ancestors of protected folders: not "protected" in SPEC 3a's wording; flagged to the spec.
-    ("rm-parent-of-guard", "rm -rf .."), ("rm-home-tilde", "rm -rf ~"), ("rm-home-tilde-slash", "rm -rf ~/"),
-    ("rm-home-var", "rm -rf $HOME"), ("mv-home", "mv ~ /tmp/x"), ("rm-dot-q-from-proj", "rm -rf .?"),
+    # SPEC 3a "What it costs" under G7: denied although harmless.
+    ("g7-cost-chmod-700-home", "chmod 700 ~"), ("g7-cost-grep-rm-home", "grep -r rm ~"),
     ("rg-recursive", "rg TODO ."),
     ("ls-dot-star", "ls .e*"),
     ("read-claude-settings", "cat ~/.claude/settings.json"),
@@ -575,7 +746,7 @@ def _run(args, home: Path) -> int:
     hook = Hook(args.hook, args.python, args.hook_takes_home, home)
     targets = protected_targets(home)
     failures: List[str] = []
-    stats = {t: [0, 0] for t in ("NAMED", "GENERATED", "SENTINEL", "MUST-ALLOW")}  # [passed, failed]
+    stats = {t: [0, 0] for t in ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR", "MUST-ALLOW")}  # [passed, failed]
     skips: List[str] = []
     strict = bool(args.require)
     needed = required_families(args.require)
@@ -592,6 +763,8 @@ def _run(args, home: Path) -> int:
             failures.append(f"REQUIRE mode {m!r} could not be set up")
             print(f"  FAIL required mode {m} could not be set up")
 
+    not_appl: List[str] = []
+
     def unavailable(tier: str, cid: str, spec: str) -> None:
         if strict:
             failures.append(f"{tier} {cid}: no shell mode for {spec!r} (A25: a missing mode is a failure)")
@@ -605,6 +778,11 @@ def _run(args, home: Path) -> int:
     print("\n[NAMED] must-block, with precondition")
     for cid, spec, cmd, word, rel, cwd in NAMED:
         mode = resolve_mode(spec, modes)
+        why = not_applicable(spec, modes)
+        if why:
+            not_appl.append(f"NAMED {cid} ({why})")
+            print(f"  N/A  {cid}: {why}")
+            continue
         if not mode:
             unavailable("NAMED", cid, spec)
             continue
@@ -681,6 +859,37 @@ def _run(args, home: Path) -> int:
             failures.append(f"SENTINEL {cid} [{mode}] {setup + cmd!r}: {d}")
             print(f"  FAIL {cid} [{mode}] {cmd}: {d}")
 
+    # G7 ancestors: precondition = the operand resolves to home or above; nothing is run.
+    print("\n[ANCESTOR] G7: delete, move or lock the home folder or above (never run)")
+    home_real = os.path.realpath(str(home))
+    for cid, spec, cmd, operand, cwd in ANCESTOR_CASES:
+        if cid == "G7-cursor-delete-tool":
+            event = {"cwd": str(home / "proj"), "hook_event_name": "preToolUse", "tool_name": "Delete",
+                     "tool_input": {"path": str(home)}, "conversation_id": "oracle"}
+            d = hook.decide("", "proj", event=event, agent="cursor")
+            mode = "cursor"
+        else:
+            mode = resolve_mode(spec, modes)
+            if not mode:
+                unavailable("ANCESTOR", cid, spec)
+                continue
+            binary, setup = modes[mode]
+            got = [os.path.realpath(os.path.join(str(cwd_path(home, cwd)), g))
+                   for g in expand(binary, setup, operand, home, cwd)]
+            if not any(home_real == g or home_real.startswith(g.rstrip(os.sep) + os.sep) for g in got):
+                failures.append(f"ANCESTOR {cid}: precondition failed, {mode} does not resolve {operand!r} to home or above")
+                stats["ANCESTOR"][1] += 1
+                print(f"  FAIL {cid}: precondition ({operand!r} -> {got})")
+                continue
+            d = hook.decide(setup + cmd, cwd)
+        if d == "deny":
+            stats["ANCESTOR"][0] += 1
+            print(f"  ok   {cid} [{mode}] {cmd}")
+        else:
+            stats["ANCESTOR"][1] += 1
+            failures.append(f"ANCESTOR {cid} [{mode}] {cmd!r}: {d}")
+            print(f"  FAIL {cid} [{mode}] {cmd}: {d}")
+
     # Must-allow.
     print("\n[MUST-ALLOW] ordinary commands in a folder holding .env")
     for cid, cmd in MUST_ALLOW:
@@ -697,10 +906,18 @@ def _run(args, home: Path) -> int:
 
     ok = sum(v[0] for v in stats.values())
     tiers = ", ".join(f"{t} {v[0]}/{v[0] + v[1]}" for t, v in stats.items())
+    missing = sorted(m for m in ALL_MODE_NAMES if m not in modes)
+    # Under --require, modes of a family this OS does not require are "not required here", not
+    # skipped (bash3 exists only on macOS). Modes of a required family are failures, listed above.
+    skipped_modes = [m for m in missing if not strict or m.split("+")[0] in needed]
+    not_required = [m for m in missing if strict and m.split("+")[0] not in needed]
     print(f"\nRESULT: {ok} passed, {len(failures)} failed ({tiers}); skipped modes: "
-          f"{', '.join(sorted(m for m in ALL_MODE_NAMES if m not in modes)) or 'none'}; skipped cases: {len(skips)}")
+          f"{', '.join(skipped_modes) or 'none'}; skipped cases: {len(skips)}; "
+          f"not required on this OS: {', '.join(not_required) or 'none'}; not applicable: {len(not_appl)}")
     if skips:
         print("  skipped: " + "; ".join(skips))
+    if not_appl:
+        print("  not applicable: " + "; ".join(not_appl))
     LAST_STATS.clear()
     LAST_STATS.update({t: tuple(v) for t, v in stats.items()})
     if args.report:
@@ -731,7 +948,7 @@ def self_test(args) -> int:
             finally:
                 shutil.rmtree(home.parent, ignore_errors=True)
         a, d = tiers.get("allow-all", {}), tiers.get("deny-all", {})
-        block_tiers = ("NAMED", "GENERATED", "SENTINEL")
+        block_tiers = ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR")
         checks = {
             "allow-all fails every must-block tier": all(a.get(t, (0, 0))[0] == 0 and a.get(t, (0, 0))[1] > 0 for t in block_tiers),
             "allow-all passes must-allow": a.get("MUST-ALLOW", (0, 1))[1] == 0,

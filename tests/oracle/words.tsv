@@ -2239,6 +2239,81 @@ read ~+/.denypeek/guard.sh from home	zsh-group-slash G3c	~+/.denypeek/(x/)#guard
 read ~+/.denypeek/guard.sh from home	globstarshort	~+/.denypeek/**guard.sh	cat ~+/.denypeek/**guard.sh	
 read ~+/.denypeek/guard.sh from home	globstarshort-tail	~+/.denypeek/**sh	cat ~+/.denypeek/**sh	
 read ~+/.denypeek/guard.sh from home	bracket-close-slash G3c	~+/.denypeek/gu[!]/]rd.sh	cat ~+/.denypeek/gu[!]/]rd.sh	
+read ~/.denypeek/secretfiles	bracket-literal	~/.denypeek/[s]ecretfiles	cat ~/.denypeek/[s]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-bang	~/.denypeek/[!#]ecretfiles	cat ~/.denypeek/[!#]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-caret	~/.denypeek/[^#]ecretfiles	cat ~/.denypeek/[^#]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-reversed-bang L1	~/.denypeek/[!z-a]ecretfiles	cat ~/.denypeek/[!z-a]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-reversed-caret L1	~/.denypeek/[^z-a]ecretfiles	cat ~/.denypeek/[^z-a]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-x L2	~/.denypeek/[^x]ecretfiles	cat ~/.denypeek/[^x]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-leading-close	~/.denypeek/[]s]ecretfiles	cat ~/.denypeek/[]s]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-neg-leading-close	~/.denypeek/[!]#]ecretfiles	cat ~/.denypeek/[!]#]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-caret-leading-close	~/.denypeek/[^]#]ecretfiles	cat ~/.denypeek/[^]#]ecretfiles	proj
+read ~/.denypeek/secretfiles	question	~/.denypeek/?ecretfiles	cat ~/.denypeek/?ecretfiles	proj
+read ~/.denypeek/secretfiles	star	~/.denypeek/*ecretfiles	cat ~/.denypeek/*ecretfiles	proj
+read ~/.denypeek/secretfiles	class	~/.denypeek/[[:alpha:]]ecretfiles	cat ~/.denypeek/[[:alpha:]]ecretfiles	proj
+read ~/.denypeek/secretfiles	class-print	~/.denypeek/[[:print:]]ecretfiles	cat ~/.denypeek/[[:print:]]ecretfiles	proj
+read ~/.denypeek/secretfiles	equiv	~/.denypeek/[[=s=]]ecretfiles	cat ~/.denypeek/[[=s=]]ecretfiles	proj
+read ~/.denypeek/secretfiles	collating	~/.denypeek/[[.s.]]ecretfiles	cat ~/.denypeek/[[.s.]]ecretfiles	proj
+read ~/.denypeek/secretfiles	range-self	~/.denypeek/[s-s]ecretfiles	cat ~/.denypeek/[s-s]ecretfiles	proj
+read ~/.denypeek/secretfiles	range-wide	~/.denypeek/[a-z]ecretfiles	cat ~/.denypeek/[a-z]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-escaped	~/.denypeek/[\s]ecretfiles	cat ~/.denypeek/[\s]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-double	~/.denypeek/[[s]]ecretfiles	cat ~/.denypeek/[[s]]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-then-star	~/.denypeek/[s]*ecretfiles	cat ~/.denypeek/[s]*ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-slash-neg N2	~/.denypeek/[!/]ecretfiles	cat ~/.denypeek/[!/]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-slash-caret N2	~/.denypeek/[^/]ecretfiles	cat ~/.denypeek/[^/]ecretfiles	proj
+read ~/.denypeek/secretfiles	bracket-slash-member N2	~/.denypeek/[s/]ecretfiles	cat ~/.denypeek/[s/]ecretfiles	proj
+read ~/.denypeek/secretfiles	escape	~/.denypeek/\secretfiles	cat ~/.denypeek/\secretfiles	proj
+read ~/.denypeek/secretfiles	dquote	~/.denypeek/"s"ecretfiles	cat ~/.denypeek/"s"ecretfiles	proj
+read ~/.denypeek/secretfiles	squote	~/.denypeek/'s'ecretfiles	cat ~/.denypeek/'s'ecretfiles	proj
+read ~/.denypeek/secretfiles	ansi-c	~/.denypeek/$'s'ecretfiles	cat ~/.denypeek/$'s'ecretfiles	proj
+read ~/.denypeek/secretfiles	ansi-c-hex	~/.denypeek/$'\x73'ecretfiles	cat ~/.denypeek/$'\x73'ecretfiles	proj
+read ~/.denypeek/secretfiles	brace-list	~/.denypeek/{s,q}ecretfiles	cat ~/.denypeek/{s,q}ecretfiles	proj
+read ~/.denypeek/secretfiles	brace-seq	~/.denypeek/{s..s}ecretfiles	cat ~/.denypeek/{s..s}ecretfiles	proj
+read ~/.denypeek/secretfiles	empty-squote	~/.denypeek/s''ecretfiles	cat ~/.denypeek/s''ecretfiles	proj
+read ~/.denypeek/secretfiles	empty-dquote	~/.denypeek/s""ecretfiles	cat ~/.denypeek/s""ecretfiles	proj
+read ~/.denypeek/secretfiles	extglob-at	~/.denypeek/@(s)ecretfiles	cat ~/.denypeek/@(s)ecretfiles	proj
+read ~/.denypeek/secretfiles	extglob-plus	~/.denypeek/+(s)ecretfiles	cat ~/.denypeek/+(s)ecretfiles	proj
+read ~/.denypeek/secretfiles	extglob-q	~/.denypeek/?(s)ecretfiles	cat ~/.denypeek/?(s)ecretfiles	proj
+read ~/.denypeek/secretfiles	extglob-star	~/.denypeek/*(s)ecretfiles	cat ~/.denypeek/*(s)ecretfiles	proj
+read ~/.denypeek/secretfiles	extglob-not-hash N1	~/.denypeek/!(#)ecretfiles	cat ~/.denypeek/!(#)ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-group-alt N4	~/.denypeek/(s|#)ecretfiles	cat ~/.denypeek/(s|#)ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-group N4	~/.denypeek/(s)ecretfiles	cat ~/.denypeek/(s)ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-repeat N4	~/.denypeek/s#ecretfiles	cat ~/.denypeek/s#ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-repeat2 N4	~/.denypeek/s##ecretfiles	cat ~/.denypeek/s##ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-not	~/.denypeek/^#ecretfiles	cat ~/.denypeek/^#ecretfiles	proj
+read ~/.denypeek/secretfiles	zsh-icase	~/.denypeek/(#i)Secretfiles	cat ~/.denypeek/(#i)Secretfiles	proj
+read ~/.denypeek/secretfiles	upper	~/.denypeek/Secretfiles	cat ~/.denypeek/Secretfiles	proj
+read ~/.denypeek/secretfiles	bracket-upper	~/.denypeek/[S]ecretfiles	cat ~/.denypeek/[S]ecretfiles	proj
+read ~/.denypeek/secretfiles	prefix-star	~/.denypeek/se*	cat ~/.denypeek/se*	proj
+read ~/.denypeek/secretfiles	suffix-star	~/.denypeek/*es	cat ~/.denypeek/*es	proj
+read ~/.denypeek/secretfiles	zsh-exclude	~/.denypeek/secretfiles~x	cat ~/.denypeek/secretfiles~x	proj
+read ~/.denypeek/secretfiles	zsh-group-empty	~/.denypeek/secretfiles(|x)	cat ~/.denypeek/secretfiles(|x)	proj
+read ~/.denypeek/secretfiles	zsh-group-whole N4	~/.denypeek/(secretfiles)	cat ~/.denypeek/(secretfiles)	proj
+read ~/.denypeek/secretfiles	extglob-whole	~/.denypeek/@(secretfiles)	cat ~/.denypeek/@(secretfiles)	proj
+read ~/.denypeek/secretfiles	extglob-not-any	~/.denypeek/!(x)	cat ~/.denypeek/!(x)	proj
+read ~/.denypeek/secretfiles	extglob-dot-not	~/.denypeek/.!(x)	cat ~/.denypeek/.!(x)	proj
+read ~/.denypeek/secretfiles	extglob-star-whole	~/.denypeek/*(secretfiles)	cat ~/.denypeek/*(secretfiles)	proj
+read ~/.denypeek/secretfiles	brace-last	~/.denypeek/secretfile{s}	cat ~/.denypeek/secretfile{s}	proj
+read ~/.denypeek/secretfiles	brace-empty-alt	~/.denypeek/{secretfiles,}	cat ~/.denypeek/{secretfiles,}	proj
+read ~/.denypeek/secretfiles	brace-alt	~/.denypeek/{x,secretfiles}	cat ~/.denypeek/{x,secretfiles}	proj
+read ~/.denypeek/secretfiles	zsh-icase-whole	~/.denypeek/(#i)SECRETFILES	cat ~/.denypeek/(#i)SECRETFILES	proj
+read ~/.denypeek/secretfiles	zsh-not-whole	~/.denypeek/s^x	cat ~/.denypeek/s^x	proj
+read ~/.denypeek/secretfiles	globstar	~/.denypeek/**/secretfiles	cat ~/.denypeek/**/secretfiles	proj
+read ~/.denypeek/secretfiles	globstar-dot	~/.denypeek/./**/secretfiles	cat ~/.denypeek/./**/secretfiles	proj
+read ~/.denypeek/secretfiles	zsh-approx N5	~/.denypeek/(#a1)secretfilew	cat ~/.denypeek/(#a1)secretfilew	proj
+read ~/.denypeek/secretfiles	zsh-charseq-dot N3	~/.denypeek/secretfiles	cat ~/.denypeek/secretfiles	proj
+read ~/.denypeek/secretfiles	two-neg	~/.denypeek/[!z-a]ecretfile[^x]	cat ~/.denypeek/[!z-a]ecretfile[^x]	proj
+read ~/.denypeek/secretfiles	two-q	~/.denypeek/?ecretfile[!x]	cat ~/.denypeek/?ecretfile[!x]	proj
+read ~/.denypeek/secretfiles	two-caret	~/.denypeek/[^#]ecretfile[^#]	cat ~/.denypeek/[^#]ecretfile[^#]	proj
+read ~/.denypeek/secretfiles	two-star-class	~/.denypeek/*ecretfile[[:alpha:]]	cat ~/.denypeek/*ecretfile[[:alpha:]]	proj
+read ~/.denypeek/secretfiles	zsh-repeat-bracket G3a	~/.denypeek/secretfiles[x]#	cat ~/.denypeek/secretfiles[x]#	proj
+read ~/.denypeek/secretfiles	zsh-repeat-group G3a	~/.denypeek/secretfiles(x)#	cat ~/.denypeek/secretfiles(x)#	proj
+read ~/.denypeek/secretfiles	zsh-repeat-bracket-mid G3a	~/.denypeek/secretfile[q]#s	cat ~/.denypeek/secretfile[q]#s	proj
+read ~/.denypeek/secretfiles	zsh-exclude-slash G3b	~/.denypeek/se*~*/q	cat ~/.denypeek/se*~*/q	proj
+read ~/.denypeek/secretfiles	zsh-group-slash G3c	~/.denypeek/(x/)#secretfiles	cat ~/.denypeek/(x/)#secretfiles	proj
+read ~/.denypeek/secretfiles	globstarshort	~/.denypeek/**secretfiles	cat ~/.denypeek/**secretfiles	proj
+read ~/.denypeek/secretfiles	globstarshort-tail	~/.denypeek/**es	cat ~/.denypeek/**es	proj
+read ~/.denypeek/secretfiles	bracket-close-slash G3c	~/.denypeek/se[!]/]retfiles	cat ~/.denypeek/se[!]/]retfiles	proj
 read ~+/.env	bracket-literal	~+/[.]env	cat ~+/[.]env	proj
 read ~+/.env	bracket-neg-bang	~+/[!#]env	cat ~+/[!#]env	proj
 read ~+/.env	bracket-neg-caret	~+/[^#]env	cat ~+/[^#]env	proj
@@ -2326,3 +2401,843 @@ rm ~/.claude via ..	dotdir-q G2	~/.codex/.?/.claude	rm -rf ~/.codex/.?/.claude	p
 mv ~/.gemini via ..	dotdir-q G2	~/.cursor/.?/.gemini	mv ~/.cursor/.?/.gemini /tmp/x	proj
 read ~/.ssh/id_rsa via ..	dotdir-q G2	~/.claude/.?/.ssh/id_rsa	cat ~/.claude/.?/.ssh/id_rsa	proj
 read ~/.ssh/id_rsa via ..	dotdir-star G2	~/.claude/.*/.ssh/id_rs?	cat ~/.claude/.*/.ssh/id_rs?	proj
+read .env	combo:class-print+equiv	[[=.=]]en[[:print:]]	cat [[=.=]]en[[:print:]]	proj
+read .env	combo:brace-seq+bracket-slash-member	{....}e[n/]v	cat {....}e[n/]v	proj
+read .env	combo:bracket-double+bracket-slash-member	[[.]]e[n/]v	cat [[.]]e[n/]v	proj
+read .env	combo:bracket-neg-leading-close+extglob-at	.e@(n)[!]#]	cat .e@(n)[!]#]	proj
+read .env	combo:bracket-caret-leading-close+bracket-then-star+zsh-not	^#[e]*n[^]#]	cat ^#[e]*n[^]#]	proj
+read .env	combo:extglob-not+extglob-star+star	!(#)**(n)v	cat !(#)**(n)v	proj
+read .env	combo:bracket-caret-leading-close+bracket-neg-reversed-caret+zsh-group	(.)[^z-a][^]#]v	cat (.)[^z-a][^]#]v	proj
+read .env	combo:bracket-caret-leading-close+extglob-at	@(.)en[^]#]	cat @(.)en[^]#]	proj
+read .env	combo:bracket-double+bracket-upper	[.]e[[n]]v	cat [.]e[[n]]v	proj
+read .env	combo:bracket-neg-reversed-caret+bracket-neg-reversed-caret+extglob-not-hash	.!(#)[^z-a][^z-a]	cat .!(#)[^z-a][^z-a]	proj
+read .env	combo:bracket-slash-member+question	.e?[v/]	cat .e?[v/]	proj
+read .env	combo:bracket-neg-leading-close+star	.*n[!]#]	cat .*n[!]#]	proj
+read .env	combo:bracket-slash-caret+equiv	.[^/][[=n=]]v	cat .[^/][[=n=]]v	proj
+read .env	combo:ansi-c-hex+bracket-slash-member+class-print	[./]$'\x65'[[:print:]]v	cat [./]$'\x65'[[:print:]]v	proj
+read .env	combo:bracket-double+collating+range-wide	[.][[e]]n[[.v.]]	cat [.][[e]]n[[.v.]]	proj
+read .env	combo:bracket-neg-leading-close+extglob-at+extglob-not	@(.)[!]#]!(#)v	cat @(.)[!]#]!(#)v	proj
+read .env	combo:bracket-neg-x+bracket-slash-caret	.[^/]n[^x]	cat .[^/]n[^x]	proj
+read .env	combo:bracket-double+bracket-slash-member+empty-dquote	[[.]][e/]nv""	cat [[.]][e/]nv""	proj
+read .env	combo:star+upper+zsh-group	(.)E*v	cat (.)E*v	proj
+read .env	combo:bracket-neg-x+empty-dquote	.e[^x]v""	cat .e[^x]v""	proj
+read .env	combo:bracket-neg-reversed-caret+collating	[^z-a][[.e.]]nv	cat [^z-a][[.e.]]nv	proj
+read .env	combo:brace-list+brace-list+extglob-q	.?(e){n,q}{v,q}	cat .?(e){n,q}{v,q}	proj
+read .env	combo:bracket-slash-neg+squote	'.'en[!/]	cat '.'en[!/]	proj
+read .env	combo:bracket-literal+bracket-neg-bang+question	[!#][e]?v	cat [!#][e]?v	proj
+read .env	combo:bracket-neg-bang+bracket-slash-caret	.[!#][^/]v	cat .[!#][^/]v	proj
+read .env	combo:ansi-c+zsh-repeat	$'.'env#	cat $'.'env#	proj
+read .env	combo:empty-dquote+zsh-group	.e""n(v)	cat .e""n(v)	proj
+read .env	combo:class-print+zsh-repeat	.#e[[:print:]]v	cat .#e[[:print:]]v	proj
+read .env	combo:bracket-slash-neg+extglob-not-hash+zsh-icase	!(#)e(#i)N[!/]	cat !(#)e(#i)N[!/]	proj
+read .env	combo:range-wide+zsh-not	[.]e^#v	cat [.]e^#v	proj
+rm ~/.denypeek	combo:bracket-neg-bang+bracket-neg-bang+zsh-group-alt	~/.d[!#][!#]ypee(k|#)	rm -rf ~/.d[!#][!#]ypee(k|#)	proj
+rm ~/.denypeek	combo:bracket-leading-close+extglob-at	~/.denyp@(e)e[]k]	rm -rf ~/.denyp@(e)e[]k]	proj
+rm ~/.denypeek	combo:bracket-then-star+empty-dquote+star	~/.[d]*eny""pe*k	rm -rf ~/.[d]*eny""pe*k	proj
+rm ~/.denypeek	combo:bracket-neg-reversed-bang+range-wide+zsh-group	~/.d(e)[!z-a]ypee[a-z]	rm -rf ~/.d(e)[!z-a]ypee[a-z]	proj
+rm ~/.denypeek	combo:bracket-double+range-wide	~/.[[d]][a-z]nypeek	rm -rf ~/.[[d]][a-z]nypeek	proj
+rm ~/.denypeek	combo:equiv+zsh-icase	~/.deny(#i)Pee[[=k=]]	rm -rf ~/.deny(#i)Pee[[=k=]]	proj
+rm ~/.denypeek	combo:bracket-neg-leading-close+extglob-plus+zsh-group	~/(.)de+(n)ypee[!]#]	rm -rf ~/(.)de+(n)ypee[!]#]	proj
+rm ~/.denypeek	combo:bracket-caret-leading-close+zsh-group	~/(.)denypee[^]#]	rm -rf ~/(.)denypee[^]#]	proj
+rm ~/.denypeek	combo:ansi-c+collating+collating	~/.[[.d.]]en$'y'p[[.e.]]ek	rm -rf ~/.[[.d.]]en$'y'p[[.e.]]ek	proj
+rm ~/.denypeek	combo:bracket-then-star+range-wide	~/.den[a-z]pe[e]*k	rm -rf ~/.den[a-z]pe[e]*k	proj
+rm ~/.denypeek	combo:range-wide+range-wide	~/.den[a-z][a-z]eek	rm -rf ~/.den[a-z][a-z]eek	proj
+rm ~/.denypeek	combo:bracket-then-star+empty-dquote+range-self	~/.d[e-e]ny[p]*ee""k	rm -rf ~/.d[e-e]ny[p]*ee""k	proj
+rm ~/.denypeek	combo:bracket-double+zsh-not	~/.den^#pe[[e]]k	rm -rf ~/.den^#pe[[e]]k	proj
+rm ~/.denypeek	combo:brace-list+dquote	~/{.,q}deny"p"eek	rm -rf ~/{.,q}deny"p"eek	proj
+rm ~/.denypeek	combo:bracket-escaped+class	~/[\.][[:alpha:]]enypeek	rm -rf ~/[\.][[:alpha:]]enypeek	proj
+rm ~/.denypeek	combo:ansi-c-hex+empty-dquote+zsh-charseq	~/{....}denyp""ee$'\x6b'	rm -rf ~/{....}denyp""ee$'\x6b'	proj
+rm ~/.denypeek	combo:collating+upper	~/.Denypee[[.k.]]	rm -rf ~/.Denypee[[.k.]]	proj
+rm ~/.denypeek	combo:bracket-leading-close+extglob-plus	~/.d[]e]nype+(e)k	rm -rf ~/.d[]e]nype+(e)k	proj
+rm ~/.denypeek	combo:bracket-neg-x+escape	~/.denyp\ee[^x]	rm -rf ~/.denyp\ee[^x]	proj
+rm ~/.denypeek	combo:bracket-escaped+empty-dquote+range-self	~/.den[\y][p-p]eek""	rm -rf ~/.den[\y][p-p]eek""	proj
+rm ~/.denypeek	combo:extglob-q+range-wide+zsh-group	~/[.]?(d)(e)nypeek	rm -rf ~/[.]?(d)(e)nypeek	proj
+rm ~/.denypeek	combo:bracket-neg-bang+zsh-repeat2	~/.d[!#]n##ypeek	rm -rf ~/.d[!#]n##ypeek	proj
+rm ~/.denypeek	combo:equiv+extglob-plus	~/+(.)d[[=e=]]nypeek	rm -rf ~/+(.)d[[=e=]]nypeek	proj
+rm ~/.denypeek	combo:brace-list+zsh-group-alt	~/.de{n,q}(y|#)peek	rm -rf ~/.de{n,q}(y|#)peek	proj
+rm ~/.denypeek	combo:bracket-escaped+question	~/.?eny[\p]eek	rm -rf ~/.?eny[\p]eek	proj
+rm ~/.denypeek	combo:brace-list+zsh-not	~/{.,q}^#enypeek	rm -rf ~/{.,q}^#enypeek	proj
+rm ~/.denypeek	combo:bracket-slash-caret+extglob-at	~/.d[^/]nype@(e)k	rm -rf ~/.d[^/]nype@(e)k	proj
+rm ~/.denypeek	combo:bracket-double+range-wide	~/[[.]]de[a-z]ypeek	rm -rf ~/[[.]]de[a-z]ypeek	proj
+rm ~/.denypeek	combo:equiv+extglob-not+range-wide	~/.[[=d=]]enype!(#)[a-z]	rm -rf ~/.[[=d=]]enype!(#)[a-z]	proj
+rm ~/.denypeek	combo:brace-seq+empty-dquote+squote	~/.den""yp'e'e{k..k}	rm -rf ~/.den""yp'e'e{k..k}	proj
+rm ~/.claude	combo:bracket-escaped+bracket-neg-reversed-caret+empty-dquote	~/.""[^z-a]lau[\d]e	rm -rf ~/.""[^z-a]lau[\d]e	proj
+rm ~/.claude	combo:bracket-literal+bracket-neg-caret+equiv	~/.c[[=l=]][a][^#]de	rm -rf ~/.c[[=l=]][a][^#]de	proj
+rm ~/.claude	combo:ansi-c-hex+zsh-not	~/.cl^#ud$'\x65'	rm -rf ~/.cl^#ud$'\x65'	proj
+rm ~/.claude	combo:ansi-c-hex+bracket-neg-reversed-bang+empty-dquote	~/.""cl$'\x61'u[!z-a]e	rm -rf ~/.""cl$'\x61'u[!z-a]e	proj
+rm ~/.claude	combo:brace-list+extglob-at	~/.{c,q}@(l)aude	rm -rf ~/.{c,q}@(l)aude	proj
+rm ~/.claude	combo:bracket-leading-close+squote+upper	~/.clA[]u]'d'e	rm -rf ~/.clA[]u]'d'e	proj
+rm ~/.claude	combo:class+class+escape	~/[[:punct:]]cla\ud[[:alpha:]]	rm -rf ~/[[:punct:]]cla\ud[[:alpha:]]	proj
+rm ~/.claude	combo:escape+range-wide	~/.[a-z]\laude	rm -rf ~/.[a-z]\laude	proj
+rm ~/.claude	combo:extglob-at+question	~/@(.)claud?	rm -rf ~/@(.)claud?	proj
+rm ~/.claude	combo:bracket-neg-leading-close+star	~/.cl[!]#]u*e	rm -rf ~/.cl[!]#]u*e	proj
+rm ~/.claude	combo:upper+zsh-group	~/.clau(d)E	rm -rf ~/.clau(d)E	proj
+rm ~/.claude	combo:brace-list+empty-squote+upper	~/.Claud''{e,q}	rm -rf ~/.Claud''{e,q}	proj
+rm ~/.claude	combo:bracket-upper+extglob-star	~/*(.)c[L]aude	rm -rf ~/*(.)c[L]aude	proj
+rm ~/.claude	combo:bracket-neg-x+extglob-not	~/.c[^x]au!(#)e	rm -rf ~/.c[^x]au!(#)e	proj
+rm ~/.claude	combo:brace-seq+bracket-slash-caret	~/[^/]cla{u..u}de	rm -rf ~/[^/]cla{u..u}de	proj
+rm ~/.claude	combo:bracket-neg-leading-close+bracket-neg-reversed-bang+zsh-not	~/^#c[!z-a]a[!]#]de	rm -rf ~/^#c[!z-a]a[!]#]de	proj
+rm ~/.claude	combo:range-wide+upper	~/[.]claudE	rm -rf ~/[.]claudE	proj
+rm ~/.claude	combo:ansi-c-hex+bracket-escaped	~/.$'\x63'la[\u]de	rm -rf ~/.$'\x63'la[\u]de	proj
+rm ~/.claude	combo:bracket-leading-close+bracket-literal+extglob-at	~/.@(c)[l]a[]u]de	rm -rf ~/.@(c)[l]a[]u]de	proj
+rm ~/.claude	combo:empty-dquote+extglob-not-hash	~/!(#)claud""e	rm -rf ~/!(#)claud""e	proj
+rm ~/.claude	combo:bracket-leading-close+zsh-repeat2	~/.c##la[]u]de	rm -rf ~/.c##la[]u]de	proj
+rm ~/.claude	combo:ansi-c-hex+extglob-plus	~/.$'\x63'lau+(d)e	rm -rf ~/.$'\x63'lau+(d)e	proj
+rm ~/.claude	combo:bracket-double+question	~/.clau?[[e]]	rm -rf ~/.clau?[[e]]	proj
+rm ~/.claude	combo:dquote+empty-squote	~/.c''la"u"de	rm -rf ~/.c''la"u"de	proj
+rm ~/.claude	combo:brace-list+bracket-neg-bang+bracket-slash-member	~/[!#][c/]{l,q}aude	rm -rf ~/[!#][c/]{l,q}aude	proj
+rm ~/.claude	combo:bracket-leading-close+bracket-upper	~/.cl[A]ud[]e]	rm -rf ~/.cl[A]ud[]e]	proj
+rm ~/.claude	combo:ansi-c+bracket-slash-member	~/$'.'cl[a/]ude	rm -rf ~/$'.'cl[a/]ude	proj
+rm ~/.claude	combo:bracket-neg-caret+class-print+escape	~/[^#]clau\d[[:print:]]	rm -rf ~/[^#]clau\d[[:print:]]	proj
+rm ~/.claude	combo:bracket-neg-caret+equiv+escape	~/.\cl[[=a=]][^#]de	rm -rf ~/.\cl[[=a=]][^#]de	proj
+rm ~/.claude	combo:brace-list+extglob-plus	~/.c+(l)a{u,q}de	rm -rf ~/.c+(l)a{u,q}de	proj
+mv ~/.claude	combo:bracket-slash-neg+extglob-not+zsh-icase	~/.cl[!/]!(#)d(#i)E	mv ~/.cl[!/]!(#)d(#i)E /tmp/x	proj
+mv ~/.claude	combo:bracket-double+extglob-q	~/.[[c]]l?(a)ude	mv ~/.[[c]]l?(a)ude /tmp/x	proj
+mv ~/.claude	combo:brace-list+escape+extglob-q	~/{.,q}c?(l)a\ude	mv ~/{.,q}c?(l)a\ude /tmp/x	proj
+mv ~/.claude	combo:escape+extglob-not	~/.!(#)l\aude	mv ~/.!(#)l\aude /tmp/x	proj
+mv ~/.claude	combo:empty-dquote+extglob-star+upper	~/.c*(l)aUd""e	mv ~/.c*(l)aUd""e /tmp/x	proj
+mv ~/.claude	combo:ansi-c+class-print	~/.$'c'laud[[:print:]]	mv ~/.$'c'laud[[:print:]] /tmp/x	proj
+mv ~/.claude	combo:bracket-literal+collating	~/.[c]lau[[.d.]]e	mv ~/.[c]lau[[.d.]]e /tmp/x	proj
+mv ~/.claude	combo:class+extglob-not-hash+extglob-q	~/[[:punct:]]?(c)lau!(#)e	mv ~/[[:punct:]]?(c)lau!(#)e /tmp/x	proj
+mv ~/.claude	combo:extglob-not-hash+zsh-icase	~/.c!(#)aud(#i)E	mv ~/.c!(#)aud(#i)E /tmp/x	proj
+mv ~/.claude	combo:brace-seq+zsh-not	~/^#cla{u..u}de	mv ~/^#cla{u..u}de /tmp/x	proj
+mv ~/.claude	combo:bracket-escaped+extglob-star	~/.c*(l)[\a]ude	mv ~/.c*(l)[\a]ude /tmp/x	proj
+mv ~/.claude	combo:extglob-not+range-wide	~/.cl!(#)ud[a-z]	mv ~/.cl!(#)ud[a-z] /tmp/x	proj
+mv ~/.claude	combo:bracket-caret-leading-close+bracket-upper+zsh-icase	~/[.][^]#]la(#i)Ude	mv ~/[.][^]#]la(#i)Ude /tmp/x	proj
+mv ~/.claude	combo:extglob-q+range-wide	~/.[a-z]lau?(d)e	mv ~/.[a-z]lau?(d)e /tmp/x	proj
+mv ~/.claude	combo:bracket-escaped+bracket-then-star+extglob-star	~/*(.)cl[\a]ud[e]*	mv ~/*(.)cl[\a]ud[e]* /tmp/x	proj
+mv ~/.claude	combo:bracket-neg-reversed-bang+range-wide	~/.[!z-a]laud[a-z]	mv ~/.[!z-a]laud[a-z] /tmp/x	proj
+mv ~/.claude	combo:bracket-slash-caret+upper	~/.clau[^/]E	mv ~/.clau[^/]E /tmp/x	proj
+mv ~/.claude	combo:collating+zsh-repeat	~/.c[[.l.]]aude#	mv ~/.c[[.l.]]aude# /tmp/x	proj
+mv ~/.claude	combo:bracket-neg-caret+equiv	~/.cl[[=a=]]u[^#]e	mv ~/.cl[[=a=]]u[^#]e /tmp/x	proj
+mv ~/.claude	combo:ansi-c-hex+bracket-neg-x	~/.cl$'\x61'[^x]de	mv ~/.cl$'\x61'[^x]de /tmp/x	proj
+mv ~/.claude	combo:extglob-at+question	~/@(.)c?aude	mv ~/@(.)c?aude /tmp/x	proj
+mv ~/.claude	combo:bracket-neg-x+extglob-plus	~/.c[^x]a+(u)de	mv ~/.c[^x]a+(u)de /tmp/x	proj
+mv ~/.claude	combo:bracket-slash-member+collating	~/[./]cl[[.a.]]ude	mv ~/[./]cl[[.a.]]ude /tmp/x	proj
+mv ~/.claude	combo:bracket-upper+bracket-upper	~/[.]cla[U]de	mv ~/[.]cla[U]de /tmp/x	proj
+mv ~/.claude	combo:bracket-caret-leading-close+extglob-star+squote	~/.*(c)l'a'ud[^]#]	mv ~/.*(c)l'a'ud[^]#] /tmp/x	proj
+mv ~/.claude	combo:extglob-q+squote	~/.clau'd'?(e)	mv ~/.clau'd'?(e) /tmp/x	proj
+mv ~/.claude	combo:extglob-plus+range-self+zsh-group-alt	~/.+(c)(l|#)au[d-d]e	mv ~/.+(c)(l|#)au[d-d]e /tmp/x	proj
+mv ~/.claude	combo:bracket-escaped+bracket-neg-reversed-caret+zsh-repeat	~/[\.]cla#u[^z-a]e	mv ~/[\.]cla#u[^z-a]e /tmp/x	proj
+mv ~/.claude	combo:equiv+upper	~/[[=.=]]clAude	mv ~/[[=.=]]clAude /tmp/x	proj
+mv ~/.claude	combo:bracket-neg-reversed-bang+star	~/.c[!z-a]a*de	mv ~/.c[!z-a]a*de /tmp/x	proj
+rm ~/.codex	combo:extglob-at+squote+zsh-not	~/^#cod'e'@(x)	rm -rf ~/^#cod'e'@(x)	proj
+rm ~/.codex	combo:bracket-literal+dquote+zsh-repeat2	~/.##c[o]"d"ex	rm -rf ~/.##c[o]"d"ex	proj
+rm ~/.codex	combo:collating+dquote	~/.cod"e"[[.x.]]	rm -rf ~/.cod"e"[[.x.]]	proj
+rm ~/.codex	combo:brace-seq+zsh-repeat	~/.code#{x..x}	rm -rf ~/.code#{x..x}	proj
+rm ~/.codex	combo:bracket-neg-leading-close+bracket-neg-leading-close	~/[!]#][!]#]odex	rm -rf ~/[!]#][!]#]odex	proj
+rm ~/.codex	combo:bracket-slash-member+zsh-not	~/.c[o/]de^#	rm -rf ~/.c[o/]de^#	proj
+rm ~/.codex	combo:extglob-plus+zsh-group	~/.c+(o)(d)ex	rm -rf ~/.c+(o)(d)ex	proj
+rm ~/.codex	combo:empty-squote+extglob-star	~/*(.)codex''	rm -rf ~/*(.)codex''	proj
+rm ~/.codex	combo:equiv+upper	~/.c[[=o=]]dex	rm -rf ~/.c[[=o=]]dex	proj
+rm ~/.codex	combo:brace-list+zsh-icase	~/.(#i)Cod{e,q}x	rm -rf ~/.(#i)Cod{e,q}x	proj
+rm ~/.codex	combo:bracket-then-star+extglob-not-hash	~/.[c]*!(#)dex	rm -rf ~/.[c]*!(#)dex	proj
+rm ~/.codex	combo:bracket-neg-reversed-caret+bracket-then-star	~/.c[o]*[^z-a]ex	rm -rf ~/.c[o]*[^z-a]ex	proj
+rm ~/.codex	combo:bracket-literal+zsh-group+zsh-icase	~/.(c)o[d]e(#i)X	rm -rf ~/.(c)o[d]e(#i)X	proj
+rm ~/.codex	combo:range-self+zsh-repeat2	~/.[c-c]o##dex	rm -rf ~/.[c-c]o##dex	proj
+rm ~/.codex	combo:ansi-c+empty-squote+zsh-group	~/.$'c'o''de(x)	rm -rf ~/.$'c'o''de(x)	proj
+rm ~/.codex	combo:bracket-leading-close+bracket-neg-reversed-bang	~/[].]cod[!z-a]x	rm -rf ~/[].]cod[!z-a]x	proj
+rm ~/.codex	combo:upper+zsh-repeat2	~/.cOdex##	rm -rf ~/.cOdex##	proj
+rm ~/.codex	combo:ansi-c+bracket-neg-reversed-bang	~/.c[!z-a]d$'e'x	rm -rf ~/.c[!z-a]d$'e'x	proj
+rm ~/.codex	combo:bracket-slash-caret+dquote	~/.cod"e"[^/]	rm -rf ~/.cod"e"[^/]	proj
+rm ~/.codex	combo:bracket-leading-close+squote	~/.[]c]ode'x'	rm -rf ~/.[]c]ode'x'	proj
+rm ~/.codex	combo:bracket-neg-caret+empty-squote	~/.''co[^#]ex	rm -rf ~/.''co[^#]ex	proj
+rm ~/.codex	combo:bracket-neg-x+class	~/.co[[:alpha:]]e[^y]	rm -rf ~/.co[[:alpha:]]e[^y]	proj
+rm ~/.codex	combo:bracket-escaped+bracket-neg-x	~/[\.]code[^y]	rm -rf ~/[\.]code[^y]	proj
+rm ~/.codex	combo:range-self+upper+zsh-group	~/.cod[e-e](x)	rm -rf ~/.cod[e-e](x)	proj
+rm ~/.codex	combo:ansi-c+zsh-repeat	~/.c$'o'dex#	rm -rf ~/.c$'o'dex#	proj
+rm ~/.codex	combo:bracket-double+collating	~/.[[c]]od[[.e.]]x	rm -rf ~/.[[c]]od[[.e.]]x	proj
+rm ~/.codex	combo:class+range-wide	~/.c[a-z][[:alpha:]]ex	rm -rf ~/.c[a-z][[:alpha:]]ex	proj
+rm ~/.codex	combo:bracket-neg-bang+bracket-slash-neg	~/.[!/]od[!#]x	rm -rf ~/.[!/]od[!#]x	proj
+rm ~/.codex	combo:collating+empty-squote	~/.[[.c.]]ode''x	rm -rf ~/.[[.c.]]ode''x	proj
+rm ~/.codex	combo:bracket-double+extglob-not-hash+zsh-icase	~/.(#i)C[[o]]d!(#)x	rm -rf ~/.(#i)C[[o]]d!(#)x	proj
+rm ~/.cursor	combo:bracket-neg-reversed-bang+bracket-upper+empty-squote	~/.c[U]rs[!z-a]r''	rm -rf ~/.c[U]rs[!z-a]r''	proj
+rm ~/.cursor	combo:extglob-star+range-self	~/[.-.]*(c)ursor	rm -rf ~/[.-.]*(c)ursor	proj
+rm ~/.cursor	combo:class-print+extglob-at	~/.cur@(s)o[[:print:]]	rm -rf ~/.cur@(s)o[[:print:]]	proj
+rm ~/.cursor	combo:bracket-neg-bang+bracket-neg-x+squote	~/'.'curs[^x][!#]	rm -rf ~/'.'curs[^x][!#]	proj
+rm ~/.cursor	combo:bracket-double+dquote+question	~/."c"ur?[[o]]r	rm -rf ~/."c"ur?[[o]]r	proj
+rm ~/.cursor	combo:bracket-neg-leading-close+bracket-slash-member	~/.cur[s/][!]#]r	rm -rf ~/.cur[s/][!]#]r	proj
+rm ~/.cursor	combo:bracket-neg-reversed-caret+bracket-neg-x+escape	~/.c\urs[^x][^z-a]	rm -rf ~/.c\urs[^x][^z-a]	proj
+rm ~/.cursor	combo:bracket-caret-leading-close+range-wide	~/.[a-z][^]#]rsor	rm -rf ~/.[a-z][^]#]rsor	proj
+rm ~/.cursor	combo:bracket-neg-caret+collating+question	~/?c[[.u.]]rs[^#]r	rm -rf ~/?c[[.u.]]rs[^#]r	proj
+rm ~/.cursor	combo:ansi-c-hex+bracket-caret-leading-close+equiv	~/$'\x2e'c[[=u=]][^]#]sor	rm -rf ~/$'\x2e'c[[=u=]][^]#]sor	proj
+rm ~/.cursor	combo:bracket-neg-reversed-bang+dquote+zsh-repeat	~/.#c[!z-a]rs"o"r	rm -rf ~/.#c[!z-a]rs"o"r	proj
+rm ~/.cursor	combo:bracket-caret-leading-close+bracket-upper	~/.[C]ur[^]#]or	rm -rf ~/.[C]ur[^]#]or	proj
+rm ~/.cursor	combo:bracket-caret-leading-close+bracket-neg-bang	~/.c[^]#]r[!#]or	rm -rf ~/.c[^]#]r[!#]or	proj
+rm ~/.cursor	combo:bracket-literal+bracket-neg-x	~/[^x]cu[r]sor	rm -rf ~/[^x]cu[r]sor	proj
+rm ~/.cursor	combo:bracket-escaped+zsh-repeat2	~/.c##u[\r]sor	rm -rf ~/.c##u[\r]sor	proj
+rm ~/.cursor	combo:bracket-leading-close+star	~/[].]curs*r	rm -rf ~/[].]curs*r	proj
+rm ~/.cursor	combo:bracket-slash-neg+escape	~/.[!/]\ursor	rm -rf ~/.[!/]\ursor	proj
+rm ~/.cursor	combo:bracket-slash-neg+empty-dquote	~/.[!/]urs""or	rm -rf ~/.[!/]urs""or	proj
+rm ~/.cursor	combo:extglob-star+zsh-not	~/.^#urso*(r)	rm -rf ~/.^#urso*(r)	proj
+rm ~/.cursor	combo:ansi-c+brace-seq	~/.cur{s..s}o$'r'	rm -rf ~/.cur{s..s}o$'r'	proj
+rm ~/.cursor	combo:bracket-double+empty-dquote	~/.c""urso[[r]]	rm -rf ~/.c""urso[[r]]	proj
+rm ~/.cursor	combo:bracket-slash-neg+zsh-repeat	~/.#cur[!/]or	rm -rf ~/.#cur[!/]or	proj
+rm ~/.cursor	combo:bracket-neg-reversed-bang+empty-squote+zsh-group	~/.cur''[!z-a]o(r)	rm -rf ~/.cur''[!z-a]o(r)	proj
+rm ~/.cursor	combo:bracket-neg-bang+bracket-slash-caret	~/.[!#]urs[^/]r	rm -rf ~/.[!#]urs[^/]r	proj
+rm ~/.cursor	combo:bracket-neg-bang+empty-dquote	~/.c[!#]rso""r	rm -rf ~/.c[!#]rso""r	proj
+rm ~/.cursor	combo:bracket-escaped+bracket-slash-caret	~/.c[\u]rso[^/]	rm -rf ~/.c[\u]rso[^/]	proj
+rm ~/.cursor	combo:bracket-literal+bracket-neg-reversed-bang+extglob-q	~/[!z-a]cur[s]o?(r)	rm -rf ~/[!z-a]cur[s]o?(r)	proj
+rm ~/.cursor	combo:bracket-literal+extglob-not	~/.[c]u!(#)sor	rm -rf ~/.[c]u!(#)sor	proj
+rm ~/.cursor	combo:class-print+extglob-not-hash+zsh-not	~/[[:print:]]!(#)urso^#	rm -rf ~/[[:print:]]!(#)urso^#	proj
+rm ~/.cursor	combo:dquote+range-wide	~/.c"u"r[a-z]or	rm -rf ~/.c"u"r[a-z]or	proj
+mv ~/.gemini	combo:bracket-leading-close+bracket-neg-x	~/.gemi[]n][^x]	mv ~/.gemi[]n][^x] /tmp/x	proj
+mv ~/.gemini	combo:empty-squote+zsh-icase	~/.gem''i(#i)Ni	mv ~/.gem''i(#i)Ni /tmp/x	proj
+mv ~/.gemini	combo:ansi-c+bracket-escaped+bracket-neg-caret	~/.g[\e]mi[^#]$'i'	mv ~/.g[\e]mi[^#]$'i' /tmp/x	proj
+mv ~/.gemini	combo:dquote+zsh-icase	~/.g(#i)Emin"i"	mv ~/.g(#i)Emin"i" /tmp/x	proj
+mv ~/.gemini	combo:bracket-slash-member+bracket-slash-neg+zsh-charseq	~/{....}[!/]em[i/]ni	mv ~/{....}[!/]em[i/]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-escaped+zsh-repeat2	~/.g##[\e]mini	mv ~/.g##[\e]mini /tmp/x	proj
+mv ~/.gemini	combo:bracket-caret-leading-close+squote+zsh-group-alt	~/.'g'[^]#]min(i|#)	mv ~/.'g'[^]#]min(i|#) /tmp/x	proj
+mv ~/.gemini	combo:bracket-slash-caret+question	~/?[^/]emini	mv ~/?[^/]emini /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-bang+extglob-star	~/.ge*(m)i[!#]i	mv ~/.ge*(m)i[!#]i /tmp/x	proj
+mv ~/.gemini	combo:brace-seq+empty-dquote+squote	~/.""'g'{e..e}mini	mv ~/.""'g'{e..e}mini /tmp/x	proj
+mv ~/.gemini	combo:class-print+zsh-group	~/(.)gem[[:print:]]ni	mv ~/(.)gem[[:print:]]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-caret-leading-close+bracket-leading-close+upper	~/[].]gE[^]#]ini	mv ~/[].]gE[^]#]ini /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-leading-close+bracket-neg-reversed-bang+range-wide	~/.[!]#][!z-a]m[a-z]ni	mv ~/.[!]#][!z-a]m[a-z]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-slash-member+squote+upper	~/.G'e'min[i/]	mv ~/.G'e'min[i/] /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-x+extglob-q	~/?(.)gem[^x]ni	mv ~/?(.)gem[^x]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-x+range-wide	~/.g[^x]min[a-z]	mv ~/.g[^x]min[a-z] /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-x+bracket-slash-caret+zsh-group	~/.ge[^/]i(n)[^x]	mv ~/.ge[^/]i(n)[^x] /tmp/x	proj
+mv ~/.gemini	combo:bracket-caret-leading-close+star	~/.ge[^]#]in*	mv ~/.ge[^]#]in* /tmp/x	proj
+mv ~/.gemini	combo:collating+zsh-icase	~/(#i).gem[[.i.]]ni	mv ~/(#i).gem[[.i.]]ni /tmp/x	proj
+mv ~/.gemini	combo:extglob-star+zsh-group-alt	~/.ge(m|#)i*(n)i	mv ~/.ge(m|#)i*(n)i /tmp/x	proj
+mv ~/.gemini	combo:bracket-caret-leading-close+class-print	~/.g[^]#]m[[:print:]]ni	mv ~/.g[^]#]m[[:print:]]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-reversed-caret+zsh-repeat	~/.g[^z-a]min#i	mv ~/.g[^z-a]min#i /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-caret+bracket-slash-caret+zsh-repeat	~/[^/]g[^#]mi#ni	mv ~/[^/]g[^#]mi#ni /tmp/x	proj
+mv ~/.gemini	combo:brace-seq+bracket-double+bracket-neg-reversed-bang	~/[[.]]g{e..e}[!z-a]ini	mv ~/[[.]]g{e..e}[!z-a]ini /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-reversed-caret+collating+zsh-group-alt	~/.[^z-a]emi(n|#)[[.i.]]	mv ~/.[^z-a]emi(n|#)[[.i.]] /tmp/x	proj
+mv ~/.gemini	combo:bracket-caret-leading-close+zsh-not	~/.[^]#]^#mini	mv ~/.[^]#]^#mini /tmp/x	proj
+mv ~/.gemini	combo:bracket-escaped+zsh-group	~/.g[\e](m)ini	mv ~/.g[\e](m)ini /tmp/x	proj
+mv ~/.gemini	combo:bracket-neg-reversed-bang+empty-dquote+equiv	~/.""[!z-a][[=e=]]mini	mv ~/.""[!z-a][[=e=]]mini /tmp/x	proj
+mv ~/.gemini	combo:bracket-leading-close+extglob-star	~/.ge*(m)[]i]ni	mv ~/.ge*(m)[]i]ni /tmp/x	proj
+mv ~/.gemini	combo:bracket-escaped+zsh-group	~/.gem(i)[\n]i	mv ~/.gem(i)[\n]i /tmp/x	proj
+read ~/.ssh/id_rsa via dir	combo:brace-seq+dquote	~/{....}s"s"h/id_rsa	cat ~/{....}s"s"h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-caret-leading-close+zsh-repeat	~/.ss#[^]#]/id_rsa	cat ~/.ss#[^]#]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:ansi-c+brace-list	~/{.,q}$'s'sh/id_rsa	cat ~/{.,q}$'s'sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:equiv+star	~/[[=.=]]s*h/id_rsa	cat ~/[[=.=]]s*h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:brace-list+extglob-q	~/.{s,q}?(s)h/id_rsa	cat ~/.{s,q}?(s)h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:empty-dquote+escape	~/.ss""\h/id_rsa	cat ~/.ss""\h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:collating+extglob-at	~/.s[[.s.]]@(h)/id_rsa	cat ~/.s[[.s.]]@(h)/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-literal+extglob-not+extglob-star	~/[.]s*(s)!(#)/id_rsa	cat ~/[.]s*(s)!(#)/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-leading-close+bracket-leading-close	~/[].][]s]sh/id_rsa	cat ~/[].][]s]sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-slash-member+extglob-not+upper	~/.[s/]!(#)h/id_rsa	cat ~/.[s/]!(#)h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-double+zsh-repeat2	~/[[.]]s##sh/id_rsa	cat ~/[[.]]s##sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:ansi-c-hex+ansi-c-hex	~/$'\x2e'$'\x73'sh/id_rsa	cat ~/$'\x2e'$'\x73'sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:dquote+zsh-group	~/(.)ss"h"/id_rsa	cat ~/(.)ss"h"/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-literal+zsh-group-alt	~/.(s|#)s[h]/id_rsa	cat ~/.(s|#)s[h]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-double+bracket-slash-member+escape	~/\.[s/]s[[h]]/id_rsa	cat ~/\.[s/]s[[h]]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:class-print+star+zsh-group	~/*(s)[[:print:]]h/id_rsa	cat ~/*(s)[[:print:]]h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:brace-seq+extglob-plus	~/.s{s..s}+(h)/id_rsa	cat ~/.s{s..s}+(h)/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:equiv+escape	~/[[=.=]]ss\h/id_rsa	cat ~/[[=.=]]ss\h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-neg-caret+bracket-slash-neg	~/[^#][!/]sh/id_rsa	cat ~/[^#][!/]sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-neg-caret+zsh-icase+zsh-not	~/(#i).^#s[^#]/id_rsa	cat ~/(#i).^#s[^#]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:empty-dquote+question+range-self	~/.""s[s-s]?/id_rsa	cat ~/.""s[s-s]?/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-then-star+bracket-upper+range-wide	~/[.][s]*s[a-z]/id_rsa	cat ~/[.][s]*s[a-z]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-double+escape	~/\.ss[[h]]/id_rsa	cat ~/\.ss[[h]]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:ansi-c+bracket-caret-leading-close	~/.s[^]#]$'h'/id_rsa	cat ~/.s[^]#]$'h'/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:range-self+range-wide+upper	~/[.]S[s-s]h/id_rsa	cat ~/[.]S[s-s]h/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:range-self+zsh-group	~/.s[s-s](h)/id_rsa	cat ~/.s[s-s](h)/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:ansi-c+range-self	~/[.-.]$'s'sh/id_rsa	cat ~/[.-.]$'s'sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-caret-leading-close+bracket-leading-close	~/[].][^]#]sh/id_rsa	cat ~/[].][^]#]sh/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:bracket-leading-close+empty-dquote	~/.""ss[]h]/id_rsa	cat ~/.""ss[]h]/id_rsa	proj
+read ~/.ssh/id_rsa via dir	combo:ansi-c-hex+bracket-slash-member+equiv	~/[[=.=]]s$'\x73'[h/]/id_rsa	cat ~/[[=.=]]s$'\x73'[h/]/id_rsa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-reversed-bang+dquote+escape	~/.ssh/[!z-a]d"_"rs\a	cat ~/.ssh/[!z-a]d"_"rs\a	proj
+read ~/.ssh/id_rsa via name	combo:dquote+extglob-not-hash+star	~/.ssh/"i"d_*!(#)a	cat ~/.ssh/"i"d_*!(#)a	proj
+read ~/.ssh/id_rsa via name	combo:extglob-plus+zsh-charseq	~/.ssh/id{_.._}+(r)sa	cat ~/.ssh/id{_.._}+(r)sa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-double+extglob-star	~/.ssh/id_*(r)s[[a]]	cat ~/.ssh/id_*(r)s[[a]]	proj
+read ~/.ssh/id_rsa via name	combo:class+extglob-not-hash+star	~/.ssh/*d[[:punct:]]r!(#)a	cat ~/.ssh/*d[[:punct:]]r!(#)a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-double+escape	~/.ssh/[[i]]d_r\sa	cat ~/.ssh/[[i]]d_r\sa	proj
+read ~/.ssh/id_rsa via name	combo:question+star	~/.ssh/id_r*?	cat ~/.ssh/id_r*?	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-leading-close+extglob-q	~/.ssh/id_?(r)s[!]#]	cat ~/.ssh/id_?(r)s[!]#]	proj
+read ~/.ssh/id_rsa via name	combo:class-print+extglob-q	~/.ssh/i[[:print:]]_r?(s)a	cat ~/.ssh/i[[:print:]]_r?(s)a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-reversed-caret+bracket-slash-caret+class-print	~/.ssh/[^z-a]d[^/]rs[[:print:]]	cat ~/.ssh/[^z-a]d[^/]rs[[:print:]]	proj
+read ~/.ssh/id_rsa via name	combo:brace-list+bracket-literal	~/.ssh/i[d]{_,q}rsa	cat ~/.ssh/i[d]{_,q}rsa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-caret-leading-close+zsh-not	~/.ssh/id^#r[^]#]a	cat ~/.ssh/id^#r[^]#]a	proj
+read ~/.ssh/id_rsa via name	combo:brace-seq+bracket-caret-leading-close	~/.ssh/{i..i}[^]#]_rsa	cat ~/.ssh/{i..i}[^]#]_rsa	proj
+read ~/.ssh/id_rsa via name	combo:collating+range-self+zsh-repeat2	~/.ssh/[i-i]d##_r[[.s.]]a	cat ~/.ssh/[i-i]d##_r[[.s.]]a	proj
+read ~/.ssh/id_rsa via name	combo:question+zsh-repeat	~/.ssh/?d_r#sa	cat ~/.ssh/?d_r#sa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-reversed-bang+bracket-upper	~/.ssh/[!z-a]d_[R]sa	cat ~/.ssh/[!z-a]d_[R]sa	proj
+read ~/.ssh/id_rsa via name	combo:brace-seq+zsh-not	~/.ssh/i{d..d}^#rsa	cat ~/.ssh/i{d..d}^#rsa	proj
+read ~/.ssh/id_rsa via name	combo:extglob-not-hash+extglob-not-hash	~/.ssh/i!(#)_r!(#)a	cat ~/.ssh/i!(#)_r!(#)a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-caret-leading-close+bracket-neg-x	~/.ssh/id[^]#]r[^x]a	cat ~/.ssh/id[^]#]r[^x]a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-leading-close+escape	~/.ssh/[!]#]\d_rsa	cat ~/.ssh/[!]#]\d_rsa	proj
+read ~/.ssh/id_rsa via name	combo:brace-seq+empty-dquote	~/.ssh/id_{r..r}s""a	cat ~/.ssh/id_{r..r}s""a	proj
+read ~/.ssh/id_rsa via name	combo:brace-seq+extglob-plus	~/.ssh/i+(d)_r{s..s}a	cat ~/.ssh/i+(d)_r{s..s}a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-leading-close+empty-dquote	~/.ssh/id_""r[]s]a	cat ~/.ssh/id_""r[]s]a	proj
+read ~/.ssh/id_rsa via name	combo:brace-seq+bracket-literal+class-print	~/.ssh/id{_.._}[[:print:]][s]a	cat ~/.ssh/id{_.._}[[:print:]][s]a	proj
+read ~/.ssh/id_rsa via name	combo:extglob-plus+star	~/.ssh/+(i)d_*sa	cat ~/.ssh/+(i)d_*sa	proj
+read ~/.ssh/id_rsa via name	combo:extglob-plus+zsh-icase	~/.ssh/(#i)Id+(_)rsa	cat ~/.ssh/(#i)Id+(_)rsa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-neg-bang+bracket-neg-caret	~/.ssh/[!#]d_r[^#]a	cat ~/.ssh/[!#]d_r[^#]a	proj
+read ~/.ssh/id_rsa via name	combo:bracket-slash-caret+collating	~/.ssh/[[.i.]]d[^/]rsa	cat ~/.ssh/[[.i.]]d[^/]rsa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-then-star+class+zsh-group	~/.ssh/i[d]*[[:punct:]](r)sa	cat ~/.ssh/i[d]*[[:punct:]](r)sa	proj
+read ~/.ssh/id_rsa via name	combo:bracket-slash-caret+empty-squote+star	~/.ssh/*d_''rs[^/]	cat ~/.ssh/*d_''rs[^/]	proj
+read ~/.denypeek/guard.sh	combo:dquote+extglob-not-hash	~/.denypeek/"g"uard.s!(#)	cat ~/.denypeek/"g"uard.s!(#)	proj
+read ~/.denypeek/guard.sh	combo:range-wide+zsh-group-alt	~/.denypeek/gua[a-z](d|#).sh	cat ~/.denypeek/gua[a-z](d|#).sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-x+bracket-slash-caret	~/.denypeek/guard[^x]s[^/]	cat ~/.denypeek/guard[^x]s[^/]	proj
+read ~/.denypeek/guard.sh	combo:bracket-double+upper	~/.denypeek/g[[u]]ard.sH	cat ~/.denypeek/g[[u]]ard.sH	proj
+read ~/.denypeek/guard.sh	combo:class-print+zsh-group	~/.denypeek/[[:print:]]uard(.)sh	cat ~/.denypeek/[[:print:]]uard(.)sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-leading-close+class-print+equiv	~/.denypeek/gu[]a][[:print:]]d.[[=s=]]h	cat ~/.denypeek/gu[]a][[:print:]]d.[[=s=]]h	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-leading-close+bracket-neg-reversed-caret+question	~/.denypeek/gua[^z-a]d[!]#]?h	cat ~/.denypeek/gua[^z-a]d[!]#]?h	proj
+read ~/.denypeek/guard.sh	combo:bracket-double+bracket-neg-reversed-bang+extglob-not-hash	~/.denypeek/gua[!z-a][[d]].s!(#)	cat ~/.denypeek/gua[!z-a][[d]].s!(#)	proj
+read ~/.denypeek/guard.sh	combo:bracket-leading-close+zsh-group	~/.denypeek/(g)u[]a]rd.sh	cat ~/.denypeek/(g)u[]a]rd.sh	proj
+read ~/.denypeek/guard.sh	combo:brace-seq+range-wide+upper	~/.denypeek/guAr[a-z].{s..s}h	cat ~/.denypeek/guAr[a-z].{s..s}h	proj
+read ~/.denypeek/guard.sh	combo:extglob-star+zsh-repeat	~/.denypeek/gua*(r)d.sh#	cat ~/.denypeek/gua*(r)d.sh#	proj
+read ~/.denypeek/guard.sh	combo:bracket-escaped+bracket-neg-reversed-bang	~/.denypeek/[!z-a]uard.[\s]h	cat ~/.denypeek/[!z-a]uard.[\s]h	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-x+extglob-q+zsh-icase	~/.denypeek/g(#i)Ua[^x]d?(.)sh	cat ~/.denypeek/g(#i)Ua[^x]d?(.)sh	proj
+read ~/.denypeek/guard.sh	combo:equiv+zsh-icase	~/.denypeek/[[=g=]]ua(#i)Rd.sh	cat ~/.denypeek/[[=g=]]ua(#i)Rd.sh	proj
+read ~/.denypeek/guard.sh	combo:extglob-star+zsh-not+zsh-not	~/.denypeek/^#u^#*(r)d.sh	cat ~/.denypeek/^#u^#*(r)d.sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-bang+bracket-neg-reversed-bang	~/.denypeek/[!z-a]uar[!#].sh	cat ~/.denypeek/[!z-a]uar[!#].sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-double+upper	~/.denypeek/[[g]]Uard.sh	cat ~/.denypeek/[[g]]Uard.sh	proj
+read ~/.denypeek/guard.sh	combo:brace-seq+bracket-caret-leading-close	~/.denypeek/g[^]#]ard{....}sh	cat ~/.denypeek/g[^]#]ard{....}sh	proj
+read ~/.denypeek/guard.sh	combo:extglob-at+zsh-not+zsh-repeat	~/.denypeek/g#ua@(r)^#.sh	cat ~/.denypeek/g#ua@(r)^#.sh	proj
+read ~/.denypeek/guard.sh	combo:extglob-not+range-wide	~/.denypeek/!(#)[a-z]ard.sh	cat ~/.denypeek/!(#)[a-z]ard.sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-leading-close+extglob-star+zsh-group-alt	~/.denypeek/(g|#)uar*(d).s[]h]	cat ~/.denypeek/(g|#)uar*(d).s[]h]	proj
+read ~/.denypeek/guard.sh	combo:bracket-caret-leading-close+bracket-double+zsh-repeat	~/.denypeek/guard.#[^]#][[h]]	cat ~/.denypeek/guard.#[^]#][[h]]	proj
+read ~/.denypeek/guard.sh	combo:ansi-c+extglob-star	~/.denypeek/guard.*(s)$'h'	cat ~/.denypeek/guard.*(s)$'h'	proj
+read ~/.denypeek/guard.sh	combo:ansi-c-hex+bracket-neg-bang+extglob-not-hash	~/.denypeek/g[!#]ar$'\x64'.s!(#)	cat ~/.denypeek/g[!#]ar$'\x64'.s!(#)	proj
+read ~/.denypeek/guard.sh	combo:bracket-leading-close+zsh-group-alt	~/.denypeek/(g|#)u[]a]rd.sh	cat ~/.denypeek/(g|#)u[]a]rd.sh	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-leading-close+zsh-repeat2	~/.denypeek/g[!]#]ard.s##h	cat ~/.denypeek/g[!]#]ard.s##h	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-leading-close+bracket-neg-reversed-caret	~/.denypeek/gu[^z-a]rd.[!]#]h	cat ~/.denypeek/gu[^z-a]rd.[!]#]h	proj
+read ~/.denypeek/guard.sh	combo:brace-list+extglob-at+squote	~/.denypeek/g{u,q}'a'rd.s@(h)	cat ~/.denypeek/g{u,q}'a'rd.s@(h)	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-bang+extglob-plus+zsh-repeat	~/.denypeek/g[!#]ard.#+(s)h	cat ~/.denypeek/g[!#]ard.#+(s)h	proj
+read ~/.denypeek/guard.sh	combo:bracket-neg-leading-close+zsh-repeat2	~/.denypeek/gua##rd.s[!]#]	cat ~/.denypeek/gua##rd.s[!]#]	proj
+read .env.local	combo:bracket-neg-caret+zsh-repeat2	[^#]env##.local	cat [^#]env##.local	proj
+read .env.local	combo:bracket-neg-leading-close+extglob-q	?(.)env.l[!]#]cal	cat ?(.)env.l[!]#]cal	proj
+read .env.local	combo:bracket-leading-close+dquote	.e"n"v.lo[]c]al	cat .e"n"v.lo[]c]al	proj
+read .env.local	combo:class+zsh-repeat	.en#[[:alpha:]].local	cat .en#[[:alpha:]].local	proj
+read .env.local	combo:bracket-neg-caret+zsh-group-alt	[^#]env.loc(a|#)l	cat [^#]env.loc(a|#)l	proj
+read .env.local	combo:collating+star+zsh-repeat2	[[...]]env.##lo*al	cat [[...]]env.##lo*al	proj
+read .env.local	combo:bracket-caret-leading-close+question	.env?l[^]#]cal	cat .env?l[^]#]cal	proj
+read .env.local	combo:bracket-slash-caret+dquote	.en"v".lo[^/]al	cat .en"v".lo[^/]al	proj
+read .env.local	combo:bracket-neg-x+star	.e[^x]v.l*cal	cat .e[^x]v.l*cal	proj
+read .env.local	combo:empty-squote+zsh-repeat	.e''n#v.local	cat .e''n#v.local	proj
+read .env.local	combo:class-print+empty-dquote	.e""nv[[:print:]]local	cat .e""nv[[:print:]]local	proj
+read .env.local	combo:escape+extglob-not-hash	.\env.lo!(#)al	cat .\env.lo!(#)al	proj
+read .env.local	combo:class+zsh-repeat	.#env.loca[[:alpha:]]	cat .#env.loca[[:alpha:]]	proj
+read .env.local	combo:ansi-c-hex+zsh-group+zsh-group-alt	.en(v).$'\x6c'(o|#)cal	cat .en(v).$'\x6c'(o|#)cal	proj
+read .env.local	combo:range-wide+zsh-group-alt	(.|#)en[a-z].local	cat (.|#)en[a-z].local	proj
+read .env.local	combo:range-wide+upper+upper	.env.loca[a-z]	cat .env.loca[a-z]	proj
+read .env.local	combo:class-print+class-print	.env.[[:print:]]o[[:print:]]al	cat .env.[[:print:]]o[[:print:]]al	proj
+read .env.local	combo:empty-squote+escape+extglob-not-hash	!(#)env\.l''ocal	cat !(#)env\.l''ocal	proj
+read .env.local	combo:brace-seq+question	.{e..e}nv.l?cal	cat .{e..e}nv.l?cal	proj
+read .env.local	combo:brace-list+extglob-not	.env.lo!(#){a,q}l	cat .env.lo!(#){a,q}l	proj
+read .env.local	combo:bracket-leading-close+bracket-neg-x+extglob-at	.e[]n]v@(.)loc[^x]l	cat .e[]n]v@(.)loc[^x]l	proj
+read .env.local	combo:brace-seq+range-wide	{....}e[a-z]v.local	cat {....}e[a-z]v.local	proj
+read .env.local	combo:question+zsh-group	.en(v)?local	cat .en(v)?local	proj
+read .env.local	combo:bracket-slash-caret+squote	.env[^/]loca'l'	cat .env[^/]loca'l'	proj
+read .env.local	combo:bracket-neg-caret+bracket-slash-member	[^#]env.lo[c/]al	cat [^#]env.lo[c/]al	proj
+read .env.local	combo:bracket-neg-reversed-bang+class+zsh-icase	[!z-a]e(#i)Nv.loca[[:alpha:]]	cat [!z-a]e(#i)Nv.loca[[:alpha:]]	proj
+read .env.local	combo:bracket-neg-leading-close+empty-dquote	.[!]#]nv.lo""cal	cat .[!]#]nv.lo""cal	proj
+read .env.local	combo:bracket-caret-leading-close+bracket-escaped+bracket-neg-reversed-caret	[^z-a]env[\.]l[^]#]cal	cat [^z-a]env[\.]l[^]#]cal	proj
+read .env.local	combo:bracket-double+bracket-upper	.[E]nv.[[l]]ocal	cat .[E]nv.[[l]]ocal	proj
+read .env.local	combo:brace-list+question	.env.lo{c,q}?l	cat .env.lo{c,q}?l	proj
+read server.pem	combo:ansi-c+brace-seq	s{e..e}rver.$'p'em	cat s{e..e}rver.$'p'em	proj
+read server.pem	combo:collating+extglob-star+zsh-icase	*(s)erver[[...]]p(#i)Em	cat *(s)erver[[...]]p(#i)Em	proj
+read server.pem	combo:bracket-slash-member+bracket-slash-neg+squote	se[r/][!/]e'r'.pem	cat se[r/][!/]e'r'.pem	proj
+read server.pem	combo:collating+zsh-not	ser^#er.[[.p.]]em	cat ser^#er.[[.p.]]em	proj
+read server.pem	combo:bracket-slash-caret+zsh-repeat2	server.##p[^/]m	cat server.##p[^/]m	proj
+read server.pem	combo:bracket-leading-close+collating+dquote	[]s]erve"r"[[...]]pem	cat []s]erve"r"[[...]]pem	proj
+read server.pem	combo:bracket-caret-leading-close+bracket-neg-bang+upper	Serve[!#].p[^]#]m	cat Serve[!#].p[^]#]m	proj
+read server.pem	combo:bracket-double+bracket-neg-x	server.[^x]e[[m]]	cat server.[^x]e[[m]]	proj
+read server.pem	combo:bracket-double+star	serv*r[[.]]pem	cat serv*r[[.]]pem	proj
+read server.pem	combo:empty-dquote+escape+star	server""*\pem	cat server""*\pem	proj
+read server.pem	combo:bracket-neg-caret+class-print	se[[:print:]]ver.p[^#]m	cat se[[:print:]]ver.p[^#]m	proj
+read server.pem	combo:bracket-double+bracket-slash-neg+dquote	[[s]]erve"r".pe[!/]	cat [[s]]erve"r".pe[!/]	proj
+read server.pem	combo:extglob-at+range-wide	se[a-z]ver@(.)pem	cat se[a-z]ver@(.)pem	proj
+read server.pem	combo:brace-seq+bracket-neg-bang	serve{r..r}[!#]pem	cat serve{r..r}[!#]pem	proj
+read server.pem	combo:bracket-then-star+extglob-not	ser!(#)er[.]*pem	cat ser!(#)er[.]*pem	proj
+read server.pem	combo:bracket-neg-leading-close+bracket-slash-neg+class	[!/][!]#]rver.pe[[:alpha:]]	cat [!/][!]#]rver.pe[[:alpha:]]	proj
+read server.pem	combo:ansi-c+zsh-not	serv^#$'r'.pem	cat serv^#$'r'.pem	proj
+read server.pem	combo:bracket-leading-close+bracket-neg-leading-close	[]s][!]#]rver.pem	cat []s][!]#]rver.pem	proj
+read server.pem	combo:bracket-slash-member+escape	serv\e[r/].pem	cat serv\e[r/].pem	proj
+read server.pem	combo:ansi-c+ansi-c+star	se$'r'ver$'.'*em	cat se$'r'ver$'.'*em	proj
+read server.pem	combo:bracket-slash-member+extglob-star	serv[e/]r.p*(e)m	cat serv[e/]r.p*(e)m	proj
+read server.pem	combo:bracket-slash-member+extglob-q	s?(e)rver.[p/]em	cat s?(e)rver.[p/]em	proj
+read server.pem	combo:bracket-leading-close+bracket-upper	serve[]r].[P]em	cat serve[]r].[P]em	proj
+read server.pem	combo:star+zsh-repeat2	serv##er.pe*	cat serv##er.pe*	proj
+read server.pem	combo:ansi-c-hex+bracket-neg-x+bracket-slash-neg	ser[^x]er[!/]pe$'\x6d'	cat ser[^x]er[!/]pe$'\x6d'	proj
+read server.pem	combo:empty-dquote+extglob-not	!(#)er""ver.pem	cat !(#)er""ver.pem	proj
+read server.pem	combo:bracket-slash-caret+range-wide	[a-z]erve[^/].pem	cat [a-z]erve[^/].pem	proj
+read server.pem	combo:empty-dquote+zsh-repeat2	server##.pe""m	cat server##.pe""m	proj
+read server.pem	combo:brace-seq+collating+zsh-group	(s)erver{....}p[[.e.]]m	cat (s)erver{....}p[[.e.]]m	proj
+read server.pem	combo:ansi-c-hex+brace-list+brace-seq	ser$'\x76'er.{p..p}e{m,q}	cat ser$'\x76'er.{p..p}e{m,q}	proj
+read .netrc	combo:bracket-upper+equiv	.ne[[=t=]]r[C]	cat .ne[[=t=]]r[C]	proj
+read .netrc	combo:empty-dquote+escape+upper	.ne""\tRc	cat .ne""\tRc	proj
+read .netrc	combo:class+zsh-group-alt+zsh-repeat2	(.|#)net##r[[:alpha:]]	cat (.|#)net##r[[:alpha:]]	proj
+read .netrc	combo:class-print+collating+zsh-group	.n[[:print:]]t(r)[[.c.]]	cat .n[[:print:]]t(r)[[.c.]]	proj
+read .netrc	combo:ansi-c+brace-seq	$'.'netr{c..c}	cat $'.'netr{c..c}	proj
+read .netrc	combo:escape+zsh-group	.ne(t)\rc	cat .ne(t)\rc	proj
+read .netrc	combo:brace-list+bracket-then-star+extglob-not-hash	[.]*{n,q}etr!(#)	cat [.]*{n,q}etr!(#)	proj
+read .netrc	combo:bracket-neg-leading-close+zsh-repeat2	.n[!]#]trc##	cat .n[!]#]trc##	proj
+read .netrc	combo:brace-list+equiv	{.,q}n[[=e=]]trc	cat {.,q}n[[=e=]]trc	proj
+read .netrc	combo:bracket-neg-leading-close+zsh-not	.net[!]#]^#	cat .net[!]#]^#	proj
+read .netrc	combo:bracket-escaped+zsh-icase	[\.](#i)Netrc	cat [\.](#i)Netrc	proj
+read .netrc	combo:bracket-slash-neg+question	.[!/]etr?	cat .[!/]etr?	proj
+read .netrc	combo:bracket-escaped+extglob-plus	.[\n]e+(t)rc	cat .[\n]e+(t)rc	proj
+read .netrc	combo:bracket-caret-leading-close+bracket-literal	.[n]etr[^]#]	cat .[n]etr[^]#]	proj
+read .netrc	combo:bracket-escaped+bracket-neg-reversed-bang+class	[!z-a][\n]e[[:alpha:]]rc	cat [!z-a][\n]e[[:alpha:]]rc	proj
+read .netrc	combo:question+zsh-group-alt	(.|#)n?trc	cat (.|#)n?trc	proj
+read .netrc	combo:bracket-neg-bang+bracket-neg-caret	.ne[!#][^#]c	cat .ne[!#][^#]c	proj
+read .netrc	combo:bracket-literal+equiv+star	.*e[t][[=r=]]c	cat .*e[t][[=r=]]c	proj
+read .netrc	combo:brace-list+extglob-not-hash	.n!(#){t,q}rc	cat .n!(#){t,q}rc	proj
+read .netrc	combo:bracket-slash-caret+bracket-slash-member+bracket-upper	.[^/][E][t/]rc	cat .[^/][E][t/]rc	proj
+read .netrc	combo:bracket-upper+dquote+range-wide	.ne"t"[R][a-z]	cat .ne"t"[R][a-z]	proj
+read .netrc	combo:ansi-c+collating	.net[[.r.]]$'c'	cat .net[[.r.]]$'c'	proj
+read .netrc	combo:bracket-caret-leading-close+bracket-neg-caret	.n[^#][^]#]rc	cat .n[^#][^]#]rc	proj
+read .netrc	combo:equiv+extglob-not+zsh-group-alt	.n(e|#)[[=t=]]!(#)c	cat .n(e|#)[[=t=]]!(#)c	proj
+read .netrc	combo:bracket-neg-reversed-caret+zsh-group	.ne(t)[^z-a]c	cat .ne(t)[^z-a]c	proj
+read .netrc	combo:class-print+extglob-plus+zsh-not	[[:print:]]ne^#+(r)c	cat [[:print:]]ne^#+(r)c	proj
+read .netrc	combo:collating+upper	.neT[[.r.]]c	cat .neT[[.r.]]c	proj
+read .netrc	combo:bracket-neg-bang+bracket-slash-neg+bracket-upper	[.][!/][!#]trc	cat [.][!/][!#]trc	proj
+read .netrc	combo:extglob-at+extglob-not-hash	.ne@(t)r!(#)	cat .ne@(t)r!(#)	proj
+read .netrc	combo:bracket-literal+bracket-neg-reversed-bang	.n[e]t[!z-a]c	cat .n[e]t[!z-a]c	proj
+read ~/.aws/credentials	combo:ansi-c+extglob-star+squote	~/.aws/cr'e'd*(e)$'n'tials	cat ~/.aws/cr'e'd*(e)$'n'tials	proj
+read ~/.aws/credentials	combo:class+question	~/.aws/c[[:alpha:]]ed?ntials	cat ~/.aws/c[[:alpha:]]ed?ntials	proj
+read ~/.aws/credentials	combo:empty-dquote+extglob-q	~/.aws/cre""dent?(i)als	cat ~/.aws/cre""dent?(i)als	proj
+read ~/.aws/credentials	combo:empty-squote+extglob-q+zsh-repeat	~/.aws/creden#t?(i)a''ls	cat ~/.aws/creden#t?(i)a''ls	proj
+read ~/.aws/credentials	combo:empty-squote+empty-squote	~/.aws/credenti''a''ls	cat ~/.aws/credenti''a''ls	proj
+read ~/.aws/credentials	combo:bracket-neg-bang+zsh-icase+zsh-icase	~/.aws/cred(#i)En[!#]i(#i)Als	cat ~/.aws/cred(#i)En[!#]i(#i)Als	proj
+read ~/.aws/credentials	combo:bracket-neg-bang+extglob-star+zsh-group	~/.aws/(c)r*(e)dential[!#]	cat ~/.aws/(c)r*(e)dential[!#]	proj
+read ~/.aws/credentials	combo:ansi-c-hex+empty-squote	~/.aws/cr$'\x65'de''ntials	cat ~/.aws/cr$'\x65'de''ntials	proj
+read ~/.aws/credentials	combo:squote+zsh-group-alt	~/.aws/credenti'a'(l|#)s	cat ~/.aws/credenti'a'(l|#)s	proj
+read ~/.aws/credentials	combo:collating+dquote	~/.aws/cred"e"n[[.t.]]ials	cat ~/.aws/cred"e"n[[.t.]]ials	proj
+read ~/.aws/credentials	combo:bracket-slash-neg+upper	~/.aws/cred[!/]nTials	cat ~/.aws/cred[!/]nTials	proj
+read ~/.aws/credentials	combo:bracket-upper+dquote	~/.aws/credenti[A]l"s"	cat ~/.aws/credenti[A]l"s"	proj
+read ~/.aws/credentials	combo:bracket-double+bracket-neg-reversed-caret	~/.aws/cre[^z-a]ent[[i]]als	cat ~/.aws/cre[^z-a]ent[[i]]als	proj
+read ~/.aws/credentials	combo:bracket-slash-member+question	~/.aws/creden[t/]i?ls	cat ~/.aws/creden[t/]i?ls	proj
+read ~/.aws/credentials	combo:bracket-caret-leading-close+bracket-slash-caret+escape	~/.aws/[^]#]red\entia[^/]s	cat ~/.aws/[^]#]red\entia[^/]s	proj
+read ~/.aws/credentials	combo:bracket-escaped+bracket-upper	~/.aws/[\c]redential[S]	cat ~/.aws/[\c]redential[S]	proj
+read ~/.aws/credentials	combo:bracket-neg-reversed-bang+upper	~/.aws/cRede[!z-a]tials	cat ~/.aws/cRede[!z-a]tials	proj
+read ~/.aws/credentials	combo:range-self+zsh-icase	~/.aws/cr(#i)Edential[s-s]	cat ~/.aws/cr(#i)Edential[s-s]	proj
+read ~/.aws/credentials	combo:bracket-slash-member+equiv	~/.aws/cr[[=e=]]d[e/]ntials	cat ~/.aws/cr[[=e=]]d[e/]ntials	proj
+read ~/.aws/credentials	combo:bracket-escaped+escape+extglob-not	~/.aws/cre[\d]en!(#)\ials	cat ~/.aws/cre[\d]en!(#)\ials	proj
+read ~/.aws/credentials	combo:bracket-slash-neg+extglob-plus	~/.aws/[!/]r+(e)dentials	cat ~/.aws/[!/]r+(e)dentials	proj
+read ~/.aws/credentials	combo:bracket-neg-reversed-bang+zsh-repeat	~/.aws/c[!z-a]edenti#als	cat ~/.aws/c[!z-a]edenti#als	proj
+read ~/.aws/credentials	combo:bracket-neg-caret+squote+zsh-icase	~/.aws/c(#i)Red[^#]'n'tials	cat ~/.aws/c(#i)Red[^#]'n'tials	proj
+read ~/.aws/credentials	combo:bracket-upper+extglob-at+zsh-group	~/.aws/cre@(d)e(n)ti[A]ls	cat ~/.aws/cre@(d)e(n)ti[A]ls	proj
+read ~/.aws/credentials	combo:class+zsh-icase	~/.aws/cred(#i)Entia[[:alpha:]]s	cat ~/.aws/cred(#i)Entia[[:alpha:]]s	proj
+read ~/.aws/credentials	combo:range-self+zsh-group-alt+zsh-repeat	~/.aws/cre#[d-d]enti(a|#)ls	cat ~/.aws/cre#[d-d]enti(a|#)ls	proj
+read ~/.aws/credentials	combo:bracket-neg-x+extglob-plus	~/.aws/crede[^x]ti+(a)ls	cat ~/.aws/crede[^x]ti+(a)ls	proj
+read ~/.aws/credentials	combo:bracket-leading-close+extglob-star	~/.aws/c*(r)edentia[]l]s	cat ~/.aws/c*(r)edentia[]l]s	proj
+read ~/.aws/credentials	combo:bracket-neg-reversed-caret+extglob-not	~/.aws/!(#)red[^z-a]ntials	cat ~/.aws/!(#)red[^z-a]ntials	proj
+read ~/.aws/credentials	combo:bracket-caret-leading-close+range-self	~/.aws/credent[^]#][a-a]ls	cat ~/.aws/credent[^]#][a-a]ls	proj
+read credentials.json	combo:bracket-escaped+extglob-q	credentials?(.)j[\s]on	cat credentials?(.)j[\s]on	proj
+read credentials.json	combo:bracket-neg-reversed-caret+bracket-then-star+star	cr[^z-a]den*ials.jso[n]*	cat cr[^z-a]den*ials.jso[n]*	proj
+read credentials.json	combo:ansi-c-hex+collating	$'\x63'redenti[[.a.]]ls.json	cat $'\x63'redenti[[.a.]]ls.json	proj
+read credentials.json	combo:brace-list+class+squote	cre[[:alpha:]]entials'.'js{o,q}n	cat cre[[:alpha:]]entials'.'js{o,q}n	proj
+read credentials.json	combo:bracket-caret-leading-close+bracket-neg-caret	cred[^#]ntials.js[^]#]n	cat cred[^#]ntials.js[^]#]n	proj
+read credentials.json	combo:extglob-plus+zsh-icase+zsh-not	^#re(#i)Dent+(i)als.json	cat ^#re(#i)Dent+(i)als.json	proj
+read credentials.json	combo:bracket-slash-neg+dquote	cred"e"nt[!/]als.json	cat cred"e"nt[!/]als.json	proj
+read credentials.json	combo:extglob-q+range-wide	cred?(e)ntial[a-z].json	cat cred?(e)ntial[a-z].json	proj
+read credentials.json	combo:extglob-not-hash+zsh-icase	credentials.j(#i)S!(#)n	cat credentials.j(#i)S!(#)n	proj
+read credentials.json	combo:bracket-double+escape	creden\tials.[[j]]son	cat creden\tials.[[j]]son	proj
+read credentials.json	combo:squote+zsh-icase	credentia'l'(#i)S.json	cat credentia'l'(#i)S.json	proj
+read credentials.json	combo:bracket-neg-leading-close+dquote+range-self	[!]#]redentials[.-.]jso"n"	cat [!]#]redentials[.-.]jso"n"	proj
+read credentials.json	combo:class+extglob-plus	creden+(t)ials.[[:alpha:]]son	cat creden+(t)ials.[[:alpha:]]son	proj
+read credentials.json	combo:dquote+extglob-plus	credent"i"a+(l)s.json	cat credent"i"a+(l)s.json	proj
+read credentials.json	combo:bracket-slash-member+equiv+zsh-not	crede^#[[=t=]]ials.[j/]son	cat crede^#[[=t=]]ials.[j/]son	proj
+read credentials.json	combo:bracket-literal+range-wide	credent[a-z][a]ls.json	cat credent[a-z][a]ls.json	proj
+read credentials.json	combo:class-print+star+zsh-not	[[:print:]]re*e^#tials.json	cat [[:print:]]re*e^#tials.json	proj
+read credentials.json	combo:dquote+extglob-at+squote	@(c)reden't'ia"l"s.json	cat @(c)reden't'ia"l"s.json	proj
+read credentials.json	combo:bracket-neg-x+escape+upper	cr\edentIals.[^x]son	cat cr\edentIals.[^x]son	proj
+read credentials.json	combo:class+equiv	credenti[[:alpha:]]ls.[[=j=]]son	cat credenti[[:alpha:]]ls.[[=j=]]son	proj
+read credentials.json	combo:class+extglob-plus+squote	creden[[:alpha:]]'i'al+(s).json	cat creden[[:alpha:]]'i'al+(s).json	proj
+read credentials.json	combo:brace-list+bracket-literal+empty-squote	{c,q}red''ential[s].json	cat {c,q}red''ential[s].json	proj
+read credentials.json	combo:brace-seq+upper	credentials.js{o..o}n	cat credentials.js{o..o}n	proj
+read credentials.json	combo:range-self+zsh-icase	cr(#i)Edenti[a-a]ls.json	cat cr(#i)Edenti[a-a]ls.json	proj
+read credentials.json	combo:bracket-neg-caret+zsh-group	cred[^#]ntials.js(o)n	cat cred[^#]ntials.js(o)n	proj
+read credentials.json	combo:bracket-slash-member+extglob-star+zsh-group	(c)redent*(i)a[l/]s.json	cat (c)redent*(i)a[l/]s.json	proj
+read credentials.json	combo:brace-seq+extglob-not+extglob-star	cre!(#){e..e}ntials*(.)json	cat cre!(#){e..e}ntials*(.)json	proj
+read credentials.json	combo:brace-list+bracket-then-star	cred{e,q}ntials.js[o]*n	cat cred{e,q}ntials.js[o]*n	proj
+read credentials.json	combo:class-print+extglob-not+extglob-not	crede[[:print:]]tials!(#)j!(#)on	cat crede[[:print:]]tials!(#)j!(#)on	proj
+read credentials.json	combo:bracket-escaped+escape	cr\ede[\n]tials.json	cat cr\ede[\n]tials.json	proj
+read cert.p12	combo:brace-list+class	[[:alpha:]]ert.p1{2,q}	cat [[:alpha:]]ert.p1{2,q}	proj
+read cert.p12	combo:bracket-neg-reversed-caret+bracket-slash-neg+empty-dquote	c[!/]rt.""[^z-a]12	cat c[!/]rt.""[^z-a]12	proj
+read cert.p12	combo:extglob-not-hash+range-wide	cer[a-z].p!(#)2	cat cer[a-z].p!(#)2	proj
+read cert.p12	combo:bracket-leading-close+bracket-neg-leading-close+dquote	[!]#]e[]r]"t".p12	cat [!]#]e[]r]"t".p12	proj
+read cert.p12	combo:bracket-neg-reversed-bang+extglob-plus	ce[!z-a]t.+(p)12	cat ce[!z-a]t.+(p)12	proj
+read cert.p12	combo:brace-list+bracket-literal	c{e,q}rt[.]p12	cat c{e,q}rt[.]p12	proj
+read cert.p12	combo:bracket-neg-reversed-caret+extglob-q+zsh-icase	c[^z-a]rt(#i).?(p)12	cat c[^z-a]rt(#i).?(p)12	proj
+read cert.p12	combo:collating+equiv	ce[[.r.]]t.p1[[=2=]]	cat ce[[.r.]]t.p1[[=2=]]	proj
+read cert.p12	combo:bracket-caret-leading-close+zsh-group	ce(r)t[^]#]p12	cat ce(r)t[^]#]p12	proj
+read cert.p12	combo:bracket-neg-reversed-bang+star	c*r[!z-a].p12	cat c*r[!z-a].p12	proj
+read cert.p12	combo:brace-seq+extglob-not-hash	!(#)ert.{p..p}12	cat !(#)ert.{p..p}12	proj
+read cert.p12	combo:ansi-c-hex+range-wide+range-wide	$'\x63'e[a-z]t[.]p12	cat $'\x63'e[a-z]t[.]p12	proj
+read cert.p12	combo:ansi-c+zsh-repeat	c$'e'rt.p1#2	cat c$'e'rt.p1#2	proj
+read cert.p12	combo:ansi-c+bracket-neg-caret	ce$'r't[^#]p12	cat ce$'r't[^#]p12	proj
+read cert.p12	combo:bracket-slash-member+zsh-not	ce^#t.p1[2/]	cat ce^#t.p1[2/]	proj
+read cert.p12	combo:bracket-slash-member+range-wide+zsh-group	c[e/]r[a-z].p(1)2	cat c[e/]r[a-z].p(1)2	proj
+read cert.p12	combo:bracket-neg-reversed-bang+extglob-q+zsh-repeat2	cer##t?(.)p[!z-a]2	cat cer##t?(.)p[!z-a]2	proj
+read cert.p12	combo:empty-dquote+upper	cErt.""p12	cat cErt.""p12	proj
+read cert.p12	combo:bracket-neg-bang+upper	cer[!#].p12	cat cer[!#].p12	proj
+read cert.p12	combo:bracket-double+collating+upper	cEr[[t]][[...]]p12	cat cEr[[t]][[...]]p12	proj
+read cert.p12	combo:bracket-double+escape	ce[[r]]t.\p12	cat ce[[r]]t.\p12	proj
+read cert.p12	combo:bracket-neg-caret+bracket-upper	ce[R]t.[^#]12	cat ce[R]t.[^#]12	proj
+read cert.p12	combo:escape+extglob-q+zsh-group-alt	(c|#)e\rt?(.)p12	cat (c|#)e\rt?(.)p12	proj
+read cert.p12	combo:brace-seq+bracket-neg-reversed-bang	[!z-a]ert.p{1..1}2	cat [!z-a]ert.p{1..1}2	proj
+read cert.p12	combo:bracket-slash-member+class-print	ce[r/]t.[[:print:]]12	cat ce[r/]t.[[:print:]]12	proj
+read cert.p12	combo:bracket-upper+zsh-repeat2	ce##rt[.]p12	cat ce##rt[.]p12	proj
+read cert.p12	combo:bracket-neg-bang+dquote+question	c[!#]?t"."p12	cat c[!#]?t"."p12	proj
+read cert.p12	combo:range-self+zsh-group-alt	(c|#)[e-e]rt.p12	cat (c|#)[e-e]rt.p12	proj
+read cert.p12	combo:bracket-leading-close+empty-dquote	ce""rt[].]p12	cat ce""rt[].]p12	proj
+read cert.p12	combo:bracket-escaped+star	[\c]e*t.p12	cat [\c]e*t.p12	proj
+read id_ed25519	combo:bracket-slash-neg+dquote	id"_"ed255[!/]9	cat id"_"ed255[!/]9	proj
+read id_ed25519	combo:bracket-literal+bracket-neg-reversed-bang+extglob-not-hash	i[!z-a]_e!(#)[2]5519	cat i[!z-a]_e!(#)[2]5519	proj
+read id_ed25519	combo:extglob-not-hash+zsh-repeat2	id_!(#)d25##519	cat id_!(#)d25##519	proj
+read id_ed25519	combo:class-print+zsh-repeat	i#d_ed2[[:print:]]519	cat i#d_ed2[[:print:]]519	proj
+read id_ed25519	combo:upper+zsh-repeat2	id_e##d25519	cat id_e##d25519	proj
+read id_ed25519	combo:brace-list+extglob-star+range-wide	{i,q}d_ed2*(5)5[.]9	cat {i,q}d_ed2*(5)5[.]9	proj
+read id_ed25519	combo:bracket-leading-close+bracket-slash-neg	[]i]d[!/]ed25519	cat []i]d[!/]ed25519	proj
+read id_ed25519	combo:ansi-c+bracket-upper	i$'d'_e[D]25519	cat i$'d'_e[D]25519	proj
+read id_ed25519	combo:brace-list+brace-seq	id{_.._}ed25{5,q}19	cat id{_.._}ed25{5,q}19	proj
+read id_ed25519	combo:brace-list+empty-dquote+star	i{d,q}_ed""2551*	cat i{d,q}_ed""2551*	proj
+read id_ed25519	combo:brace-list+zsh-not	^#d_ed25{5,q}19	cat ^#d_ed25{5,q}19	proj
+read id_ed25519	combo:brace-seq+bracket-neg-reversed-caret+zsh-repeat2	id_e##d[^z-a]55{1..1}9	cat id_e##d[^z-a]55{1..1}9	proj
+read id_ed25519	combo:ansi-c+equiv	i[[=d=]]_ed2551$'9'	cat i[[=d=]]_ed2551$'9'	proj
+read id_ed25519	combo:bracket-neg-reversed-bang+collating	id_ed25[!z-a][[.1.]]9	cat id_ed25[!z-a][[.1.]]9	proj
+read id_ed25519	combo:bracket-caret-leading-close+class	id_e[[:alpha:]]25[^]#]19	cat id_e[[:alpha:]]25[^]#]19	proj
+read id_ed25519	combo:collating+zsh-not	id_ed2[[.5.]]^#19	cat id_ed2[[.5.]]^#19	proj
+read id_ed25519	combo:brace-seq+bracket-slash-caret+squote	{i..i}[^/]_ed2'5'519	cat {i..i}[^/]_ed2'5'519	proj
+read id_ed25519	combo:bracket-escaped+bracket-leading-close	[\i]d_[]e]d25519	cat [\i]d_[]e]d25519	proj
+read id_ed25519	combo:brace-list+bracket-double+squote	id_{e,q}d[[2]]5'5'19	cat id_{e,q}d[[2]]5'5'19	proj
+read id_ed25519	combo:bracket-double+extglob-at	id@(_)ed255[[1]]9	cat id@(_)ed255[[1]]9	proj
+read id_ed25519	combo:ansi-c+class+class-print	[[:alpha:]]d$'_'ed25[[:print:]]19	cat [[:alpha:]]d$'_'ed25[[:print:]]19	proj
+read id_ed25519	combo:bracket-literal+empty-dquote	i[d]_ed25519""	cat i[d]_ed25519""	proj
+read id_ed25519	combo:bracket-escaped+range-self+zsh-repeat	[\i]d_ed255#[1-1]9	cat [\i]d_ed255#[1-1]9	proj
+read id_ed25519	combo:bracket-upper+empty-squote	id[_]e''d25519	cat id[_]e''d25519	proj
+read id_ed25519	combo:bracket-neg-reversed-caret+zsh-group	[^z-a]d_ed2(5)519	cat [^z-a]d_ed2(5)519	proj
+read id_ed25519	combo:ansi-c+bracket-escaped	id$'_'[\e]d25519	cat id$'_'[\e]d25519	proj
+read id_ed25519	combo:bracket-literal+extglob-not	id_ed2[5]!(#)19	cat id_ed2[5]!(#)19	proj
+read id_ed25519	combo:brace-seq+bracket-neg-reversed-caret	id_ed2{5..5}51[^z-a]	cat id_ed2{5..5}51[^z-a]	proj
+read id_ed25519	combo:dquote+extglob-plus+zsh-icase	id_+(e)d(#i)2"5"519	cat id_+(e)d(#i)2"5"519	proj
+read id_ed25519	combo:bracket-neg-leading-close+bracket-neg-reversed-bang	[!]#]d_ed2551[!z-a]	cat [!]#]d_ed2551[!z-a]	proj
+rm ~+/.denypeek from home	combo:equiv+star+zsh-repeat2	~+/.[[=d=]]e##n*peek	rm -rf ~+/.[[=d=]]e##n*peek	
+rm ~+/.denypeek from home	combo:bracket-double+bracket-neg-leading-close	~+/.deny[[p]]e[!]#]k	rm -rf ~+/.deny[[p]]e[!]#]k	
+rm ~+/.denypeek from home	combo:escape+squote	~+/.de'n'yp\eek	rm -rf ~+/.de'n'yp\eek	
+rm ~+/.denypeek from home	combo:bracket-double+zsh-repeat	~+/.den#ype[[e]]k	rm -rf ~+/.den#ype[[e]]k	
+rm ~+/.denypeek from home	combo:bracket-neg-reversed-bang+zsh-not	~+/.d^#nype[!z-a]k	rm -rf ~+/.d^#nype[!z-a]k	
+rm ~+/.denypeek from home	combo:bracket-neg-leading-close+extglob-q+zsh-icase	~+/.den[!]#]?(p)ee(#i)K	rm -rf ~+/.den[!]#]?(p)ee(#i)K	
+rm ~+/.denypeek from home	combo:brace-list+bracket-escaped	~+/.de{n,q}y[\p]eek	rm -rf ~+/.de{n,q}y[\p]eek	
+rm ~+/.denypeek from home	combo:bracket-upper+class-print	~+/.d[E]nypee[[:print:]]	rm -rf ~+/.d[E]nypee[[:print:]]	
+rm ~+/.denypeek from home	combo:bracket-caret-leading-close+star+zsh-group-alt	~+/.*(e|#)ny[^]#]eek	rm -rf ~+/.*(e|#)ny[^]#]eek	
+rm ~+/.denypeek from home	combo:bracket-upper+equiv	~+/.[[=d=]]en[Y]peek	rm -rf ~+/.[[=d=]]en[Y]peek	
+rm ~+/.denypeek from home	combo:bracket-neg-leading-close+bracket-neg-x	~+/[^x]denype[!]#]k	rm -rf ~+/[^x]denype[!]#]k	
+rm ~+/.denypeek from home	combo:bracket-escaped+escape	~+/.[\d]eny\peek	rm -rf ~+/.[\d]eny\peek	
+rm ~+/.denypeek from home	combo:bracket-neg-bang+equiv	~+/.[[=d=]]e[!#]ypeek	rm -rf ~+/.[[=d=]]e[!#]ypeek	
+rm ~+/.denypeek from home	combo:bracket-neg-bang+zsh-repeat2	~+/.##den[!#]peek	rm -rf ~+/.##den[!#]peek	
+rm ~+/.denypeek from home	combo:bracket-neg-bang+bracket-neg-reversed-bang+class-print	~+/[!#]de[[:print:]]y[!z-a]eek	rm -rf ~+/[!#]de[[:print:]]y[!z-a]eek	
+rm ~+/.denypeek from home	combo:bracket-literal+class-print	~+/.den[y]p[[:print:]]ek	rm -rf ~+/.den[y]p[[:print:]]ek	
+rm ~+/.denypeek from home	combo:bracket-neg-x+bracket-slash-caret	~+/.den[^x]p[^/]ek	rm -rf ~+/.den[^x]p[^/]ek	
+rm ~+/.denypeek from home	combo:extglob-at+extglob-at	~+/.denyp@(e)@(e)k	rm -rf ~+/.denyp@(e)@(e)k	
+rm ~+/.denypeek from home	combo:star+zsh-not	~+/.deny*^#ek	rm -rf ~+/.deny*^#ek	
+rm ~+/.denypeek from home	combo:bracket-upper+bracket-upper+zsh-repeat2	~+/.[D][E]n##ypeek	rm -rf ~+/.[D][E]n##ypeek	
+rm ~+/.denypeek from home	combo:extglob-not-hash+zsh-charseq	~+/{....}denypee!(#)	rm -rf ~+/{....}denypee!(#)	
+rm ~+/.denypeek from home	combo:bracket-slash-member+zsh-repeat	~+/.denyp#[e/]ek	rm -rf ~+/.denyp#[e/]ek	
+rm ~+/.denypeek from home	combo:bracket-then-star+extglob-at	~+/.d@(e)nypee[k]*	rm -rf ~+/.d@(e)nypee[k]*	
+rm ~+/.denypeek from home	combo:ansi-c-hex+class-print+collating	~+/[[:print:]]den[[.y.]]p$'\x65'ek	rm -rf ~+/[[:print:]]den[[.y.]]p$'\x65'ek	
+rm ~+/.denypeek from home	combo:escape+escape	~+/.\deny\peek	rm -rf ~+/.\deny\peek	
+rm ~+/.denypeek from home	combo:brace-seq+extglob-not-hash+zsh-icase	~+/.de!(#)ype{e..e}(#i)K	rm -rf ~+/.de!(#)ype{e..e}(#i)K	
+rm ~+/.denypeek from home	combo:bracket-then-star+empty-dquote+zsh-group	~+/.""den[y]*pe(e)k	rm -rf ~+/.""den[y]*pe(e)k	
+rm ~+/.denypeek from home	combo:bracket-slash-caret+zsh-not	~+/.^#enyp[^/]ek	rm -rf ~+/.^#enyp[^/]ek	
+rm ~+/.denypeek from home	combo:bracket-neg-reversed-bang+bracket-neg-reversed-bang+empty-dquote	~+/.deny[!z-a]ee""[!z-a]	rm -rf ~+/.deny[!z-a]ee""[!z-a]	
+rm ~+/.denypeek from home	combo:class-print+zsh-repeat	~+/.denype#[[:print:]]k	rm -rf ~+/.denype#[[:print:]]k	
+rm ~+/.claude from home	combo:collating+extglob-q+zsh-group-alt	~+/.(c|#)[[.l.]]au?(d)e	rm -rf ~+/.(c|#)[[.l.]]au?(d)e	
+rm ~+/.claude from home	combo:ansi-c+ansi-c-hex+extglob-not	~+/.cl$'\x61'$'u'!(#)e	rm -rf ~+/.cl$'\x61'$'u'!(#)e	
+rm ~+/.claude from home	combo:bracket-neg-x+bracket-upper+upper	~+/.c[L][^x]ude	rm -rf ~+/.c[L][^x]ude	
+rm ~+/.claude from home	combo:brace-seq+extglob-not-hash+range-wide	~+/.[a-z]!(#)au{d..d}e	rm -rf ~+/.[a-z]!(#)au{d..d}e	
+rm ~+/.claude from home	combo:bracket-caret-leading-close+bracket-double+upper	~+/[^]#]c[[l]]aUde	rm -rf ~+/[^]#]c[[l]]aUde	
+rm ~+/.claude from home	combo:bracket-slash-member+zsh-icase	~+/.cla[u/](#i)De	rm -rf ~+/.cla[u/](#i)De	
+rm ~+/.claude from home	combo:bracket-caret-leading-close+bracket-slash-caret+range-self	~+/[^]#]c[^/]au[d-d]e	rm -rf ~+/[^]#]c[^/]au[d-d]e	
+rm ~+/.claude from home	combo:bracket-neg-bang+extglob-plus	~+/.c[!#]a+(u)de	rm -rf ~+/.c[!#]a+(u)de	
+rm ~+/.claude from home	combo:brace-seq+extglob-star	~+/.*(c)la{u..u}de	rm -rf ~+/.*(c)la{u..u}de	
+rm ~+/.claude from home	combo:bracket-neg-reversed-caret+bracket-slash-member+bracket-slash-member	~+/.c[^z-a][a/]ud[e/]	rm -rf ~+/.c[^z-a][a/]ud[e/]	
+rm ~+/.claude from home	combo:class+escape	~+/.clau\d[[:alpha:]]	rm -rf ~+/.clau\d[[:alpha:]]	
+rm ~+/.claude from home	combo:ansi-c-hex+bracket-escaped+question	~+/[\.]cla?$'\x64'e	rm -rf ~+/[\.]cla?$'\x64'e	
+rm ~+/.claude from home	combo:range-self+range-wide	~+/.[a-z][l-l]aude	rm -rf ~+/.[a-z][l-l]aude	
+rm ~+/.claude from home	combo:extglob-not+range-self	~+/!(#)clau[d-d]e	rm -rf ~+/!(#)clau[d-d]e	
+rm ~+/.claude from home	combo:bracket-literal+extglob-star	~+/.c[l]au*(d)e	rm -rf ~+/.c[l]au*(d)e	
+rm ~+/.claude from home	combo:empty-dquote+zsh-group-alt	~+/.""(c|#)laude	rm -rf ~+/.""(c|#)laude	
+rm ~+/.claude from home	combo:equiv+zsh-group	~+/.(c)la[[=u=]]de	rm -rf ~+/.(c)la[[=u=]]de	
+rm ~+/.claude from home	combo:bracket-slash-neg+bracket-slash-neg	~+/.[!/]la[!/]de	rm -rf ~+/.[!/]la[!/]de	
+rm ~+/.claude from home	combo:bracket-then-star+zsh-repeat2	~+/[.]*claude##	rm -rf ~+/[.]*claude##	
+rm ~+/.claude from home	combo:ansi-c-hex+equiv+question	~+/.cla[[=u=]]$'\x64'?	rm -rf ~+/.cla[[=u=]]$'\x64'?	
+rm ~+/.claude from home	combo:dquote+empty-dquote	~+/"."c""laude	rm -rf ~+/"."c""laude	
+rm ~+/.claude from home	combo:collating+squote	~+/.c[[.l.]]'a'ude	rm -rf ~+/.c[[.l.]]'a'ude	
+rm ~+/.claude from home	combo:bracket-literal+bracket-neg-reversed-bang+class	~+/[.]cl[!z-a]ud[[:alpha:]]	rm -rf ~+/[.]cl[!z-a]ud[[:alpha:]]	
+rm ~+/.claude from home	combo:ansi-c-hex+equiv	~+/.cl$'\x61'ud[[=e=]]	rm -rf ~+/.cl$'\x61'ud[[=e=]]	
+rm ~+/.claude from home	combo:bracket-neg-leading-close+empty-dquote	~+/.[!]#]l""aude	rm -rf ~+/.[!]#]l""aude	
+rm ~+/.claude from home	combo:bracket-neg-caret+bracket-neg-leading-close+class-print	~+/.[^#]l[!]#]ud[[:print:]]	rm -rf ~+/.[^#]l[!]#]ud[[:print:]]	
+rm ~+/.claude from home	combo:extglob-not+zsh-repeat2	~+/!(#)cl##aude	rm -rf ~+/!(#)cl##aude	
+rm ~+/.claude from home	combo:ansi-c+bracket-leading-close	~+/.c$'l'a[]u]de	rm -rf ~+/.c$'l'a[]u]de	
+rm ~+/.claude from home	combo:brace-list+bracket-slash-member	~+/.c{l,q}[a/]ude	rm -rf ~+/.c{l,q}[a/]ude	
+rm ~+/.claude from home	combo:ansi-c+bracket-upper	~+/.$'c'lau[D]e	rm -rf ~+/.$'c'lau[D]e	
+read ~+/.denypeek/guard.sh from home	combo:brace-seq+bracket-neg-bang+bracket-neg-bang	~+/.denypeek/guar[!#][!#]{s..s}h	cat ~+/.denypeek/guar[!#][!#]{s..s}h	
+read ~+/.denypeek/guard.sh from home	combo:ansi-c-hex+star	~+/.denypeek/gu*rd.$'\x73'h	cat ~+/.denypeek/gu*rd.$'\x73'h	
+read ~+/.denypeek/guard.sh from home	combo:range-self+zsh-not	~+/.denypeek/gua^#[d-d].sh	cat ~+/.denypeek/gua^#[d-d].sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-neg-bang+extglob-plus+zsh-group-alt	~+/.denypeek/gua[!#]d.(s|#)+(h)	cat ~+/.denypeek/gua[!#]d.(s|#)+(h)	
+read ~+/.denypeek/guard.sh from home	combo:bracket-double+question	~+/.denypeek/[[g]]uard.s?	cat ~+/.denypeek/[[g]]uard.s?	
+read ~+/.denypeek/guard.sh from home	combo:bracket-neg-caret+empty-dquote	~+/.denypeek/g[^#]ar""d.sh	cat ~+/.denypeek/g[^#]ar""d.sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-neg-reversed-bang+extglob-plus	~+/.denypeek/gua+(r)[!z-a].sh	cat ~+/.denypeek/gua+(r)[!z-a].sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-neg-leading-close+range-self	~+/.denypeek/gu[!]#]rd.[s-s]h	cat ~+/.denypeek/gu[!]#]rd.[s-s]h	
+read ~+/.denypeek/guard.sh from home	combo:bracket-neg-reversed-bang+extglob-plus+zsh-repeat2	~+/.denypeek/g+(u)[!z-a]rd##.sh	cat ~+/.denypeek/g+(u)[!z-a]rd##.sh	
+read ~+/.denypeek/guard.sh from home	combo:empty-dquote+zsh-group-alt	~+/.denypeek/gu""ard.s(h|#)	cat ~+/.denypeek/gu""ard.s(h|#)	
+read ~+/.denypeek/guard.sh from home	combo:zsh-group+zsh-repeat	~+/.denypeek/g#u(a)rd.sh	cat ~+/.denypeek/g#u(a)rd.sh	
+read ~+/.denypeek/guard.sh from home	combo:brace-seq+bracket-upper+dquote	~+/.denypeek/gu[A]"r"d.s{h..h}	cat ~+/.denypeek/gu[A]"r"d.s{h..h}	
+read ~+/.denypeek/guard.sh from home	combo:bracket-caret-leading-close+empty-dquote+zsh-group	~+/.denypeek/(g)ua""rd.[^]#]h	cat ~+/.denypeek/(g)ua""rd.[^]#]h	
+read ~+/.denypeek/guard.sh from home	combo:ansi-c-hex+extglob-not+zsh-repeat	~+/.denypeek/g#u!(#)$'\x72'd.sh	cat ~+/.denypeek/g#u!(#)$'\x72'd.sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-double+bracket-leading-close	~+/.denypeek/gua[[r]][]d].sh	cat ~+/.denypeek/gua[[r]][]d].sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-caret-leading-close+zsh-group-alt+zsh-icase	~+/.denypeek/[^]#]ua(#i)Rd(.|#)sh	cat ~+/.denypeek/[^]#]ua(#i)Rd(.|#)sh	
+read ~+/.denypeek/guard.sh from home	combo:brace-seq+bracket-literal+zsh-repeat2	~+/.denypeek/{g..g}[u]ard##.sh	cat ~+/.denypeek/{g..g}[u]ard##.sh	
+read ~+/.denypeek/guard.sh from home	combo:class-print+equiv+zsh-group	~+/.denypeek/[[=g=]]ua[[:print:]](d).sh	cat ~+/.denypeek/[[=g=]]ua[[:print:]](d).sh	
+read ~+/.denypeek/guard.sh from home	combo:brace-list+dquote	~+/.denypeek/guard.{s,q}"h"	cat ~+/.denypeek/guard.{s,q}"h"	
+read ~+/.denypeek/guard.sh from home	combo:bracket-escaped+bracket-literal+bracket-neg-leading-close	~+/.denypeek/[!]#]ua[\r]d.[s]h	cat ~+/.denypeek/[!]#]ua[\r]d.[s]h	
+read ~+/.denypeek/guard.sh from home	combo:escape+extglob-star	~+/.denypeek/guar*(d).s\h	cat ~+/.denypeek/guar*(d).s\h	
+read ~+/.denypeek/guard.sh from home	combo:brace-seq+bracket-neg-reversed-caret	~+/.denypeek/[^z-a]{u..u}ard.sh	cat ~+/.denypeek/[^z-a]{u..u}ard.sh	
+read ~+/.denypeek/guard.sh from home	combo:extglob-at+extglob-q	~+/.denypeek/?(g)uar@(d).sh	cat ~+/.denypeek/?(g)uar@(d).sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-leading-close+zsh-group-alt	~+/.denypeek/gu[]a]rd.s(h|#)	cat ~+/.denypeek/gu[]a]rd.s(h|#)	
+read ~+/.denypeek/guard.sh from home	combo:bracket-literal+escape	~+/.denypeek/[g]uar\d.sh	cat ~+/.denypeek/[g]uar\d.sh	
+read ~+/.denypeek/guard.sh from home	combo:bracket-leading-close+bracket-neg-caret	~+/.denypeek/[^#]u[]a]rd.sh	cat ~+/.denypeek/[^#]u[]a]rd.sh	
+read ~+/.denypeek/guard.sh from home	combo:zsh-group+zsh-icase	~+/.denypeek/g(#i)Uard.s(h)	cat ~+/.denypeek/g(#i)Uard.s(h)	
+read ~+/.denypeek/guard.sh from home	combo:bracket-literal+zsh-icase	~+/.denypeek/[g]u(#i)Ard.sh	cat ~+/.denypeek/[g]u(#i)Ard.sh	
+read ~+/.denypeek/guard.sh from home	combo:ansi-c-hex+extglob-plus	~+/.denypeek/gu+(a)rd$'\x2e'sh	cat ~+/.denypeek/gu+(a)rd$'\x2e'sh	
+read ~+/.denypeek/guard.sh from home	combo:class-print+zsh-icase	~+/.denypeek/gua[[:print:]]d.(#i)Sh	cat ~+/.denypeek/gua[[:print:]]d.(#i)Sh	
+read ~/.denypeek/secretfiles	combo:extglob-not+extglob-q	~/.denypeek/secre?(t)fi!(#)es	cat ~/.denypeek/secre?(t)fi!(#)es	proj
+read ~/.denypeek/secretfiles	combo:bracket-caret-leading-close+bracket-neg-x	~/.denypeek/s[^]#][^x]retfiles	cat ~/.denypeek/s[^]#][^x]retfiles	proj
+read ~/.denypeek/secretfiles	combo:dquote+empty-dquote+extglob-star	~/.denypeek/s*(e)cre""tf"i"les	cat ~/.denypeek/s*(e)cre""tf"i"les	proj
+read ~/.denypeek/secretfiles	combo:bracket-upper+bracket-upper+extglob-star	~/.denypeek/sec*(r)[E][T]files	cat ~/.denypeek/sec*(r)[E][T]files	proj
+read ~/.denypeek/secretfiles	combo:bracket-leading-close+bracket-neg-caret	~/.denypeek/s[^#][]c]retfiles	cat ~/.denypeek/s[^#][]c]retfiles	proj
+read ~/.denypeek/secretfiles	combo:bracket-slash-neg+star	~/.denypeek/sec*etf[!/]les	cat ~/.denypeek/sec*etf[!/]les	proj
+read ~/.denypeek/secretfiles	combo:bracket-upper+class+zsh-group-alt	~/.denypeek/secr[E]tfil(e|#)[[:alpha:]]	cat ~/.denypeek/secr[E]tfil(e|#)[[:alpha:]]	proj
+read ~/.denypeek/secretfiles	combo:bracket-neg-caret+extglob-not-hash	~/.denypeek/s[^#]cretfile!(#)	cat ~/.denypeek/s[^#]cretfile!(#)	proj
+read ~/.denypeek/secretfiles	combo:class-print+equiv+squote	~/.denypeek/secret'f'[[:print:]]l[[=e=]]s	cat ~/.denypeek/secret'f'[[:print:]]l[[=e=]]s	proj
+read ~/.denypeek/secretfiles	combo:upper+zsh-repeat	~/.denypeek/secretfiLes#	cat ~/.denypeek/secretfiLes#	proj
+read ~/.denypeek/secretfiles	combo:brace-list+zsh-not	~/.denypeek/^#ecr{e,q}tfiles	cat ~/.denypeek/^#ecr{e,q}tfiles	proj
+read ~/.denypeek/secretfiles	combo:class+zsh-group	~/.denypeek/sec[[:alpha:]]e(t)files	cat ~/.denypeek/sec[[:alpha:]]e(t)files	proj
+read ~/.denypeek/secretfiles	combo:bracket-upper+escape	~/.denypeek/sec\retfil[E]s	cat ~/.denypeek/sec\retfil[E]s	proj
+read ~/.denypeek/secretfiles	combo:bracket-neg-reversed-bang+extglob-q	~/.denypeek/s[!z-a]cretfi?(l)es	cat ~/.denypeek/s[!z-a]cretfi?(l)es	proj
+read ~/.denypeek/secretfiles	combo:ansi-c-hex+extglob-q	~/.denypeek/secr$'\x65'tfil?(e)s	cat ~/.denypeek/secr$'\x65'tfil?(e)s	proj
+read ~/.denypeek/secretfiles	combo:empty-squote+extglob-not	~/.denypeek/secret!(#)i''les	cat ~/.denypeek/secret!(#)i''les	proj
+read ~/.denypeek/secretfiles	combo:ansi-c+extglob-at+extglob-not	~/.denypeek/!(#)ecr@(e)tfil$'e's	cat ~/.denypeek/!(#)ecr@(e)tfil$'e's	proj
+read ~/.denypeek/secretfiles	combo:bracket-caret-leading-close+bracket-neg-leading-close	~/.denypeek/se[!]#]r[^]#]tfiles	cat ~/.denypeek/se[!]#]r[^]#]tfiles	proj
+read ~/.denypeek/secretfiles	combo:bracket-leading-close+extglob-plus	~/.denypeek/secre+(t)fil[]e]s	cat ~/.denypeek/secre+(t)fil[]e]s	proj
+read ~/.denypeek/secretfiles	combo:brace-seq+bracket-double+zsh-icase	~/.denypeek/[[s]]e{c..c}ret(#i)Files	cat ~/.denypeek/[[s]]e{c..c}ret(#i)Files	proj
+read ~/.denypeek/secretfiles	combo:empty-squote+extglob-q	~/.denypeek/s''ecre?(t)files	cat ~/.denypeek/s''ecre?(t)files	proj
+read ~/.denypeek/secretfiles	combo:brace-list+extglob-plus	~/.denypeek/secretf{i,q}+(l)es	cat ~/.denypeek/secretf{i,q}+(l)es	proj
+read ~/.denypeek/secretfiles	combo:bracket-double+extglob-not	~/.denypeek/[[s]]ecretfi!(#)es	cat ~/.denypeek/[[s]]ecretfi!(#)es	proj
+read ~/.denypeek/secretfiles	combo:bracket-caret-leading-close+bracket-leading-close+dquote	~/.denypeek/secr[^]#][]t]f"i"les	cat ~/.denypeek/secr[^]#][]t]f"i"les	proj
+read ~/.denypeek/secretfiles	combo:bracket-leading-close+bracket-neg-bang+extglob-q	~/.denypeek/sec?(r)[]e][!#]files	cat ~/.denypeek/sec?(r)[]e][!#]files	proj
+read ~/.denypeek/secretfiles	combo:upper+zsh-group	~/.denypeek/seCretf(i)les	cat ~/.denypeek/seCretf(i)les	proj
+read ~/.denypeek/secretfiles	combo:bracket-neg-bang+extglob-not	~/.denypeek/secre!(#)fil[!#]s	cat ~/.denypeek/secre!(#)fil[!#]s	proj
+read ~/.denypeek/secretfiles	combo:bracket-leading-close+extglob-at	~/.denypeek/@(s)ecretfil[]e]s	cat ~/.denypeek/@(s)ecretfil[]e]s	proj
+read ~/.denypeek/secretfiles	combo:extglob-not+extglob-not-hash	~/.denypeek/se!(#)!(#)etfiles	cat ~/.denypeek/se!(#)!(#)etfiles	proj
+read ~/.denypeek/secretfiles	combo:bracket-leading-close+bracket-then-star+zsh-repeat2	~/.denypeek/secr[]e]tf[i]*l##es	cat ~/.denypeek/secr[]e]tf[i]*l##es	proj
+read ~+/.env	combo:ansi-c-hex+extglob-plus+zsh-not	~+/$'\x2e'e^#+(v)	cat ~+/$'\x2e'e^#+(v)	proj
+read ~+/.env	combo:class-print+zsh-repeat	~+/.e#n[[:print:]]	cat ~+/.e#n[[:print:]]	proj
+read ~+/.env	combo:class-print+question+upper	~+/?eN[[:print:]]	cat ~+/?eN[[:print:]]	proj
+read ~+/.env	combo:equiv+extglob-plus+question	~+/?e+(n)[[=v=]]	cat ~+/?e+(n)[[=v=]]	proj
+read ~+/.env	combo:empty-dquote+star	~+/.*nv""	cat ~+/.*nv""	proj
+read ~+/.env	combo:collating+dquote	~+/."e"n[[.v.]]	cat ~+/."e"n[[.v.]]	proj
+read ~+/.env	combo:class+equiv	~+/[[=.=]][[:alpha:]]nv	cat ~+/[[=.=]][[:alpha:]]nv	proj
+read ~+/.env	combo:ansi-c+bracket-slash-caret	~+/.[^/]n$'v'	cat ~+/.[^/]n$'v'	proj
+read ~+/.env	combo:bracket-neg-reversed-caret+zsh-group-alt	~+/.[^z-a](n|#)v	cat ~+/.[^z-a](n|#)v	proj
+read ~+/.env	combo:bracket-slash-neg+bracket-then-star	~+/[.]*[!/]nv	cat ~+/[.]*[!/]nv	proj
+read ~+/.env	combo:bracket-literal+bracket-slash-member	~+/.[e][n/]v	cat ~+/.[e][n/]v	proj
+read ~+/.env	combo:bracket-escaped+zsh-not	~+/.[\e]n^#	cat ~+/.[\e]n^#	proj
+read ~+/.env	combo:bracket-slash-member+upper	~+/.e[n/]V	cat ~+/.e[n/]V	proj
+read ~+/.env	combo:brace-seq+zsh-group-alt	~+/(.|#)en{v..v}	cat ~+/(.|#)en{v..v}	proj
+read ~+/.env	combo:extglob-not+star	~+/.!(#)*v	cat ~+/.!(#)*v	proj
+read ~+/.env	combo:bracket-caret-leading-close+extglob-not-hash+squote	~+/'.'[^]#]n!(#)	cat ~+/'.'[^]#]n!(#)	proj
+read ~+/.env	combo:collating+range-self	~+/[[...]]en[v-v]	cat ~+/[[...]]en[v-v]	proj
+read ~+/.env	combo:class+extglob-not-hash	~+/.[[:alpha:]]n!(#)	cat ~+/.[[:alpha:]]n!(#)	proj
+read ~+/.env	combo:bracket-double+collating+upper	~+/.e[[n]][[.v.]]	cat ~+/.e[[n]][[.v.]]	proj
+read ~+/.env	combo:ansi-c-hex+brace-seq	~+/$'\x2e'{e..e}nv	cat ~+/$'\x2e'{e..e}nv	proj
+read ~+/.env	combo:equiv+upper	~+/[[=.=]]enV	cat ~+/[[=.=]]enV	proj
+read ~+/.env	combo:bracket-then-star+range-wide+zsh-group-alt	~+/(.|#)[a-z]n[v]*	cat ~+/(.|#)[a-z]n[v]*	proj
+read ~+/.env	combo:bracket-leading-close+extglob-q	~+/.e?(n)[]v]	cat ~+/.e?(n)[]v]	proj
+read ~+/.env	combo:bracket-neg-reversed-caret+bracket-neg-x	~+/[^x]e[^z-a]v	cat ~+/[^x]e[^z-a]v	proj
+read ~+/.env	combo:bracket-escaped+range-self	~+/[.-.][\e]nv	cat ~+/[.-.][\e]nv	proj
+read ~+/.env	combo:bracket-slash-caret+bracket-slash-neg	~+/[^/]en[!/]	cat ~+/[^/]en[!/]	proj
+read ~+/.env	combo:bracket-escaped+empty-squote	~+/.e[\n]v''	cat ~+/.e[\n]v''	proj
+read ~+/.env	combo:bracket-neg-bang+extglob-q	~+/.e?(n)[!#]	cat ~+/.e?(n)[!#]	proj
+read ~+/.env	combo:bracket-escaped+bracket-neg-reversed-caret	~+/.[\e]n[^z-a]	cat ~+/.[\e]n[^z-a]	proj
+read ~+/.env	combo:empty-squote+range-self	~+/[.-.]env''	cat ~+/[.-.]env''	proj
+read ~/.gemini/settings.json	combo:collating+equiv	~/.gemini/sett[[=i=]]ngs.j[[.s.]]on	cat ~/.gemini/sett[[=i=]]ngs.j[[.s.]]on	proj
+read ~/.gemini/settings.json	combo:bracket-neg-leading-close+class-print+zsh-not	~/.gemini/se^#tin[[:print:]]s[!]#]json	cat ~/.gemini/se^#tin[[:print:]]s[!]#]json	proj
+read ~/.gemini/settings.json	combo:dquote+extglob-not+zsh-repeat	~/.gemini/setting#!(#).js"o"n	cat ~/.gemini/setting#!(#).js"o"n	proj
+read ~/.gemini/settings.json	combo:bracket-neg-leading-close+dquote	~/.gemini/settings"."j[!]#]on	cat ~/.gemini/settings"."j[!]#]on	proj
+read ~/.gemini/settings.json	combo:brace-list+star	~/.gemini/set*{i,q}ngs.json	cat ~/.gemini/set*{i,q}ngs.json	proj
+read ~/.gemini/settings.json	combo:bracket-neg-reversed-bang+zsh-repeat2	~/.gemini/sett[!z-a]ngs.j##son	cat ~/.gemini/sett[!z-a]ngs.j##son	proj
+read ~/.gemini/settings.json	combo:bracket-double+extglob-not-hash	~/.gemini/s!(#)[[t]]tings.json	cat ~/.gemini/s!(#)[[t]]tings.json	proj
+read ~/.gemini/settings.json	combo:bracket-neg-caret+zsh-group	~/.gemini/set(t)ings.[^#]son	cat ~/.gemini/set(t)ings.[^#]son	proj
+read ~/.gemini/settings.json	combo:bracket-caret-leading-close+empty-dquote+empty-squote	~/.gemini/s""ettin[^]#]s''.json	cat ~/.gemini/s""ettin[^]#]s''.json	proj
+read ~/.gemini/settings.json	combo:bracket-neg-reversed-caret+bracket-then-star	~/.gemini/[s]*ettings.js[^z-a]n	cat ~/.gemini/[s]*ettings.js[^z-a]n	proj
+read ~/.gemini/settings.json	combo:extglob-star+zsh-repeat	~/.gemini/se#ttings.jso*(n)	cat ~/.gemini/se#ttings.jso*(n)	proj
+read ~/.gemini/settings.json	combo:bracket-caret-leading-close+extglob-at+range-wide	~/.gemini/setti[a-z]@(g)[^]#].json	cat ~/.gemini/setti[a-z]@(g)[^]#].json	proj
+read ~/.gemini/settings.json	combo:bracket-slash-neg+star	~/.gemini/set[!/]i*gs.json	cat ~/.gemini/set[!/]i*gs.json	proj
+read ~/.gemini/settings.json	combo:ansi-c-hex+bracket-caret-leading-close	~/.gemini/$'\x73'ettings.[^]#]son	cat ~/.gemini/$'\x73'ettings.[^]#]son	proj
+read ~/.gemini/settings.json	combo:bracket-neg-x+zsh-icase	~/.gemini/s(#i)Ett[^x]ngs.json	cat ~/.gemini/s(#i)Ett[^x]ngs.json	proj
+read ~/.gemini/settings.json	combo:zsh-group-alt+zsh-repeat2	~/.gemini/settings.j##(s|#)on	cat ~/.gemini/settings.j##(s|#)on	proj
+read ~/.gemini/settings.json	combo:extglob-not-hash+range-wide	~/.gemini/s!(#)ttings.[a-z]son	cat ~/.gemini/s!(#)ttings.[a-z]son	proj
+read ~/.gemini/settings.json	combo:extglob-star+range-self	~/.gemini/settin[g-g]s*(.)json	cat ~/.gemini/settin[g-g]s*(.)json	proj
+read ~/.gemini/settings.json	combo:extglob-plus+zsh-not	~/.gemini/set+(t)ing^#.json	cat ~/.gemini/set+(t)ing^#.json	proj
+read ~/.gemini/settings.json	combo:bracket-leading-close+bracket-neg-bang	~/.gemini/[]s]ett[!#]ngs.json	cat ~/.gemini/[]s]ett[!#]ngs.json	proj
+read ~/.gemini/settings.json	combo:bracket-leading-close+zsh-repeat2	~/.gemini/se[]t]tings.##json	cat ~/.gemini/se[]t]tings.##json	proj
+read ~/.gemini/settings.json	combo:bracket-slash-member+dquote	~/.gemini/se"t"tings.j[s/]on	cat ~/.gemini/se"t"tings.j[s/]on	proj
+read ~/.gemini/settings.json	combo:bracket-neg-x+extglob-not	~/.gemini/settings[^x]!(#)son	cat ~/.gemini/settings[^x]!(#)son	proj
+read ~/.gemini/settings.json	combo:class-print+equiv+star	~/.gemini/set*ings.[[=j=]]so[[:print:]]	cat ~/.gemini/set*ings.[[=j=]]so[[:print:]]	proj
+read ~/.gemini/settings.json	combo:escape+extglob-not-hash	~/.gemini/settings.j\s!(#)n	cat ~/.gemini/settings.j\s!(#)n	proj
+read ~/.gemini/settings.json	combo:zsh-not+zsh-not	~/.gemini/settings^#jso^#	cat ~/.gemini/settings^#jso^#	proj
+read ~/.gemini/settings.json	combo:bracket-neg-caret+bracket-slash-neg	~/.gemini/s[!/]ttings.j[^#]on	cat ~/.gemini/s[!/]ttings.j[^#]on	proj
+read ~/.gemini/settings.json	combo:class+extglob-star	~/.gemini/s*(e)tt[[:alpha:]]ngs.json	cat ~/.gemini/s*(e)tt[[:alpha:]]ngs.json	proj
+read ~/.gemini/settings.json	combo:bracket-neg-bang+escape	~/.gemini/settings.\j[!#]on	cat ~/.gemini/settings.\j[!#]on	proj
+read ~/.gemini/settings.json	combo:class-print+zsh-group	~/.gemini/settings[[:print:]](j)son	cat ~/.gemini/settings[[:print:]](j)son	proj
+read ~/.claude/settings.json	combo:class+class-print+zsh-not	~/.claude/se^#t[[:print:]]ngs[[:punct:]]json	cat ~/.claude/se^#t[[:print:]]ngs[[:punct:]]json	proj
+read ~/.claude/settings.json	combo:brace-seq+bracket-literal+squote	~/.claude/settings.[j]s'o'{n..n}	cat ~/.claude/settings.[j]s'o'{n..n}	proj
+read ~/.claude/settings.json	combo:bracket-neg-reversed-bang+bracket-neg-x+star	~/.claude/sett*n[!z-a]s[^x]json	cat ~/.claude/sett*n[!z-a]s[^x]json	proj
+read ~/.claude/settings.json	combo:bracket-slash-neg+extglob-at+upper	~/.claude/set@(t)Ings.j[!/]on	cat ~/.claude/set@(t)Ings.j[!/]on	proj
+read ~/.claude/settings.json	combo:class+squote+zsh-repeat2	~/.claude/sett[[:alpha:]]ngs.j's'o##n	cat ~/.claude/sett[[:alpha:]]ngs.j's'o##n	proj
+read ~/.claude/settings.json	combo:bracket-double+bracket-neg-caret+squote	~/.claude/[[s]]ettin[^#]'s'.json	cat ~/.claude/[[s]]ettin[^#]'s'.json	proj
+read ~/.claude/settings.json	combo:bracket-slash-caret+extglob-at	~/.claude/[^/]ettings.@(j)son	cat ~/.claude/[^/]ettings.@(j)son	proj
+read ~/.claude/settings.json	combo:ansi-c-hex+bracket-neg-x	~/.claude/settin[^x]s.jso$'\x6e'	cat ~/.claude/settin[^x]s.jso$'\x6e'	proj
+read ~/.claude/settings.json	combo:bracket-then-star+extglob-at	~/.claude/s[e]*ttings.jso@(n)	cat ~/.claude/s[e]*ttings.jso@(n)	proj
+read ~/.claude/settings.json	combo:brace-list+bracket-neg-caret	~/.claude/setti{n,q}g[^#].json	cat ~/.claude/setti{n,q}g[^#].json	proj
+read ~/.claude/settings.json	combo:bracket-literal+zsh-icase	~/.claude/set[t](#i)Ings.json	cat ~/.claude/set[t](#i)Ings.json	proj
+read ~/.claude/settings.json	combo:squote+star	~/.claude/se*'t'ings.json	cat ~/.claude/se*'t'ings.json	proj
+read ~/.claude/settings.json	combo:bracket-neg-bang+collating	~/.claude/settings.[!#][[.s.]]on	cat ~/.claude/settings.[!#][[.s.]]on	proj
+read ~/.claude/settings.json	combo:squote+zsh-repeat2	~/.claude/setting##s.'j'son	cat ~/.claude/setting##s.'j'son	proj
+read ~/.claude/settings.json	combo:class+collating+extglob-not	~/.claude/[[.s.]]etti!(#)gs.jso[[:alpha:]]	cat ~/.claude/[[.s.]]etti!(#)gs.jso[[:alpha:]]	proj
+read ~/.claude/settings.json	combo:bracket-then-star+empty-squote	~/.claude/setti''ng[s]*.json	cat ~/.claude/setti''ng[s]*.json	proj
+read ~/.claude/settings.json	combo:bracket-upper+empty-dquote	~/.claude/settings[.]j""son	cat ~/.claude/settings[.]j""son	proj
+read ~/.claude/settings.json	combo:ansi-c-hex+bracket-escaped+bracket-slash-neg	~/.claude/s$'\x65'ttin[!/]s.j[\s]on	cat ~/.claude/s$'\x65'ttin[!/]s.j[\s]on	proj
+read ~/.claude/settings.json	combo:ansi-c-hex+bracket-upper+range-wide	~/.claude/se$'\x74'[a-z]ings.j[S]on	cat ~/.claude/se$'\x74'[a-z]ings.j[S]on	proj
+read ~/.claude/settings.json	combo:bracket-neg-reversed-bang+escape	~/.claude/settin[!z-a]s.\json	cat ~/.claude/settin[!z-a]s.\json	proj
+read ~/.claude/settings.json	combo:bracket-neg-reversed-caret+equiv	~/.claude/settin[[=g=]]s.js[^z-a]n	cat ~/.claude/settin[[=g=]]s.js[^z-a]n	proj
+read ~/.claude/settings.json	combo:bracket-double+escape+upper	~/.claude/set[[t]]ings.Js\on	cat ~/.claude/set[[t]]ings.Js\on	proj
+read ~/.claude/settings.json	combo:bracket-neg-caret+upper	~/.claude/Settings.j[^#]on	cat ~/.claude/Settings.j[^#]on	proj
+read ~/.claude/settings.json	combo:bracket-slash-caret+bracket-then-star+extglob-not-hash	~/.claude/settings!(#)j[^/][o]*n	cat ~/.claude/settings!(#)j[^/][o]*n	proj
+read ~/.claude/settings.json	combo:bracket-double+extglob-plus	~/.claude/set[[t]]ings.j+(s)on	cat ~/.claude/set[[t]]ings.j+(s)on	proj
+read ~/.claude/settings.json	combo:class+escape+extglob-q	~/.claude/s?(e)t[[:alpha:]]ings.js\on	cat ~/.claude/s?(e)t[[:alpha:]]ings.js\on	proj
+read ~/.claude/settings.json	combo:ansi-c+bracket-neg-leading-close+dquote	~/.claude/se$'t'[!]#]ings.j"s"on	cat ~/.claude/se$'t'[!]#]ings.j"s"on	proj
+read ~/.claude/settings.json	combo:dquote+extglob-star+range-wide	~/.claude/set"t"*(i)ngs.js[a-z]n	cat ~/.claude/set"t"*(i)ngs.js[a-z]n	proj
+read ~/.claude/settings.json	combo:bracket-double+bracket-escaped+squote	~/.claude/settin[\g]s.[[j]]so'n'	cat ~/.claude/settin[\g]s.[[j]]so'n'	proj
+read ~/.claude/settings.json	combo:bracket-slash-neg+zsh-icase	~/.claude/(#i)Settings.js[!/]n	cat ~/.claude/(#i)Settings.js[!/]n	proj
+read .npmrc	combo:bracket-double+equiv	[[.]]n[[=p=]]mrc	cat [[.]]n[[=p=]]mrc	proj
+read .npmrc	combo:extglob-plus+zsh-not+zsh-repeat2	.^#p##+(m)rc	cat .^#p##+(m)rc	proj
+read .npmrc	combo:bracket-neg-reversed-bang+extglob-at+extglob-not-hash	.@(n)pm[!z-a]!(#)	cat .@(n)pm[!z-a]!(#)	proj
+read .npmrc	combo:brace-seq+extglob-not+extglob-star	*(.)n!(#)mr{c..c}	cat *(.)n!(#)mr{c..c}	proj
+read .npmrc	combo:ansi-c+extglob-not+range-self	$'.'[n-n]pmr!(#)	cat $'.'[n-n]pmr!(#)	proj
+read .npmrc	combo:collating+squote	.npm'r'[[.c.]]	cat .npm'r'[[.c.]]	proj
+read .npmrc	combo:bracket-caret-leading-close+zsh-repeat2	.npm##[^]#]c	cat .npm##[^]#]c	proj
+read .npmrc	combo:empty-squote+extglob-q	?(.)npmrc''	cat ?(.)npmrc''	proj
+read .npmrc	combo:bracket-literal+class-print	.[[:print:]]pmr[c]	cat .[[:print:]]pmr[c]	proj
+read .npmrc	combo:range-wide+upper	.N[a-z]mrc	cat .N[a-z]mrc	proj
+read .npmrc	combo:brace-seq+bracket-double	.np{m..m}[[r]]c	cat .np{m..m}[[r]]c	proj
+read .npmrc	combo:bracket-slash-member+class-print+zsh-icase	.[[:print:]][p/]m(#i)Rc	cat .[[:print:]][p/]m(#i)Rc	proj
+read .npmrc	combo:class+extglob-not	.!(#)pm[[:alpha:]]c	cat .!(#)pm[[:alpha:]]c	proj
+read .npmrc	combo:bracket-neg-reversed-caret+dquote	."n"pm[^z-a]c	cat ."n"pm[^z-a]c	proj
+read .npmrc	combo:bracket-neg-caret+extglob-plus	.n+(p)mr[^#]	cat .n+(p)mr[^#]	proj
+read .npmrc	combo:squote+zsh-repeat2	.##np'm'rc	cat .##np'm'rc	proj
+read .npmrc	combo:bracket-leading-close+bracket-neg-bang+squote	'.'np[!#]r[]c]	cat '.'np[!#]r[]c]	proj
+read .npmrc	combo:bracket-literal+extglob-star+star	.*[p]*(m)rc	cat .*[p]*(m)rc	proj
+read .npmrc	combo:bracket-neg-reversed-bang+empty-squote+zsh-repeat2	.##np''m[!z-a]c	cat .##np''m[!z-a]c	proj
+read .npmrc	combo:class+zsh-group-alt	.[[:alpha:]]pmr(c|#)	cat .[[:alpha:]]pmr(c|#)	proj
+read .npmrc	combo:ansi-c+brace-list+range-self	$'.'npm[r-r]{c,q}	cat $'.'npm[r-r]{c,q}	proj
+read .npmrc	combo:empty-squote+extglob-not-hash+zsh-not	!(#)n^#mr''c	cat !(#)n^#mr''c	proj
+read .npmrc	combo:bracket-caret-leading-close+bracket-neg-caret+bracket-slash-neg	[^#][^]#][!/]mrc	cat [^#][^]#][!/]mrc	proj
+read .npmrc	combo:dquote+upper	.np"m"rc	cat .np"m"rc	proj
+read .npmrc	combo:collating+upper	.npmr[[.c.]]	cat .npmr[[.c.]]	proj
+read .npmrc	combo:extglob-q+upper+zsh-group	.(n)Pmr?(c)	cat .(n)Pmr?(c)	proj
+read .npmrc	combo:class-print+extglob-at	.[[:print:]]@(p)mrc	cat .[[:print:]]@(p)mrc	proj
+read .npmrc	combo:bracket-neg-x+bracket-then-star+zsh-group-alt	.np(m|#)[r]*[^x]	cat .np(m|#)[r]*[^x]	proj
+read .npmrc	combo:empty-dquote+star	.n*mrc""	cat .n*mrc""	proj
+read .npmrc	combo:ansi-c+bracket-neg-caret	.$'n'[^#]mrc	cat .$'n'[^#]mrc	proj
+read .dev.vars	combo:bracket-neg-caret+range-self	.[d-d][^#]v.vars	cat .[d-d][^#]v.vars	proj
+read .dev.vars	combo:bracket-neg-x+bracket-slash-neg	.de[^x].var[!/]	cat .de[^x].var[!/]	proj
+read .dev.vars	combo:bracket-neg-x+bracket-slash-member	.de[^x].v[a/]rs	cat .de[^x].v[a/]rs	proj
+read .dev.vars	combo:bracket-upper+extglob-q+zsh-group	.?(d)ev.va[R](s)	cat .?(d)ev.va[R](s)	proj
+read .dev.vars	combo:bracket-neg-reversed-bang+dquote+extglob-q	.dev[!z-a]?(v)ar"s"	cat .dev[!z-a]?(v)ar"s"	proj
+read .dev.vars	combo:brace-seq+extglob-star	.d{e..e}v*(.)vars	cat .d{e..e}v*(.)vars	proj
+read .dev.vars	combo:bracket-slash-caret+zsh-icase	.de(#i)V.v[^/]rs	cat .de(#i)V.v[^/]rs	proj
+read .dev.vars	combo:bracket-neg-caret+class	.dev.va[^#][[:alpha:]]	cat .dev.va[^#][[:alpha:]]	proj
+read .dev.vars	combo:ansi-c+squote	.$'d'ev.v'a'rs	cat .$'d'ev.v'a'rs	proj
+read .dev.vars	combo:extglob-star+squote	'.'dev.*(v)ars	cat '.'dev.*(v)ars	proj
+read .dev.vars	combo:bracket-double+bracket-neg-x	[[.]]de[^x].vars	cat [[.]]de[^x].vars	proj
+read .dev.vars	combo:class-print+zsh-icase	.[[:print:]]ev.va(#i)Rs	cat .[[:print:]]ev.va(#i)Rs	proj
+read .dev.vars	combo:bracket-then-star+zsh-group	.dev.(v)ar[s]*	cat .dev.(v)ar[s]*	proj
+read .dev.vars	combo:bracket-leading-close+bracket-neg-leading-close	[!]#]dev.va[]r]s	cat [!]#]dev.va[]r]s	proj
+read .dev.vars	combo:bracket-neg-caret+question+zsh-group	[^#]dev?(v)ars	cat [^#]dev?(v)ars	proj
+read .dev.vars	combo:extglob-at+star	.d@(e)v.v*rs	cat .d@(e)v.v*rs	proj
+read .dev.vars	combo:dquote+extglob-plus	."d"ev.va+(r)s	cat ."d"ev.va+(r)s	proj
+read .dev.vars	combo:squote+zsh-repeat	.d'e'v#.vars	cat .d'e'v#.vars	proj
+read .dev.vars	combo:bracket-then-star+dquote	.dev.[v]*ar"s"	cat .dev.[v]*ar"s"	proj
+read .dev.vars	combo:bracket-slash-caret+bracket-slash-caret+star	.de[^/].[^/]a*s	cat .de[^/].[^/]a*s	proj
+read .dev.vars	combo:bracket-leading-close+extglob-star+range-self	.dev[.-.]va[]r]*(s)	cat .dev[.-.]va[]r]*(s)	proj
+read .dev.vars	combo:extglob-not-hash+star	!(#)dev.va*s	cat !(#)dev.va*s	proj
+read .dev.vars	combo:bracket-neg-leading-close+extglob-plus	.dev[!]#]va+(r)s	cat .dev[!]#]va+(r)s	proj
+read .dev.vars	combo:bracket-slash-member+star	.[d/]e*.vars	cat .[d/]e*.vars	proj
+read .dev.vars	combo:dquote+escape	"."dev.\vars	cat "."dev.\vars	proj
+read .dev.vars	combo:collating+extglob-not	.dev.v!(#)[[.r.]]s	cat .dev.v!(#)[[.r.]]s	proj
+read .dev.vars	combo:extglob-at+extglob-not	.dev.@(v)!(#)rs	cat .dev.@(v)!(#)rs	proj
+read .dev.vars	combo:bracket-neg-bang+bracket-slash-member+bracket-then-star	.d[e/]v.[v]*a[!#]s	cat .d[e/]v.[v]*a[!#]s	proj
+read .dev.vars	combo:equiv+question+upper	.d[[=e=]]v.var?	cat .d[[=e=]]v.var?	proj
+read .dev.vars	combo:escape+zsh-charseq+zsh-group-alt	{....}dev(.|#)va\rs	cat {....}dev(.|#)va\rs	proj
+read tls.key	combo:bracket-neg-reversed-caret+bracket-slash-caret+zsh-repeat2	tl##s[^z-a][^/]ey	cat tl##s[^z-a][^/]ey	proj
+read tls.key	combo:ansi-c-hex+bracket-slash-member+range-self	t[l-l]s[./]ke$'\x79'	cat t[l-l]s[./]ke$'\x79'	proj
+read tls.key	combo:bracket-upper+range-wide	tl[S].ke[a-z]	cat tl[S].ke[a-z]	proj
+read tls.key	combo:bracket-neg-caret+dquote+extglob-not-hash	"t"l!(#).[^#]ey	cat "t"l!(#).[^#]ey	proj
+read tls.key	combo:bracket-caret-leading-close+class+question	tl[^]#][[:punct:]]ke?	cat tl[^]#][[:punct:]]ke?	proj
+read tls.key	combo:bracket-slash-caret+escape	[^/]l\s.key	cat [^/]l\s.key	proj
+read tls.key	combo:extglob-star+range-wide	t*(l)s.ke[a-z]	cat t*(l)s.ke[a-z]	proj
+read tls.key	combo:bracket-slash-member+question	tls[./]ke?	cat tls[./]ke?	proj
+read tls.key	combo:extglob-at+extglob-at+star	@(t)l*.k@(e)y	cat @(t)l*.k@(e)y	proj
+read tls.key	combo:bracket-escaped+class+extglob-plus	tl[[:alpha:]].[\k]+(e)y	cat tl[[:alpha:]].[\k]+(e)y	proj
+read tls.key	combo:bracket-slash-caret+zsh-icase+zsh-not	^#ls.k[^/](#i)Y	cat ^#ls.k[^/](#i)Y	proj
+read tls.key	combo:bracket-neg-reversed-bang+bracket-slash-member+range-wide	[a-z]l[s/].ke[!z-a]	cat [a-z]l[s/].ke[!z-a]	proj
+read tls.key	combo:class-print+extglob-not-hash+zsh-not	t[[:print:]]^#.!(#)ey	cat t[[:print:]]^#.!(#)ey	proj
+read tls.key	combo:extglob-plus+extglob-q	tls.+(k)?(e)y	cat tls.+(k)?(e)y	proj
+read tls.key	combo:bracket-literal+upper+zsh-repeat	tlS.[k]e#y	cat tlS.[k]e#y	proj
+read tls.key	combo:bracket-neg-bang+zsh-not	tl^#.ke[!#]	cat tl^#.ke[!#]	proj
+read tls.key	combo:bracket-neg-reversed-caret+bracket-slash-caret+range-self	[^z-a]l[s-s][^/]key	cat [^z-a]l[s-s][^/]key	proj
+read tls.key	combo:bracket-leading-close+extglob-not	!(#)ls.ke[]y]	cat !(#)ls.ke[]y]	proj
+read tls.key	combo:bracket-neg-reversed-caret+empty-dquote+extglob-star	t""ls[^z-a]ke*(y)	cat t""ls[^z-a]ke*(y)	proj
+read tls.key	combo:bracket-neg-reversed-caret+bracket-slash-member+extglob-not	tl!(#)[./]ke[^z-a]	cat tl!(#)[./]ke[^z-a]	proj
+read tls.key	combo:bracket-neg-caret+dquote	tl"s".k[^#]y	cat tl"s".k[^#]y	proj
+read tls.key	combo:bracket-leading-close+bracket-neg-leading-close	[!]#]l[]s].key	cat [!]#]l[]s].key	proj
+read tls.key	combo:bracket-caret-leading-close+zsh-not	tls[^]#]ke^#	cat tls[^]#]ke^#	proj
+read tls.key	combo:bracket-slash-caret+empty-dquote+squote	t'l'[^/].ke""y	cat t'l'[^/].ke""y	proj
+read tls.key	combo:bracket-slash-member+extglob-at	tls@(.)k[e/]y	cat tls@(.)k[e/]y	proj
+read tls.key	combo:bracket-neg-x+extglob-not	!(#)ls.[^x]ey	cat !(#)ls.[^x]ey	proj
+read tls.key	combo:class+extglob-at	tl@(s)[[:punct:]]key	cat tl@(s)[[:punct:]]key	proj
+read tls.key	combo:bracket-literal+escape+zsh-group	t(l)[s].\key	cat t(l)[s].\key	proj
+read tls.key	combo:bracket-leading-close+bracket-neg-x+class-print	[]t]ls.[^x]e[[:print:]]	cat []t]ls.[^x]e[[:print:]]	proj
+read tls.key	combo:bracket-literal+equiv	tls.[[=k=]][e]y	cat tls.[[=k=]][e]y	proj
+read ~/.kube/config	combo:class+escape+extglob-plus	~/.kube/\c+(o)[[:alpha:]]fig	cat ~/.kube/\c+(o)[[:alpha:]]fig	proj
+read ~/.kube/config	combo:empty-dquote+zsh-icase+zsh-repeat2	~/.kube/co""(#i)Nfi##g	cat ~/.kube/co""(#i)Nfi##g	proj
+read ~/.kube/config	combo:empty-squote+extglob-plus+zsh-repeat2	~/.kube/c+(o)nfi''g##	cat ~/.kube/c+(o)nfi''g##	proj
+read ~/.kube/config	combo:bracket-neg-reversed-caret+bracket-then-star	~/.kube/[c]*o[^z-a]fig	cat ~/.kube/[c]*o[^z-a]fig	proj
+read ~/.kube/config	combo:dquote+zsh-icase	~/.kube/con(#i)F"i"g	cat ~/.kube/con(#i)F"i"g	proj
+read ~/.kube/config	combo:escape+range-self	~/.kube/\confi[g-g]	cat ~/.kube/\confi[g-g]	proj
+read ~/.kube/config	combo:dquote+zsh-group	~/.kube/(c)on"f"ig	cat ~/.kube/(c)on"f"ig	proj
+read ~/.kube/config	combo:ansi-c+bracket-literal+extglob-not-hash	~/.kube/[c]o$'n'!(#)ig	cat ~/.kube/[c]o$'n'!(#)ig	proj
+read ~/.kube/config	combo:ansi-c-hex+bracket-double+escape	~/.kube/co[[n]]\fi$'\x67'	cat ~/.kube/co[[n]]\fi$'\x67'	proj
+read ~/.kube/config	combo:bracket-neg-caret+extglob-plus+zsh-group	~/.kube/c(o)[^#]fi+(g)	cat ~/.kube/c(o)[^#]fi+(g)	proj
+read ~/.kube/config	combo:bracket-slash-neg+extglob-plus+upper	~/.kube/co+(n)fI[!/]	cat ~/.kube/co+(n)fI[!/]	proj
+read ~/.kube/config	combo:bracket-escaped+bracket-then-star	~/.kube/co[n]*fi[\g]	cat ~/.kube/co[n]*fi[\g]	proj
+read ~/.kube/config	combo:bracket-caret-leading-close+escape+extglob-at	~/.kube/[^]#]@(o)nfi\g	cat ~/.kube/[^]#]@(o)nfi\g	proj
+read ~/.kube/config	combo:bracket-neg-reversed-bang+range-self+zsh-repeat2	~/.kube/[!z-a]o##nfi[g-g]	cat ~/.kube/[!z-a]o##nfi[g-g]	proj
+read ~/.kube/config	combo:bracket-neg-bang+escape	~/.kube/\c[!#]nfig	cat ~/.kube/\c[!#]nfig	proj
+read ~/.kube/config	combo:bracket-then-star+extglob-at	~/.kube/co@(n)[f]*ig	cat ~/.kube/co@(n)[f]*ig	proj
+read ~/.kube/config	combo:bracket-slash-caret+bracket-slash-neg	~/.kube/[!/]onfi[^/]	cat ~/.kube/[!/]onfi[^/]	proj
+read ~/.kube/config	combo:brace-seq+bracket-escaped+empty-dquote	~/.kube/con""f[\i]{g..g}	cat ~/.kube/con""f[\i]{g..g}	proj
+read ~/.kube/config	combo:bracket-neg-bang+bracket-neg-bang+squote	~/.kube/[!#]on'f'i[!#]	cat ~/.kube/[!#]on'f'i[!#]	proj
+read ~/.kube/config	combo:extglob-plus+range-wide+zsh-group	~/.kube/(c)+(o)nf[a-z]g	cat ~/.kube/(c)+(o)nf[a-z]g	proj
+read ~/.kube/config	combo:extglob-not+zsh-repeat	~/.kube/con#fi!(#)	cat ~/.kube/con#fi!(#)	proj
+read ~/.kube/config	combo:collating+zsh-repeat	~/.kube/[[.c.]]on#fig	cat ~/.kube/[[.c.]]on#fig	proj
+read ~/.kube/config	combo:bracket-caret-leading-close+bracket-neg-caret+zsh-icase	~/.kube/c[^#]nf(#i)I[^]#]	cat ~/.kube/c[^#]nf(#i)I[^]#]	proj
+read ~/.kube/config	combo:ansi-c+range-wide	~/.kube/co[a-z]f$'i'g	cat ~/.kube/co[a-z]f$'i'g	proj
+read ~/.kube/config	combo:bracket-slash-caret+bracket-slash-member	~/.kube/co[n/]fi[^/]	cat ~/.kube/co[n/]fi[^/]	proj
+read ~/.kube/config	combo:brace-seq+brace-seq+bracket-neg-reversed-caret	~/.kube/[^z-a]on{f..f}i{g..g}	cat ~/.kube/[^z-a]on{f..f}i{g..g}	proj
+read ~/.kube/config	combo:bracket-neg-reversed-caret+zsh-group-alt+zsh-repeat	~/.kube/c[^z-a]nf(i|#)g#	cat ~/.kube/c[^z-a]nf(i|#)g#	proj
+read ~/.kube/config	combo:bracket-neg-x+bracket-slash-member	~/.kube/co[^x]fi[g/]	cat ~/.kube/co[^x]fi[g/]	proj
+read ~/.kube/config	combo:bracket-neg-reversed-caret+bracket-neg-reversed-caret	~/.kube/c[^z-a][^z-a]fig	cat ~/.kube/c[^z-a][^z-a]fig	proj
+read ~/.kube/config	combo:dquote+zsh-group	~/.kube/"c"(o)nfig	cat ~/.kube/"c"(o)nfig	proj

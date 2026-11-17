@@ -103,6 +103,9 @@ def test_no_key_shaped_literal_is_committed():
         # "bedrock.amazonaws.com"); literal example keys are stored as hashes (next test).
         REPO / "src" / "denypeek" / "rules.py",
         REPO / ".gitleaks.toml",  # allowlists that same public prefix by exact match
+        # the review's generated oracle words (copied unchanged, A25): shell patterns and class
+        # labels such as "collating+dquote", which the generic-api-key rule reads as a key.
+        REPO / "tests" / "oracle" / "words.tsv",
     }
     for path in committed_files():
         if path in skip or not path.is_file() or path.suffix in (".lock",):

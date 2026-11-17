@@ -50,3 +50,41 @@ jobs:
       - run: uv sync --locked --python 3.9
       - run: uv run --python 3.9 python --version
       - run: uv run --python 3.9 pytest -rs
+
+  # A23 to A25: the review's glob oracle (tests/oracle). Real bash, zsh and sh expand every generated
+  # word; a word that reaches a protected path must be denied, and everyday commands allowed.
+  # A missing shell or mode is a failure (--require auto). The hook runs on Python 3.9 (macOS
+  # ships it as /usr/bin/python3, the hook's default there) and on the newest Python.
+  # Windows has none of these shells and does not run it; the Windows guard stays experimental.
+  oracle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        hook-python: ["3.9", "3.x"]
+    runs-on: ${{ matrix.os }}
+    env:
+      DENYPEEK_ORACLE_REQUIRE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.11.32"
+      - name: Install zsh (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Install bash 5 (macOS; /bin/bash is 3.2)
+        if: runner.os == 'macOS'
+        run: brew install bash
+      - run: uv python install ${{ matrix.hook-python }}
+      - id: py
+        run: echo "path=$(uv python find ${{ matrix.hook-python }})" >> "$GITHUB_OUTPUT"
+      - name: Full oracle run
+        run: >-
+          "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --require auto
+          --hook "$PWD/src/denypeek/guard/guard.py" --python "${{ steps.py.outputs.path }}"
+          --report oracle-failures.txt
+      - name: Oracle self-test
+        run: '"${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --self-test --quick'

@@ -614,7 +614,7 @@ def shell_settings_problem(command, folders, depth=0):
             if any(settings_kind(expand(target, f) or "") for f in folders):
                 return "the command writes an agent settings file; edit it in your own terminal"
     sw = shell_words(command, folders[0] if folders else ".")
-    for script in shell_scripts(sw, depth):
+    for script, _ in shell_scripts(sw, depth):
         problem = shell_settings_problem(script, folders, depth + 1)
         if problem:
             return problem
@@ -723,21 +723,111 @@ def _find_reaches_agent_dir(words, folders):
     return False
 
 
-def shell_folder_problem(command, folders, depth=0):
+# --- G7: deleting, moving or locking the home folder or a folder above it ---------------
+G7_ANY_OPERAND = {
+    "rm",
+    "rmdir",
+    "unlink",
+    "shred",
+    "srm",
+    "trash",
+    "chmod",
+    "chown",
+    "chgrp",
+    "chflags",
+}
+ANCESTOR_MESSAGE = (
+    "the command may delete, move or lock your home folder or a folder above it, which holds "
+    "denypeek and every agent's settings; do that in your own terminal"
+)
+
+
+def ancestor_dirs():
+    """The home folder and every folder above it, also for CLAUDE_CONFIG_DIR and CODEX_HOME,
+    as resolved, normalised paths (SPEC 3a G7)."""
+    roots = [home_dir()]
+    roots += [os.environ[v] for v in ("CLAUDE_CONFIG_DIR", "CODEX_HOME") if os.environ.get(v)]
+    out = set()
+    for r in roots:
+        try:
+            p = os.path.realpath(r)
+        except (OSError, ValueError):
+            continue
+        while True:
+            out.add(_norm(p).rstrip("/") or "/")
+            parent = os.path.dirname(p)
+            if parent == p:
+                break
+            p = parent
+    return out
+
+
+def is_ancestor(path):
+    if not path:
+        return False
+    try:
+        resolved = os.path.realpath(path)
+    except (OSError, ValueError):
+        resolved = path
+    return (_norm(resolved).rstrip("/") or "/") in ancestor_dirs()
+
+
+def _ancestor_problem(words, folders):
+    """G7: one of the verb words below, and an operand naming an ancestor in any G5 reading.
+    The verb may be any word of the simple command (sudo rm, env rm, /bin/rm, \\rm)."""
+    lits = [w.literal for w in words]
+    names = [os.path.basename(x).lower() for x in lits]
+
+    def operands(after):
+        return [w for w in words[after + 1 :] if not w.literal.startswith("-")]
+
+    def names_ancestor(ws):
+        return any(is_ancestor(p) for w in ws for p in word_paths(w, folders))
+
+    for j, name in enumerate(names):
+        if name in G7_ANY_OPERAND:
+            ops = operands(j)
+        elif name == "mv":
+            ops = operands(j)
+            if not any(x == "-t" or x.startswith("--target-directory") for x in lits[j:]):
+                ops = ops[:-1]  # the last operand is where things go, unless -t names it
+        elif name == "rsync" and any(
+            x.startswith("--del") or x == "--remove-source-files" for x in lits[j:]
+        ):
+            ops = operands(j)
+        elif name == "git" and "clean" in lits[j + 1 :]:
+            ops = operands(lits.index("clean", j + 1))
+            dirs = list(folders)
+            for n in range(j + 1, len(lits) - 1):
+                if lits[n] == "-C":
+                    dirs += [expand(lits[n + 1], f) for f in folders]
+            if any(is_ancestor(d) for d in dirs):
+                return True
+        else:
+            continue
+        if names_ancestor(ops):
+            return True
+    return False
+
+
+def shell_folder_problem(command, folders, depth=0, env=None):
     message = (
         "the command may move, delete or change an agent's settings folder, which "
         "would remove the denypeek hook; do that in your own terminal"
     )
-    sw = shell_words(command, folders[0] if folders else ".")
-    for script in shell_scripts(sw, depth):
-        if shell_folder_problem(script, folders, depth + 1):
-            return message
+    sw = shell_words(command, folders[0] if folders else ".", env)
+    for script, script_env in shell_scripts(sw, depth):
+        problem = shell_folder_problem(script, folders, depth + 1, script_env)
+        if problem:
+            return problem
     for seg in sw.segments:
         words = [w for w in seg if not _skip_word(w)]
         while words and _is_assignment(words[0]) != -1:
             words = words[1:]
         if not words:
             continue
+        if _ancestor_problem(words, folders):
+            return ANCESTOR_MESSAGE
         literals = [w.literal for w in words]
         verb = os.path.basename(literals[0]).lower()
         if (
@@ -897,11 +987,13 @@ class Word:
 
 
 class ShellWords:
-    __slots__ = ("segments", "nested")
+    __slots__ = ("segments", "nested", "pipes", "env")
 
     def __init__(self):
         self.segments = []  # list of list[Word], one per simple command
         self.nested = []  # command text inside $(...), `...`, <(...), >(...), =(...)
+        self.pipes = []  # per segment: True if a `|` sends its output to the next one
+        self.env = {}  # variables bound in the command: name -> list of possible values
 
     def words(self):
         return [w for seg in self.segments for w in seg]
@@ -994,11 +1086,14 @@ def _is_assignment(word):
 
 
 class _Lexer:
-    def __init__(self, text, cwd, home, env):
+    def __init__(self, text, cwd, home, env, choice=None):
         self.s, self.cwd, self.home, self.env = text, cwd, home, env
+        self.choice = choice or {}  # name -> which of several possible values to use
+        self.multi = set()  # names used that have several possible values
         self.out = ShellWords()
+        self.out.env = env
         self.seg, self.word = [], None
-        self.cmdpos, self.array = True, 0
+        self.cmdpos, self.array, self.array_name = True, 0, None
         self.budget = MAX_COMMAND
 
     # words and segments
@@ -1018,9 +1113,12 @@ class _Lexer:
         if w is None or not w.chars:
             return
         self.seg.append(w)
+        if self.array and self.array_name:  # x=(a '.e*' c): each element is a possible value
+            self.env.setdefault(self.array_name, []).append(w.literal)
+            return
         eq = _is_assignment(w)
         if eq != -1:
-            self.env[w.literal[:eq].split("[")[0]] = [c for c, _ in w.chars[eq + 1 :]]
+            self.env[w.literal[:eq].split("[")[0]] = [w.literal[eq + 1 :]]
             return  # an assignment keeps command position
         lit = w.literal
         if w.cmdpos and (
@@ -1030,10 +1128,22 @@ class _Lexer:
         if not self.array:
             self.cmdpos = False
 
-    def _end_segment(self):
+    def _end_segment(self, pipe=False):
         self._end_word()
         if self.seg:
+            lits = [w.literal for w in self.seg]
+            if len(lits) >= 3 and lits[0] == "for" and lits[2] == "in":
+                self.env[lits[1]] = lits[3:]  # for f in a '.e*': $f may be each of them
+            elif lits[0] == "set" and len(lits) > 1:
+                if "--" in lits:
+                    args = lits[lits.index("--") + 1 :]
+                else:
+                    args = [x for x in lits[1:] if not x.startswith(("-", "+"))]
+                for n, v in enumerate(args, 1):
+                    self.env[str(n)] = [v]
+                self.env["@"] = list(args)
             self.out.segments.append(self.seg)
+            self.out.pipes.append(pipe)
         self.seg, self.cmdpos = [], True
 
     def _splice(self, value, quoted):
@@ -1053,7 +1163,12 @@ class _Lexer:
         elif name == "PWD":
             value, quoted = self.cwd, True
         else:
-            value = self.env.get(name)
+            values = self.env.get(name)
+            value = None
+            if values:
+                if len(values) > 1:
+                    self.multi.add(name)
+                value = values[min(self.choice.get(name, 0), len(values) - 1)]
         if value is not None:
             self._start()
             self._splice(value, quoted)
@@ -1093,9 +1208,12 @@ class _Lexer:
                 self._add("$", Q if quoted else U)
                 return i + 1
             body = s[i + 2 : end].lstrip("~=^")  # zsh ${~x}, ${=x}, ${^x}
-            m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(:?[-=+])?(.*)", body, re.S)
-            if m and not m.group(2) and not m.group(3):
-                self._variable(m.group(1), quoted)
+            arr = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\[[^\]]*\]", body)
+            m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*|\d+|[@*])(:?[-=+])?(.*)", body, re.S)
+            if arr:
+                self._variable(arr.group(1), quoted)  # ${a[0]}, ${a[@]}: any element
+            elif m and not m.group(2) and not m.group(3):
+                self._variable("@" if m.group(1) == "*" else m.group(1), quoted)
             elif m and m.group(2) and m.group(2).lstrip(":") in "-=":
                 # ${x:-word}: when x is unset the shell uses `word`; check that reading too
                 sub = _Lexer(m.group(3), self.cwd, self.home, self.env)
@@ -1110,8 +1228,11 @@ class _Lexer:
         if m:
             self._variable(m.group(1), quoted)
             return i + 1 + m.end()
-        if nxt and (nxt.isdigit() or nxt in "#?@*$!-"):
-            self._start()  # $1, $#, $?, $@ ...: run-time text
+        if nxt and (nxt.isdigit() or nxt in "@*"):
+            self._variable("@" if nxt in "@*" else nxt, quoted)  # $1, $@: bound by set --
+            return i + 2
+        if nxt and nxt in "#?$!-":
+            self._start()  # $#, $?, $$ ...: run-time text
             return i + 2
         self._add("$", Q if quoted else U)
         return i + 1
@@ -1124,7 +1245,13 @@ class _Lexer:
             if c in " \t":
                 self._end_word()
                 i += 1
-            elif c in "\n;&|":
+            elif c == "|" and s.startswith("||", i):
+                self._end_segment()
+                i += 2
+            elif c == "|":
+                self._end_segment(pipe=True)  # `|` and `|&` send output to the next command
+                i += 2 if s.startswith("|&", i) else 1
+            elif c in "\n;&":
                 self._end_segment()
                 i += 1
             elif c == "#" and self.word is None:
@@ -1182,6 +1309,7 @@ class _Lexer:
                     self._end_word()
                     self.array -= 1
                     if not self.array:
+                        self.array_name = None
                         self._end_word()
                 else:
                     self._end_segment()
@@ -1220,6 +1348,7 @@ class _Lexer:
         w = self.word
         if w is not None and w.chars and w.chars[-1] == ("=", U) and _is_assignment(w) != -1:
             self.array += 1  # x=(a b c): the elements are words; the `(` is not a glob
+            self.array_name = w.literal[: _is_assignment(w)].split("[")[0]
             self._end_word_keep_array()
             return i + 1
         if w is None and self.cmdpos and not self.array:
@@ -1265,13 +1394,37 @@ class _Lexer:
                 self.env.pop(w.literal[:eq].split("[")[0], None)
 
 
+MAX_FORKS = 64  # readings of one command when variables have several possible values
+
+
 def shell_words(command, cwd, env=None):
-    """Lex a command (SPEC 3a G1). Raises HookTimeout on runaway input."""
+    """Lex a command (SPEC 3a G1). A variable that may hold several values (a `for` list,
+    `set --`, an array) is read once per value, and the words of every reading are kept."""
     text = unicodedata.normalize("NFC", command)
     text = text.replace("\\\r\n", "").replace("\\\n", "")
     text = windows_paths(text)
-    lexer = _Lexer(text, cwd, home_dir(), {} if env is None else env)
-    return lexer.run()
+    home = home_dir()
+    base = dict(env or {})
+    first = _Lexer(text, cwd, home, dict(base))
+    out = first.run()
+    names = sorted(first.multi)
+    if not names:
+        return out
+    sizes = [max(len(first.env.get(n) or [None]), 1) for n in names]
+    total = 1
+    for n in sizes:
+        total *= n
+    if total > MAX_FORKS:
+        raise HookTimeout("variables in the command have too many possible values to check")
+    for k in range(1, total):
+        choice, rest = {}, k
+        for name, n in zip(names, sizes):
+            choice[name], rest = rest % n, rest // n
+        more = _Lexer(text, cwd, home, dict(base), choice).run()
+        out.segments += more.segments
+        out.pipes += more.pipes
+        out.nested += more.nested
+    return out
 
 
 # --- from a word to paths ------------------------------------------------------------------
@@ -1784,34 +1937,45 @@ def switches_guard(tokens):
 
 
 SCRIPT_CHARS = set(" \t\n;|&<>$`")
-SHELL_RUNNERS = {
-    "sh",
-    "bash",
-    "zsh",
-    "dash",
-    "ksh",
-    "mksh",
-    "yash",
-    "busybox",
-    "eval",
-    "su",
-    "watch",
-    "script",
-}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "mksh", "yash"}
+SHELL_RUNNERS = SHELLS | {"busybox", "su", "watch", "script"}
+DASH_C = re.compile(r"-[A-Za-z]*c[A-Za-z]*$")  # -c, -lc, -ec ...
 
 
 def shell_scripts(sw, depth):
-    """Text the shell itself reads again as a command (SPEC 3a): $(...), `...`, <(...), and
-    words given to sh -c, bash -c, zsh -c, eval and similar. Other quoted text is data."""
-    out = list(sw.nested)
-    for seg in sw.segments:
-        runner = False
-        for w in seg:
-            lit = w.literal
-            if runner and SCRIPT_CHARS & set(lit):
-                out.append(lit)
-            if os.path.basename(lit).lower() in SHELL_RUNNERS:
-                runner = True
+    """Text the shell reads again as a command (SPEC 3a G1 (b)), each with the values it is
+    given: $(...), `...` and <(...); the string after -c for sh, bash, zsh, dash or ksh (also
+    behind sudo, env, timeout, xargs or find -exec), whose next words become $0, $1 ...;
+    every argument of eval, joined; and the strings in a pipeline that ends in a shell."""
+    out = [(n, sw.env) for n in sw.nested]
+    segs = sw.segments
+    for k, seg in enumerate(segs):
+        lits = [w.literal for w in seg]
+        names = [os.path.basename(x).lower() for x in lits]
+        for j, name in enumerate(names):
+            if name == "eval":
+                out.append((" ".join(lits[j + 1 :]), sw.env))
+            if name not in SHELL_RUNNERS:
+                continue
+            flag = next((n for n in range(j + 1, len(lits)) if DASH_C.match(lits[n])), None)
+            if flag is not None and flag + 1 < len(lits):
+                args = lits[flag + 2 :]
+                env = dict(sw.env)
+                for n, v in enumerate(args):
+                    env[str(n)] = [v]
+                env["@"] = list(args[1:]) or [""]
+                out.append((lits[flag + 1], env))
+            out += [(x, sw.env) for x in lits[j + 1 :] if SCRIPT_CHARS & set(x)]
+        # a pipeline that ends in a shell reading its script from the pipe
+        if k > 0 and sw.pipes[k - 1] and any(n in SHELLS for n in names):
+            if not any(DASH_C.match(x) for x in lits):
+                start = k - 1
+                while start > 0 and sw.pipes[start - 1]:
+                    start -= 1
+                for prev in segs[start:k]:
+                    words = [w.literal for w in prev]
+                    out.append((" ".join(words[1:]), sw.env))
+                    out += [(x, sw.env) for x in words[1:]]
     if out and depth >= MAX_NESTING:
         raise HookTimeout("commands are nested too deeply to check")
     return out
@@ -1833,11 +1997,11 @@ def _literal_hits(token, folder, rules):
     return found
 
 
-def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True):
+def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, env=None):
     """`globs`: read the command as the shell would (SPEC 3a). False for text that is only
     data to its program, such as python3 -c '...': there only names written out count."""
     tokens, parts = split_tokens(command)
-    sw = shell_words(command, cwd)
+    sw = shell_words(command, cwd, env)
     words = sw.words()
     if switches_guard(tokens) or switches_guard([w.literal for w in words]):
         return (
@@ -1863,8 +2027,8 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True):
                 return reason_for(hits[0], "names")
     if globs:
         # 2. what the shell can expand each word to (G1 to G6)
-        for script in shell_scripts(sw, depth):
-            reason = check_command(script, cwd, rules, deadline, depth + 1, extra)
+        for script, script_env in shell_scripts(sw, depth):
+            reason = check_command(script, cwd, rules, deadline, depth + 1, extra, env=script_env)
             if reason:
                 return reason
         for w in words:
@@ -1983,12 +2147,11 @@ def decide(event, rules):
             hits = path_hits(s, folder, rules)
             if hits:
                 return reason_for(hits[0], "uses")
-            if (
-                is_path_key(key)
-                and is_agent_dir(expand(s, folder))
-                and any(w in tool.lower() for w in ("delete", "remove", "move", "rename"))
-            ):
+            moving = any(w in tool.lower() for w in ("delete", "remove", "move", "rename"))
+            if is_path_key(key) and moving and is_agent_dir(expand(s, folder)):
                 return "deleting or moving an agent's settings folder would remove the hook"
+            if is_path_key(key) and moving and is_ancestor(expand(s, folder)):
+                return ANCESTOR_MESSAGE  # G7: Cursor's Delete on the home folder
             if is_path_key(key):
                 problem = settings_edit_problem(expand(s, folder) or "", tool_input)
                 if problem:

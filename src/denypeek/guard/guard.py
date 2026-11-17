@@ -983,6 +983,7 @@ def _ansi_c(match):
 # into a pattern that matches at least every path bash, zsh or sh could reach with it.
 
 U, Q = "u", "q"
+X = "x"  # zero-width mark: text the guard cannot resolve ($(...), unknown $name, $#, ...)
 NUMERIC_RANGE = re.compile(r"<\d*-\d*>")
 CMD_KEYWORDS = {"!", "if", "then", "else", "elif", "do", "while", "until", "time", "{", "}"}
 WORD_WALK_LIMIT = 20_000  # entries one word's pattern may visit; past this it is denied (G6)
@@ -1161,6 +1162,11 @@ class _Lexer:
             self.out.pipes.append(pipe)
         self.seg, self.cmdpos = [], True
 
+    def _opaque(self):
+        """Mark run-time text: it adds no characters, but a path part that starts with it
+        does not start with a written wildcard (G8)."""
+        self._add("", X)
+
     def _splice(self, value, quoted):
         """A variable's literal value: data. Unquoted, it may glob and is split on blanks."""
         for ch in value:
@@ -1188,7 +1194,7 @@ class _Lexer:
             self._start()
             self._splice(value, quoted)
         else:
-            self._start()  # unknown: run-time text (known miss 2); the word still exists
+            self._opaque()  # unknown: run-time text (known miss 2); the word still exists
 
     def _nested(self, i, open_ch, close_ch):
         end = _matching(self.s, i, open_ch, close_ch)
@@ -1196,7 +1202,7 @@ class _Lexer:
             self.out.nested.append(self.s[i + 1 :])
             return len(self.s)
         self.out.nested.append(self.s[i + 1 : end])
-        self._start()
+        self._opaque()
         return end + 1
 
     def _dollar(self, i, quoted):
@@ -1213,7 +1219,7 @@ class _Lexer:
             return i + 1  # $"..." is "..." here
         if s.startswith("$((", i):
             end = _matching(s, i + 1, "(", ")")
-            self._start()
+            self._opaque()
             return len(s) if end == -1 else end + 1  # arithmetic: run-time text
         if nxt == "(":
             return self._nested(i + 1, "(", ")")
@@ -1237,7 +1243,7 @@ class _Lexer:
                     self._splice(w.literal, quoted)
                 self.out.nested.extend(sub.out.nested)
             else:
-                self._start()  # ${#x}, ${x#p}, ${x^^}, ${x[1]}: run-time text
+                self._opaque()  # ${#x}, ${x#p}, ${x^^}, ${x[1]}: run-time text
             return end + 1
         m = re.match(r"[~=^]*([A-Za-z_][A-Za-z0-9_]*)", s[i + 1 :])  # zsh $~x, $=x, $^x
         if m:
@@ -1247,7 +1253,7 @@ class _Lexer:
             self._variable("@" if nxt in "@*" else nxt, quoted)  # $1, $@: bound by set --
             return i + 2
         if nxt and nxt in "#?$!-":
-            self._start()  # $#, $?, $$ ...: run-time text
+            self._opaque()  # $#, $?, $$ ...: run-time text
             return i + 2
         self._add("$", Q if quoted else U)
         return i + 1
@@ -1291,7 +1297,7 @@ class _Lexer:
                 end = s.find("`", i + 1)
                 end = len(s) if end == -1 else end
                 self.out.nested.append(s[i + 1 : end])
-                self._start()
+                self._opaque()
                 i = end + 1
             elif c == "<" and NUMERIC_RANGE.match(s, i):
                 end = NUMERIC_RANGE.match(s, i).end()
@@ -1546,6 +1552,34 @@ def _has_glob(chars):
     return any(k == U and (c in GLOB_CHARS or c in OPERATOR_CHARS) for c, k in chars)
 
 
+_HIDDEN_CACHE = {}
+
+
+def hidden_names():
+    """SPEC 3a G8: "auto" or "always", from `hidden_names` in ~/.denypeek/guard-state.json.
+    A missing, unreadable or unknown value means "always", and so does Windows, where
+    PowerShell and cmd wildcards match dot files."""
+    if WINDOWS:
+        return "always"
+    path = os.path.join(home_dir(), ".denypeek", "guard-state.json")
+    try:
+        key = (path, os.stat(path).st_mtime_ns)
+    except (OSError, ValueError):
+        return "always"
+    if key not in _HIDDEN_CACHE:
+        value = "always"
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.loads(f.read(1_000_000))
+            if isinstance(data, dict) and data.get("hidden_names") == "auto":
+                value = "auto"
+        except (OSError, ValueError):
+            pass
+        _HIDDEN_CACHE.clear()
+        _HIDDEN_CACHE[key] = value
+    return _HIDDEN_CACHE[key]
+
+
 def _bracket_close(chars, i):
     """Index of the `]` closing an unquoted bracket at i (POSIX rules), or -1."""
     j = i + 1
@@ -1667,20 +1701,22 @@ def widen(chars):
             return
         rx = "".join(re.escape(t[1]) if t[0] == "lit" else t[1] for t in toks)
         dot = (toks[0][0] == "lit" and toks[0][1] == ".") or op_start[0]
+        # G8: does the part start with a `*`, `?` or bracket written in the command?
+        lead = toks[0][0] in ("star", "one")
         if any(
             t == ("star", ".*") and n + 1 < len(toks) and toks[n + 1] == ("star", ".*")
             for n, t in enumerate(toks)
         ):
-            parts.append(("any", None if rx == ".*.*" else rx, dot))
+            parts.append(("any", None if rx == ".*.*" else rx, dot, lead))
         else:
-            parts.append(("pat", rx, dot))
+            parts.append(("pat", rx, dot, lead))
 
     def cut(at_hash, operator=True):
         if at_hash and cur:
             cur.pop()  # G3a: `#` repeats the unit before it, which may be absent
         if not cur and operator:
             op_start[0] = True  # G2: a part that begins with a G3 operator; not a bracket
-        cur.append(("star", ".*"))
+        cur.append(("cut", ".*"))  # widened text: always counts hidden names (G8)
 
     while i < len(chars):
         c, k = chars[i]
@@ -1744,7 +1780,7 @@ def _entries(folder, budget):
         return []
 
 
-def _descendants(path, budget, include_self=True):
+def _descendants(path, budget, include_self=True, skip_hidden=False):
     out = [path] if include_self else []
     stack = [path]
     while stack:
@@ -1752,6 +1788,8 @@ def _descendants(path, budget, include_self=True):
         if is_network(d) or not os.path.isdir(d) or os.path.islink(d) and d != path:
             continue
         for n in _entries(d, budget):
+            if skip_hidden and n.startswith("."):
+                continue
             p = os.path.join(d, n)
             out.append(p)
             if os.path.isdir(p) and not os.path.islink(p):
@@ -1763,6 +1801,7 @@ def walk_pattern(bases, parts, tree, budget):
     """Every existing path the widened pattern can reach from the base folders."""
     cur = list(dict.fromkeys(bases))
     globbed = False
+    auto = hidden_names() == "auto"
     for n, part in enumerate(parts):
         kind = part[0]
         nxt = []
@@ -1776,14 +1815,18 @@ def walk_pattern(bases, parts, tree, budget):
             globbed = True
             rx = part[1]
             first_dot = part[2]
+            # G8 auto: a `*`, `?` or bracket written at the start of a part skips hidden names
+            hide = auto and part[3]
             if kind == "any":
                 dirs = []
                 for d in cur:
-                    dirs += [p for p in _descendants(d, budget) if os.path.isdir(p)]
+                    dirs += [
+                        p for p in _descendants(d, budget, skip_hidden=hide) if os.path.isdir(p)
+                    ]
                 if rx is None:  # a part that is exactly `**`
                     if n == len(parts) - 1:
                         for d in cur:
-                            nxt += _descendants(d, budget)
+                            nxt += _descendants(d, budget, skip_hidden=hide)
                     else:
                         nxt = dirs
                     cur = list(dict.fromkeys(nxt))
@@ -1792,6 +1835,8 @@ def walk_pattern(bases, parts, tree, budget):
             pat = re.compile(rx.replace(".*.*", ".*"), re.S | re.I)
             for d in cur:
                 names = _entries(d, budget)
+                if hide:
+                    names = [x for x in names if not x.startswith(".")]
                 if first_dot:
                     names += [".", ".."]
                 nxt += [os.path.join(d, x) for x in names if pat.fullmatch(x)]
@@ -1971,9 +2016,14 @@ def grep_targets(part, cwd):
     honours_ignores = prog in ("rg", "ag", "git-grep")
     out = []
     for p in paths:
-        full = expand(p, cwd)
-        if full and not is_network(full) and os.path.isdir(full):
-            out.append((full, honours_ignores))
+        found = [expand(p, cwd)]
+        if any(c in p for c in "*?["):  # grep -r foo *: search what the pattern matches
+            w = Word()
+            w.chars = [(c, U if c in "*?[]" else Q) for c in p]
+            found += word_paths(w, [cwd])
+        for full in found:
+            if full and not is_network(full) and os.path.isdir(full):
+                out.append((full, honours_ignores))
     return out
 
 
@@ -2048,6 +2098,90 @@ def shell_scripts(sw, depth):
     return out
 
 
+HIDDEN_SWITCH_WORDS = ("dotglob", "globdots", "globignore", "bashopts")
+OPTION_VERBS = {"shopt", "setopt", "unsetopt", "emulate"}
+HIDDEN_MESSAGE = (
+    "the command may turn on matching of hidden file names (dotglob, globdots, GLOBIGNORE), "
+    "which denypeek's 'auto' setting relies on being off; do that in your own terminal, or "
+    "run: denypeek guard install --hidden always"
+)
+
+
+def hidden_switch_problem(command, sw):
+    """SPEC 3a G8, in `auto` only: deny anything that turns hidden-name matching on, or might."""
+    text = re.sub(r"[\"'\\]", "", command).lower().replace("_", "")
+    if any(k in text for k in HIDDEN_SWITCH_WORDS):  # (1), as written
+        return HIDDEN_MESSAGE
+    # (1) again, on the words as the shell finally sees them: line continuations joined,
+    # $'...' decoded, variables given a literal value spliced in, braces expanded
+    for w in sw.words():
+        for chars in _brace_expand(list(w.chars)):
+            flat = "".join(c for c, _ in chars).lower().replace("_", "")
+            if any(k in flat for k in HIDDEN_SWITCH_WORDS):
+                return HIDDEN_MESSAGE
+
+    def opaque(w):
+        return any(k == X for _, k in w.chars) or bool(set(w.literal) & set("$`"))
+
+    for seg in sw.segments:
+        lits = [w.literal for w in seg]
+        names = [os.path.basename(x).lower() for x in lits]
+        for j, name in enumerate(names):
+            rest = seg[j + 1 :]
+            # (2) zsh's one-letter option 4 is GLOB_DOTS: zsh -4, zsh -f4c, set -4, setopt -4
+            if name in ("zsh", "set", "setopt", "unsetopt") and any(
+                w.literal[:1] in "-+" and "4" in w.literal for w in rest
+            ):
+                return HIDDEN_MESSAGE
+            # (3) an option-changing word whose option name is not a readable literal
+            if name in OPTION_VERBS and any(opaque(w) for w in rest):
+                return HIDDEN_MESSAGE
+            if name == "set" or name in SHELLS:
+                for n, w in enumerate(rest[:-1]):
+                    if w.literal in ("-o", "+o", "-O", "+O") and opaque(rest[n + 1]):
+                        return HIDDEN_MESSAGE
+        for w in seg:
+            if w.literal.startswith("options") and opaque(w):  # zsh options[$x]=on
+                return HIDDEN_MESSAGE
+        # (4) setting a variable whose name is not a readable literal: it could be GLOBIGNORE
+        if _sets_unreadable_name(seg, opaque):
+            return HIDDEN_MESSAGE
+    return None
+
+
+DECLARE_VERBS = {"declare", "typeset", "export", "readonly", "local"}
+
+
+def _sets_unreadable_name(seg, opaque):
+    """`${n}IGNORE=x`, `declare ${n}IGNORE=x`, `printf -v ${n}IGNORE x`, `read $n` ..."""
+
+    def unreadable_name(w):
+        chars = w.chars
+        eq = next((n for n, (c, k) in enumerate(chars) if c == "=" and k == U), len(chars))
+        head = Word()
+        head.chars = chars[:eq]
+        return opaque(head)
+
+    lits = [w.literal for w in seg]
+    names = [os.path.basename(x).lower() for x in lits]
+    for w in seg:
+        if w.cmdpos and any(c == "=" and k == U for c, k in w.chars) and unreadable_name(w):
+            return True
+    for j, name in enumerate(names):
+        rest = seg[j + 1 :]
+        if name in DECLARE_VERBS:
+            if any(not x.literal.startswith(("-", "+")) and unreadable_name(x) for x in rest):
+                return True
+        elif name == "printf":
+            for n, x in enumerate(rest[:-1]):
+                if x.literal == "-v" and opaque(rest[n + 1]):
+                    return True
+        elif name == "read":
+            if any(not x.literal.startswith("-") and opaque(x) for x in rest):
+                return True
+    return False
+
+
 def _skip_word(w):
     return w.cmdpos and w.literal in ("[", "[[", "]]")
 
@@ -2080,6 +2214,10 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
     folders = [cwd] + list(extra) + cd_targets(parts, cwd)
     if len(words) > MAX_TOKENS or len(tokens) > MAX_TOKENS:
         raise HookTimeout("the command has too many words to check")
+    if hidden_names() == "auto":
+        problem = hidden_switch_problem(command, sw)
+        if problem:
+            return problem
     # 1. names written out, in any word or quoted text (G5, as written)
     for tok in tokens:
         tick()

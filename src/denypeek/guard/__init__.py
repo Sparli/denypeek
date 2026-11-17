@@ -21,7 +21,9 @@ from .install_base import (
     USE_WRAPPER,
     Change,
     ConfigError,
+    detect_hidden,
     guard_path,
+    has_agent_state,
     hook_command,
     hook_python,
     install,
@@ -65,8 +67,9 @@ def copy_guard(home: Home) -> None:
     atomic_write(guard_path(home), GUARD_SOURCE.read_bytes(), mode=0o600)
 
 
-def do_install(home: Home, agents=None, python: Optional[str] = None):
-    """Returns (changes, warning about the chosen Python or None)."""
+def do_install(home: Home, agents=None, python: Optional[str] = None, hidden=None):
+    """Returns (changes, warning about the chosen Python or None). Records the hidden-name
+    setting (SPEC 3a G8): `hidden="always"` forces it; otherwise it is detected."""
     py, warning = stable_python(python)
     copy_guard(home)
     if USE_WRAPPER:
@@ -76,6 +79,12 @@ def do_install(home: Home, agents=None, python: Optional[str] = None):
     changes = [
         install(spec, home, hook_command(py, home, spec.name), state) for spec in pick(agents)
     ]
+    if hidden == "always":
+        state.update(hidden_names="always", hidden_names_reason="forced with --hidden always")
+        state["hidden_names_forced"] = True
+    elif not state.get("hidden_names_forced"):
+        value, reason = detect_hidden(home)
+        state.update(hidden_names=value, hidden_names_reason=reason, hidden_names_forced=False)
     save_state(home, state)
     return changes, warning
 
@@ -83,7 +92,7 @@ def do_install(home: Home, agents=None, python: Optional[str] = None):
 def do_uninstall(home: Home, agents=None) -> list[Change]:
     state = load_state(home)
     changes = [uninstall(spec, home, state) for spec in pick(agents)]
-    if state:
+    if has_agent_state(state):
         save_state(home, state)
     else:  # nothing of ours is installed any more
         try:
@@ -147,6 +156,19 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
         "patterns": str(patterns_path(home)),
         "patterns_present": patterns_path(home).exists(),
     }
+    state = load_state(home)
+    detected, why = detect_hidden(home)
+    stored = state.get("hidden_names")
+    info["hidden_names"] = stored if stored in ("always", "auto") else "always"
+    info["hidden_names_reason"] = state.get("hidden_names_reason") or (
+        "no setting recorded, so the safe default" if stored is None else "unknown setting"
+    )
+    info["hidden_names_forced"] = bool(state.get("hidden_names_forced"))
+    info["hidden_names_detected"] = detected
+    info["hidden_names_changed"] = (
+        not info["hidden_names_forced"] and stored is not None and detected != stored
+    )
+    info["hidden_names_detected_reason"] = why
     return rows, info
 
 

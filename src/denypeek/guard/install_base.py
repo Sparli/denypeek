@@ -133,6 +133,75 @@ def wrapper_python(home: Home) -> Optional[str]:
     return None
 
 
+# --- SPEC 3a G8: hidden names ----------------------------------------------------------------
+# bash and zsh startup files, read only, to see whether hidden-name matching may be on.
+# Tests replace these lists, so no test reads a real /etc file.
+USER_STARTUP_FILES = (
+    ".bashrc",
+    ".bash_profile",
+    ".bash_login",
+    ".profile",
+    ".zshrc",
+    ".zshenv",
+    ".zprofile",
+    ".zlogin",
+)
+SYSTEM_STARTUP_FILES = (
+    "/etc/profile",
+    "/etc/bashrc",
+    "/etc/bash.bashrc",
+    "/etc/zshrc",
+    "/etc/zshenv",
+    "/etc/zprofile",
+    "/etc/zlogin",
+    "/etc/zsh/zshrc",
+    "/etc/zsh/zshenv",
+    "/etc/zsh/zprofile",
+    "/etc/zsh/zlogin",
+)
+SYSTEM_STARTUP_DIRS = ("/etc/profile.d",)
+HIDDEN_SWITCHES = ("dotglob", "globdots", "globignore")
+HIDDEN_KEYS = ("hidden_names", "hidden_names_reason", "hidden_names_forced")
+
+
+def startup_files(home: Home) -> list:
+    out = [home.root / n for n in USER_STARTUP_FILES]
+    zdot = os.environ.get("ZDOTDIR")
+    if zdot:
+        out += [Path(zdot) / n for n in USER_STARTUP_FILES if n.startswith(".z")]
+    out += [Path(p) for p in SYSTEM_STARTUP_FILES]
+    for d in SYSTEM_STARTUP_DIRS:
+        try:
+            out += sorted(Path(d).glob("*.sh"))
+        except OSError:
+            pass
+    return out
+
+
+def detect_hidden(home: Home) -> tuple:
+    """("always" or "auto", reason). `always` when a bash or zsh startup file names dotglob,
+    globdots or GLOBIGNORE (ignoring case and `_`), or one exists but cannot be read."""
+    if os.name == "nt":
+        return "always", "Windows: PowerShell and cmd wildcards match hidden files"
+    for path in startup_files(home):
+        try:
+            if not path.is_file():
+                continue
+            with open(path, "rb") as f:
+                text = f.read(2_000_000).decode("utf-8", "replace")
+        except OSError:
+            return "always", f"{home.display(path)} exists but cannot be read"
+        flat = text.lower().replace("_", "")
+        for word in HIDDEN_SWITCHES:
+            if word in flat:
+                return "always", f"{home.display(path)} names {word}"
+    return "auto", "no bash or zsh startup file turns on dotglob, globdots or GLOBIGNORE"
+
+
+def has_agent_state(state: dict) -> bool:
+    return any(k not in HIDDEN_KEYS for k in state)
+
+
 def state_path(home: Home) -> Path:
     return home.denypeek_dir / "guard-state.json"
 

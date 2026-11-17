@@ -184,7 +184,7 @@ def cmd_guard_install(args) -> int:
     from .guard import SPECS, do_install
 
     home = _home(args)
-    changes, warning = do_install(home, args.agent, args.python)
+    changes, warning = do_install(home, args.agent, args.python, args.hidden)
     ok = [c for c in changes if not c.error]
     if len(ok) == len(changes):
         print("denypeek guard installed:")
@@ -199,6 +199,13 @@ def cmd_guard_install(args) -> int:
         for note in SPECS[c.agent].notes:
             print(f"      note: {note}")
     print(f"Secret-file patterns: {home.display(home.denypeek_dir / 'secretfiles')}")
+    from .guard.install_base import load_state
+
+    state = load_state(home)
+    print(
+        f"Hidden files: {state.get('hidden_names', 'always')} "
+        f"({state.get('hidden_names_reason', 'default')})"
+    )
     if warning:
         print(f"WARNING: {warning}")
     print("Restart open agent sessions, then check it works: denypeek guard test")
@@ -285,6 +292,12 @@ def cmd_guard_status(args) -> int:
                 "example: denypeek guard install --python /usr/bin/python3"
             )
         print(f"  Patterns:    {'present' if info['patterns_present'] else 'defaults (no file)'}")
+        print(f"  Hidden files: {info['hidden_names']} ({info['hidden_names_reason']})")
+        if info["hidden_names_changed"]:
+            print(
+                f"  CHANGED: your startup files now say {info['hidden_names_detected']} "
+                f"({info['hidden_names_detected_reason']}). Run: denypeek guard install"
+            )
     all_ok = (
         all(r.installed and r.health is None for r in rows)
         and info["guard_present"]
@@ -366,6 +379,12 @@ def build_parser() -> argparse.ArgumentParser:
     gi = gsub.add_parser("install", parents=[common], help="wire the guard into each agent")
     gi.add_argument("--agent", action="append", help=agent_help)
     gi.add_argument("--python", help="Python to run the hook with (default: a stable python3)")
+    gi.add_argument(
+        "--hidden",
+        choices=["always"],
+        help="count hidden files for every pattern, as when dotglob or globdots is on "
+        "(default: decided from your bash and zsh startup files)",
+    )
     gi.set_defaults(func=cmd_guard_install)
     gs = gsub.add_parser("status", parents=[common], help="show where the guard is installed")
     gs.add_argument("--agent", action="append", help=agent_help)

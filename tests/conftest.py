@@ -124,6 +124,12 @@ def isolated(tmp_path, monkeypatch):
     from denypeek.guard import guard as guard_module
 
     monkeypatch.setattr(guard_module, "_home", [str(home)])
+    # G8: install reads bash and zsh startup files; never the real /etc ones in tests.
+    from denypeek.guard import install_base
+
+    monkeypatch.setattr(install_base, "SYSTEM_STARTUP_FILES", ())
+    monkeypatch.setattr(install_base, "SYSTEM_STARTUP_DIRS", ())
+    monkeypatch.delenv("ZDOTDIR", raising=False)
     _state["violations"].clear()
     _state["active"] = True
     yield home

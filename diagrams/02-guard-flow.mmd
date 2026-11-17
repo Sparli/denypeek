@@ -20,7 +20,7 @@ flowchart TD
     OFF -->|yes| DENY
     OFF -->|no| K{"Kind of string"}
     K -->|"command over 100,000<br/>chars, or path over 4,096"| DENY
-    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME, $PWD,<br/>$IFS, braces, line continuations, redirections,<br/>globs, same-command variables (capped); split at :, = and @;<br/>follow cd and the tool's working folder;<br/>recurse into bash -c and eval"]
+    K -->|"command field"| SH["Shell check, the shell-word rule:<br/>read words as bash, zsh and sh would; quoted text is literal;<br/>check each word as written and widened to a pattern<br/>that reaches at least what any covered shell mode can;<br/>follow same-command variables, $(...), bash -c and eval;<br/>split at :, = and @; follow cd and the tool's working folder"]
     K -->|"command field,<br/>apply_patch"| AP["Read the file names<br/>in the patch headers"]
     K -->|"path field"| PT["Path check against cwd and<br/>the tool's working folder,<br/>also on the symlink target"]
     SH --> GR{"Recursive search?<br/>grep -r, -d recurse,<br/>rg, ag, ack, git grep"}

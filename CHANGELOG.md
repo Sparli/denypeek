@@ -4,7 +4,7 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - 2026-11-16
+## [0.1.0] - unreleased
 
 First release. The project was renamed from keyhush before this release, because another
 project already uses that name.
@@ -32,6 +32,9 @@ Hardened before release through QA passes and security reviews of the guard, sca
   hooks off in any settings file.
 - Known bypasses are blocked (`git show HEAD:.env`, brace expansion, `$'...'` quoting, NFD names,
   `curl -F f=@.env` and others). The README lists the misses that remain.
+- The shell check follows one written rule for globs (the shell-word rule): if bash, zsh or sh,
+  in any covered mode, can expand a word to a protected path, the command is denied. Real
+  shells check it in CI (the glob oracle in `tests/oracle`). Quoted patterns are literal.
 - File names are escaped in all output, and a Cursor database with a non-empty `-wal` file is
   reported as not fully scanned.
 - CI pins actions to commit SHAs and runs on Linux, macOS and Windows, and on Python 3.9.

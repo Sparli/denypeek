@@ -147,7 +147,7 @@ flowchart TD
     OFF -->|yes| DENY
     OFF -->|no| K{"Kind of string"}
     K -->|"command over 100,000<br/>chars, or path over 4,096"| DENY
-    K -->|"command field"| SH["Shell check: undo quotes, $'...', ~, $HOME, $PWD,<br/>$IFS, braces, line continuations, redirections,<br/>globs, same-command variables (capped); split at :, = and @;<br/>follow cd and the tool's working folder;<br/>recurse into bash -c and eval"]
+    K -->|"command field"| SH["Shell check, the shell-word rule:<br/>read words as bash, zsh and sh would; quoted text is literal;<br/>check each word as written and widened to a pattern<br/>that reaches at least what any covered shell mode can;<br/>follow same-command variables, $(...), bash -c and eval;<br/>split at :, = and @; follow cd and the tool's working folder"]
     K -->|"command field,<br/>apply_patch"| AP["Read the file names<br/>in the patch headers"]
     K -->|"path field"| PT["Path check against cwd and<br/>the tool's working folder,<br/>also on the symlink target"]
     SH --> GR{"Recursive search?<br/>grep -r, -d recurse,<br/>rg, ag, ack, git grep"}
@@ -200,16 +200,35 @@ How a blocked `.env` read works:
    and path fields get the path check, against the session folder and any working folder the
    tool names (`workdir`, `dir_path`...). A command over 100,000 characters or a path over 4,096
    is denied as too long to check, never skipped.
-6. **The shell check undoes common disguises.** Quotes and `$'...'` quoting, `~`, `$HOME`, `$PWD`,
-   `$IFS`, `{a,b}` braces and `{m..o}` sequences, backslash line continuations, redirections such
-   as `<.env`, globs such as `.e*` (including hidden files), bracket expressions such as `[!x]`,
-   `[^x]` and `[[:alpha:]]` (each read as "any one character", so the check never matches less
-   than the shell), recursive `**/`, zsh `(a|b)` groups, and the extglob and zsh EXTENDED_GLOB
-   forms an agent can switch on (`@(…)`, `!(…)`, `^x`, `x#`, `(#i)`), variables set earlier in the same command
-   (`a=.e; cat ${a}nv`), words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`),
-   folders entered with `cd`, Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`),
-   and scripts nested in `bash -c` or `eval`. Agent-run `denypeek guard install` and `uninstall`
-   are denied.
+6. **The shell check reads words the way the shell does: the shell-word rule.** If bash, zsh or
+   sh can expand an argument word to a protected path, the command is denied. Covered modes,
+   alone or combined, whether set earlier or by the command itself: bash and sh defaults; bash
+   `extglob`, `globstar`, `dotglob`, `nocaseglob`; zsh defaults; zsh `extendedglob`, `kshglob`,
+   `globdots`, `nocaseglob`, `globstarshort`. The check may deny more than the shell would
+   reach, never less:
+   - `*`, `?` and bracket expressions keep their meaning. Hidden names always count, letter case
+     never does, and `**` matches at any depth.
+   - Any other pattern syntax a covered mode can read (`(…)`, `#`, `^`, `x~y`, `<1-9>`, `@(…)`,
+     `{....}`) widens the rest of that path part to "anything". If it could reach past a `/`, it
+     widens to everything under that point.
+   - Quoted text is literal, so `echo '*'`, `grep -o '[a-z]*' README.md` and
+     `find . -name '*.py'` pass. Quoting is judged where a value is used: in
+     `a='[!x]'; cat .en$a`, the `[!x]` counts.
+   - Each word is checked as written and as widened.
+   - Also followed:
+     - quoting: `$'...'`;
+     - home and folder forms: `~`, `~+`, `$HOME`, `$PWD`;
+     - splitting: `$IFS`, braces and `{m..o}` sequences;
+     - variables given a literal value in the same command;
+     - nested commands: `$(…)`, backticks, `<(…)`, and scripts given to `sh -c`, `bash -c`,
+       `zsh -c` or `eval`;
+     - redirections and line continuations;
+     - words after `:`, `=` and `@` (`git show HEAD:.env`, `curl -F f=@.env`);
+     - folders entered with `cd`;
+     - Windows paths and home variables (`C:\proj\.env`, `%USERPROFILE%`).
+   - Real bash, zsh and sh check this in CI: the glob oracle in `tests/oracle` expands thousands
+     of generated words in every covered mode. Agent-run `denypeek guard install` and
+     `uninstall` are denied.
 7. **The guard protects itself.** Any agent access to `~/.denypeek/**`, to the user-level hook
    config files and to your per-user Python folders is denied, whatever the pattern list says.
    Commands may list or read `~/.claude`, `~/.codex`, `~/.cursor` and `~/.gemini` but not move,
@@ -523,19 +542,37 @@ in-place `.bak` files.
 - **Not live-tested in any agent.** Claude Code, Codex CLI, Cursor and Gemini CLI are all "not
   live-tested" so far. The hooks follow each vendor's documented format and pass `guard test`
   on fixtures.
+- **What the shell-word rule costs.** In a folder that holds a secret file, these harmless
+  commands are denied:
+  - a word that starts with a group or an extended operator: `ls (src|tests)`, an unquoted
+    `grep ^foo file`;
+  - a `#` after a one-character name: `echo C#`;
+  - a pattern inside `[[ … ]]`;
+  - a pattern part starting with `.` when the parent folder holds a secret file: `ls .*`;
+  - as before, `ls .e*` and a recursive search over the folder;
+  - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree.
+
+  Quote the pattern (`grep '^foo' file`), or name the files, and the command passes.
 - **The guard is a heuristic.** The shell check will miss some tricks. **Known misses:**
-  - names built at run time: `cat $(ls -a | grep env)`, a name decoded from base64, variables
-    whose value comes from command substitution or arithmetic, and patterns that only become
-    globs at run time (zsh `$~var` or `GLOB_SUBST`);
-  - commands that dump a whole tree without naming files: `find . -type f -exec cat {} +`,
+  - patterns that a program expands, not the shell: quoted patterns given to `find -name` or
+    `-regex`, git pathspecs, `rsync` and `tar` filters, and code that builds a name;
+  - names built at run time:
+    - the output of `$(…)`, `<(…)` and zsh `=(…)`;
+    - `eval` of computed text;
+    - decoded text (base64, hex) and arithmetic;
+    - any variable not given a literal value in the same command, including zsh `$~var` and
+      `GLOB_SUBST` on such a variable, `read`, and loop variables;
+  - shell settings outside the covered modes: zsh `BRACE_CCL`, `SH_WORD_SPLIT` and a changed
+    `IFS`; aliases and functions; `emulate`;
+  - shells other than bash, zsh and sh: fish, ksh, nushell, and the wildcard rules of
+    PowerShell and `cmd` (the Windows guard stays experimental);
+  - commands that read a whole tree without naming a file: `find . -type f -exec cat {} +`,
     `tar cf - . | tar xOf -`, `zip -r` then `unzip -p`;
   - scripts and programs that open files on their own (a script file, or code that builds the
     name); code that names the file literally in the command, such as
     `python3 -c "open('.env')"`, is caught;
   - a copy of a secret file saved under another name before the guard was installed;
   - values already loaded into the agent's environment, which `env` can print;
-  - variables set in ways other than `name=value`, `export`, `local`, `readonly` or `declare`:
-    `for f in .e; do cat ${f}nv; done`, `printf -v`, `set --`, `read`;
   - project settings written without naming the folder or file: extracting an archive in the
     project root (`tar xf conf.tar`), `git checkout .` or `git stash pop` restoring a settings
     file, `cp -r tmpl/. .`, or a program the agent runs;
@@ -572,8 +609,8 @@ in-place `.bak` files.
 - **Grep:** the guard blocks a search over any folder that holds a secret file, including the
   agent's own search tool over your whole project. Narrow the path (for example `src/`) to search.
 - **Over-limit input is denied, not checked:** hook inputs over 4 MB, commands over 100,000
-  characters (also after expanding variables), paths over 4,096, and globs that match more than
-  2,000 paths, such as `ls wide/*/*/*/*` or `rm build/*` in a very large folder. A line break in
+  characters (also after expanding variables), paths over 4,096, and a pattern that has to look
+  at more than 20,000 entries, such as `ls **/*` in a big tree. A line break in
   any field whose name contains `path`, `file`, `dir`, `include`, `target`, `source` or
   `destination` is denied too.
 - **`find -delete` from the home folder is denied** (for example `find ~ -name '*.pyc' -delete`),
@@ -602,7 +639,7 @@ in-place `.bak` files.
 | Agents | Claude Code, Codex CLI, Cursor, Gemini CLI | Any other agent | One `install_<agent>.py` module and its sample inputs in `guard test`. |
 | Hook input | Up to 4 MB, parsed whole | Larger inputs are blocked | Check only the tool name and path fields of big inputs before parsing the rest. |
 | Folder search check | 20,000 entries or 0.4 seconds | Bigger folders are denied | A cached index of secret-file locations per project. |
-| Glob check | Up to 2,000 matches per word, recursive for `**` | A glob with more matches, such as `**/*` in a big tree, is denied | The same cached index. |
+| Pattern check | 20,000 entries per word | A pattern that has to look at more, such as `ls **/*` in a big tree, is denied | The same cached index. |
 | Scan speed | Whole-line regex with a keyword prefilter | Seconds per MB on dense lines | Run each rule only on a window around its keyword hit. |
 | Redaction | JSONL and JSON | Cursor's SQLite is read only | A SQLite writer that takes Cursor's lock and handles its WAL, once the schema is verified. |
 | Detection | Known key shapes | Unknown shapes, split secrets | Optional entropy-only mode, with its false-positive rate measured first. |

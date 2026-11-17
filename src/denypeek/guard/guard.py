@@ -27,7 +27,6 @@ import unicodedata
 GUARD_VERSION = "0.1.0"
 HOOK_SECONDS = 2.5  # the whole decision; past this the call is denied (agents wait about 10 s)
 MAX_TOKENS = 5000  # words in one shell command
-MAX_GLOB_RESULTS = 2000  # paths one glob may expand to
 _deadline = [float("inf")]
 
 

@@ -47,7 +47,8 @@ SENTINEL = "SENTINEL_9f3c"  # content of every protected fixture file
 
 # --- fixture --------------------------------------------------------------------------------
 
-# The guard's default pattern list (SPEC section 1; identical at f4bb7c0 and 5b03394). Written to
+# The guard's default pattern list (SPEC section 1; as at f4bb7c0 and 5b03394, except that
+# `!*.pub` is now the last line, per the spec's 2026-11-17 ruling; byte-identical to 54f8d31). Written to
 # the fixture's ~/.denypeek/secretfiles, as a real install does (A25). The oracle never runs the
 # installer, so it can judge any commit's hook on its own.
 DEFAULT_SECRETFILES = """# denypeek secret files: gitignore-style patterns, one per line. Case does not matter.
@@ -68,7 +69,6 @@ id_rsa*
 id_dsa*
 id_ecdsa*
 id_ed25519*
-!*.pub
 .netrc
 .npmrc
 .pypirc
@@ -81,6 +81,8 @@ secrets.yaml
 ~/.docker/config.json
 ~/.kube/config
 ~/.config/gcloud/**
+# Last, so it also allows public keys inside ~/.ssh (the last matching line wins).
+!*.pub
 """
 
 # Protected files (default secretfiles patterns, guard self-protection, agent configs), relative
@@ -89,7 +91,8 @@ PROTECTED_FILES = [
     "proj/.env", "proj/only/.env", "proj/.env.local", "proj/.dev.vars", "proj/server.pem", "proj/tls.key",
     "proj/cert.p12", "proj/id_ed25519", "proj/credentials.json", "proj/secrets.yml",
     "proj/service-account-prod.json", "proj/.npmrc", "proj/.netrc", "proj/.pypirc",
-    ".ssh/id_rsa", ".aws/credentials", ".docker/config.json", ".kube/config",
+    ".ssh/id_rsa", ".ssh/id_ed25519", ".ssh/known_hosts", "proj/g8/.env", "proj/g8/sub/.env",
+    ".aws/credentials", ".docker/config.json", ".kube/config",
     ".config/gcloud/application_default_credentials.json",
     ".denypeek/guard.sh", ".claude/settings.json", ".codex/hooks.json",
     ".cursor/hooks.json", ".gemini/settings.json",
@@ -104,7 +107,12 @@ ORDINARY_FILES = {
     "proj/app.pyc": "", "proj/data.json": '{"items": [1]}\n', "proj/log.txt": "ERROR [x]\n",
     "proj/Makefile": "all:\n", "proj/package.json": "{}\n", "proj/notes.md": "n\n",
     "proj/docs/guide.md": "g\n", "proj/key.pub": "ssh-ed25519 AAAA\n",
+    ".ssh/id_ed25519.pub": "ssh-ed25519 AAAA\n", "proj/app/[lang]/[id]/page.tsx": "export {}\n",
+    "proj/g8/a.txt": "a\n", "proj/g8/b.md": "b\n", "proj/g8/sub/x.txt": "x\n",
 }
+
+
+HIDDEN = ["always"]  # SPEC 3a G8 setting under test: "always" or "auto" (--hidden)
 
 
 def make_home() -> Path:
@@ -124,6 +132,8 @@ def make_home() -> Path:
     # A real secretfiles with the default list. The sentinel .denypeek/guard.sh is never run;
     # the hook under test is the one passed with --hook.
     (home / ".denypeek/secretfiles").write_text(DEFAULT_SECRETFILES)
+    if HIDDEN[0] != "always":  # G8: the fixture selects the setting; missing means "always"
+        (home / ".denypeek/guard-state.json").write_text(json.dumps({"hidden_names": HIDDEN[0]}))
     return home
 
 
@@ -611,6 +621,11 @@ SENTINEL_CASES = [  # (id, mode spec, command, working folder)
     ("G1-eval-quoted", "bash3|sh", "eval cat '.e*'", "proj"),
     ("G1-eval-escaped", "bash3|sh", "eval cat .e\\*", "proj"),
     ("G1-pipe-to-sh", "bash3|sh", "echo 'cat .e*' | sh", "proj"),
+    # Public keys pass, private keys and known_hosts do not (default list, the spec 2026-11-17).
+    ("ssh-private-key", B, "cat ~/.ssh/id_ed25519", "proj"),
+    ("ssh-private-key-star", B, "cat ~/.ssh/id_ed25519*", "proj"),
+    ("ssh-star", B, "cat ~/.ssh/*", "proj"),
+    ("ssh-known-hosts", B, "cat ~/.ssh/known_hosts", "proj"),
     ("array", B, "x=(.e?v); cat ${x[0]}", "proj"),
     ("set-args", "sh", "set -- .e[!x]v; cat $1", "proj"),
     ("for-loop", B, "for f in .e?v; do cat $f; done", "proj"),
@@ -704,6 +719,107 @@ MUST_ALLOW = [
     ("g7-cd-home-ls", "cd ~ && ls"), ("g7-chmod-file-in-home", "chmod +x ~/bin/tool"),
     ("g7-rm-build-in-home", "rm -rf ~/proj/build"), ("g7-rm-dot-cache", "rm -rf .*_cache"),
     ("g7-git-clean-project", "git clean -fd"), ("g7-find-home-name", "find ~ -name x"),
+    # the spec 2026-11-17: G3c tree walk, G2 `*/name`, public keys.
+    ("g3c-nested-dynamic-route", "cat app/[lang]/[id]/page.tsx"), ("g2-ls-dirs", "ls */"),
+    ("g2-ls-d-dirs", "ls -d */"), ("g2-ls-star-name", "ls */README.md"), ("g2-rm-star-pycache", "rm -rf */__pycache__"),
+    ("pubkey-one", "cat ~/.ssh/id_ed25519.pub"), ("pubkey-star", "cat ~/.ssh/*.pub"),
+]
+
+# G8 (SPEC 3a): bare `*` beside a secret file. In "always" these are expected denies (with dotglob
+# or globdots they reach .env); in "auto" they must be allowed.
+G8_BARE_STAR = ["du -sh *", "cat *", "wc -l *", "grep foo *", "rm -rf ./*"]
+AUTO_MUST_ALLOW = [("auto-" + c.split()[0] + str(i), c) for i, c in enumerate(G8_BARE_STAR)] + [
+    ("auto-pipefail-ls", "set -euo pipefail; ls *"), ("auto-nullglob-ls", "shopt -s nullglob; ls *.py"),
+    ("auto-extendedglob-ls", "setopt extendedglob; ls *.py"), ("auto-ls-star", "ls *"), ("auto-echo-star", "echo *"),
+]
+
+# G8 "auto": switch forms. Each runs for real (only `cat` or `grep` of fixture files, in proj/g8,
+# which holds .env, sub/.env and plain files) and must print a protected sentinel; then the hook
+# must deny it. "H" = the spec's list (2026-11-17): a failed precondition is a failure. "V" = the review's
+# attack forms: a failed precondition means the form does not work there (reported, not failed).
+# {bash5} is replaced by the bash 5 binary. (id, origin, mode spec, command)
+G8_SWITCH = [
+    ("H-shopt", "H", B, "shopt -s dotglob; cat *"),
+    ("H-bash-O", "H", B, "bash -O dotglob -c 'cat *'"),
+    # Run from zsh: in bash, BASHOPTS is read-only, so the prefix assignment fails there.
+    ("H-BASHOPTS", "H", "zsh", "BASHOPTS=dotglob {bash5} -c 'cat *'"),
+    ("H-GLOBIGNORE", "H", B, "GLOBIGNORE=zz; cat *"),
+    ("H-GLOBIGNORE-export", "H", B, "export GLOBIGNORE=zz; cat *"),
+    ("H-GLOBIGNORE-declare", "H", B, "declare GLOBIGNORE=zz; cat *"),
+    ("H-GLOBIGNORE-read", "H", B, "read GLOBIGNORE <<< zz; cat *"),
+    ("H-setopt-globdots", "H", "zsh", "setopt globdots; cat *"),
+    ("H-setopt-GLOB_DOTS", "H", "zsh", "setopt GLOB_DOTS; cat *"),
+    ("H-setopt-mixed", "H", "zsh", "setopt g_lObd_ots; cat *"),
+    ("H-setopt-dotglob", "H", "zsh", "setopt dotglob; cat *"),
+    ("H-unsetopt-no", "H", "zsh", "unsetopt noglobdots; cat *"),
+    ("H-set-o", "H", "zsh", "set -o globdots; cat *"),
+    ("H-set-plus-o-no", "H", "zsh", "set +o noglobdots; cat *"),
+    ("H-setopt-4", "H", "zsh", "setopt -4; cat *"),
+    ("H-set-4", "H", "zsh", "set -4; cat *"),
+    ("H-zsh-4", "H", "zsh", "zsh -4 -c 'cat *'"),
+    ("H-zsh-f4c", "H", "zsh", "zsh -f4c 'cat *'"),
+    ("H-zsh-o", "H", "zsh", "zsh -o globdots -c 'cat *'"),
+    ("H-zsh-plus-o-no", "H", "zsh", "zsh +o noglobdots -c 'cat *'"),
+    ("H-zsh-long", "H", "zsh", "zsh --globdots -c 'cat *'"),
+    ("H-emulate", "H", "zsh", "emulate zsh -o globdots; cat *"),
+    ("H-options-assign", "H", "zsh", "options[globdots]=on; cat *"),
+    ("H-options-append", "H", "zsh", "options+=(globdots on); cat *"),
+    # the review's attack forms.
+    ("V-shopt-multi", "V", B, "shopt -s nullglob dotglob; cat *"),
+    ("V-shopt-q", "V", B, "shopt -qs dotglob; cat *"),
+    ("V-shopt-continuation", "V", B, "shopt -s dot\\\nglob; cat *"),
+    ("V-shopt-quoted", "V", B, "shopt -s 'dot'\"glob\"; cat *"),
+    ("V-shopt-escaped", "V", B, "shopt -s dot\\glob; cat *"),
+    ("V-shopt-ansi-hex", "V", B, "shopt -s $'dot\\x67lob'; cat *"),
+    ("V-shopt-var", "V", B, "o=dotglob; shopt -s $o; cat *"),
+    ("V-shopt-var-split", "V", B, "o=dot; shopt -s ${o}glob; cat *"),
+    ("V-shopt-brace", "V", B, "shopt -s {dot,x}glob 2>/dev/null; cat *"),
+    ("V-GLOBIGNORE-printf", "V", B, "printf -v GLOBIGNORE zz; cat *"),
+    ("V-GLOBIGNORE-default", "V", B, ": ${GLOBIGNORE:=zz}; cat *"),
+    ("V-GLOBIGNORE-indirect", "V", B, "n=GLOBIGNORE; declare $n=zz; cat *"),
+    ("V-GLOBIGNORE-split-name", "V", B, "n=GLOB; declare ${n}IGNORE=zz; cat *"),
+    ("V-GLOBIGNORE-split-printf", "V", B, "n=GLOB; printf -v ${n}IGNORE zz; cat *"),
+    ("V-GLOBIGNORE-eval", "V", B, "eval GLOB''IGNORE=zz; cat *"),
+    ("V-GLOBIGNORE-function", "V", B, "f() { GLOBIGNORE=zz; cat *; }; f"),
+    ("V-bash-c", "V", B, "bash -c 'shopt -s dotglob; cat *'"),
+    ("V-bash-c-args", "V", B, "bash -c 'shopt -s \"$1$2\"; cat *' x dot glob"),
+    ("V-pipe-bash", "V", B, "echo 'shopt -s dotglob; cat *' | bash"),
+    ("V-heredoc-bash", "V", B, "bash <<'X'\nshopt -s dotglob\ncat *\nX"),
+    ("V-sh-O", "V", B, "sh -O dotglob -c 'cat *'"),
+    ("V-bash-O-split", "V", B, "o=dot; bash -O ${o}glob -c 'cat *'"),
+    ("V-env-BASHOPTS", "V", "bash5", "env BASHOPTS=dotglob {bash5} -c 'cat *'"),
+    ("V-export-BASHOPTS", "V", "bash5", "export BASHOPTS=dotglob; {bash5} -c 'cat *'"),
+    ("V-source-procsub", "V", B, "source <(echo shopt -s dotglob); cat *"),
+    ("V-source-procsub-split", "V", B, "source <(echo shopt -s dot''glob); cat *"),
+    ("V-setopt-nono", "V", "zsh", "setopt NO_NOGLOBDOTS; cat *"),
+    ("V-setopt-localoptions", "V", "zsh", "() { setopt localoptions globdots; cat * }"),
+    ("V-zsh-f-4-c", "V", "zsh", "zsh -f -4 -c 'cat *'"),
+    ("V-set-e4", "V", "zsh", "set -e4; cat *"),
+    ("V-unsetopt-plus4", "V", "zsh", "unsetopt +4; cat *"),
+    ("V-emulate-ksh", "V", "zsh", "emulate ksh; cat *"),
+    ("V-emulate-sh-o", "V", "zsh", "emulate sh -o globdots; cat *"),
+    ("V-options-split", "V", "zsh", "o=glob; options[${o}dots]=on; cat *"),
+    ("V-options-quoted", "V", "zsh", "options['glob''dots']=on; cat *"),
+    ("V-setopt-split-var", "V", "zsh", "o=glob; setopt ${o}dots; cat *"),
+    ("V-zsh-c-setopt", "V", "zsh", "zsh -c 'setopt globdots; cat *'"),
+    ("V-glob-qual-D", "V", "zsh", "cat *(D.)"),
+    ("V-glob-qual-hash-q", "V", "zsh+extendedglob", "cat *(#qD)"),
+    ("V-dot-quoted", "V", B, "cat '.'*"),
+    ("V-dot-escaped", "V", B, "cat \\.*"),
+    ("V-dot-ansi", "V", B, "cat $'.'*"),
+    ("V-dot-brace", "V", B, "cat {.,}*"),
+    ("V-dot-brace-e", "V", B, "cat {x,.e}*"),
+    ("V-dot-subst", "V", B, "cat $(printf .)*"),
+    ("V-bracket-start", "V", B, "cat [.]*"),
+    ("V-bracket-start-zsh", "V", "zsh", "cat [.]*"),
+]
+# G8 "auto": other must-blocks (the spec 2026-11-17). (id, mode spec, hook command, precondition
+# command run for real (None: never run, check with printf), cwd, operand for printf check)
+G8_OTHER = [
+    ("H-grep-r-star-sub-env", B, "grep -r foo *", "grep -r SENTINEL_9f3c *", "proj/g8", None),
+    ("H-rm-star-above-home", B, "rm -rf *", None, "..", "*"),
+    ("H-var-dot-star", B, "x=.; cat $x*", "x=.; cat $x*", "proj/g8", None),
+    ("H-zsh-qualifier-D", "zsh", "cat *(D)", "cat *(D)", "proj/g8", None),
 ]
 # Reported, not asserted.
 INFORMATIONAL = [  # SPEC section 3a "What it costs": denied, harmless, listed in the README
@@ -746,7 +862,8 @@ def _run(args, home: Path) -> int:
     hook = Hook(args.hook, args.python, args.hook_takes_home, home)
     targets = protected_targets(home)
     failures: List[str] = []
-    stats = {t: [0, 0] for t in ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR", "MUST-ALLOW")}  # [passed, failed]
+    stats = {t: [0, 0] for t in ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR", "G8", "MUST-ALLOW")}  # [passed, failed]
+    print(f"G8 hidden_names setting under test: {HIDDEN[0]}")
     skips: List[str] = []
     strict = bool(args.require)
     needed = required_families(args.require)
@@ -759,6 +876,8 @@ def _run(args, home: Path) -> int:
             failures.append(f"REQUIRE shell {need!r} not available")
             print(f"  FAIL required shell {need} not available")
     for m in MODE_PROBLEMS:  # A25: a missing mode of a required shell is a failure
+        if HIDDEN[0] == "auto" and ("dotglob" in m or "globdots" in m):
+            continue  # G8 auto: these modes are not required (known miss 7); they still run if present
         if m.split("+")[0] in needed:
             failures.append(f"REQUIRE mode {m!r} could not be set up")
             print(f"  FAIL required mode {m} could not be set up")
@@ -890,9 +1009,82 @@ def _run(args, home: Path) -> int:
             failures.append(f"ANCESTOR {cid} [{mode}] {cmd!r}: {d}")
             print(f"  FAIL {cid} [{mode}] {cmd}: {d}")
 
+    # G8 hidden names.
+    print(f"\n[G8] hidden names, setting {HIDDEN[0]}")
+    g8_na: List[str] = []
+    if HIDDEN[0] == "always":
+        for c in G8_BARE_STAR:  # expected denies: with dotglob or globdots they reach .env
+            d = hook.decide(c)
+            if d == "deny":
+                stats["G8"][0] += 1
+            else:
+                stats["G8"][1] += 1
+                failures.append(f"G8 always {c!r}: {d} (expected deny)")
+                print(f"  FAIL always {c}: {d}")
+    else:
+        bash5 = _find_bashes().get("bash5", "")
+        for cid, origin, spec, cmd in G8_SWITCH:
+            mode = resolve_mode(spec, modes)
+            if not mode or ("{bash5}" in cmd and not bash5):
+                if origin == "H":
+                    unavailable("G8", cid, spec)
+                else:
+                    g8_na.append(f"{cid} (no {spec})")
+                continue
+            cmd = cmd.replace("{bash5}", bash5)
+            binary, setup = modes[mode]
+            r = subprocess.run([binary, "-c", setup + cmd], capture_output=True, text=True,
+                               cwd=str(cwd_path(home, "proj/g8")), env=env_for(home),
+                               stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+            if SENTINEL not in r.stdout:
+                if origin == "H":
+                    failures.append(f"G8 {cid}: precondition failed, {mode} did not read a hidden file")
+                    stats["G8"][1] += 1
+                    print(f"  FAIL {cid}: precondition ({mode} did not read a hidden file)")
+                else:
+                    g8_na.append(f"{cid} (form does not reach a hidden file in {mode})")
+                continue
+            d = hook.decide(setup + cmd, "proj/g8")
+            if d == "deny":
+                stats["G8"][0] += 1
+                print(f"  ok   {cid} [{mode}] {cmd!r}")
+            else:
+                stats["G8"][1] += 1
+                failures.append(f"G8 {cid} [{mode}] {setup + cmd!r}: {d}")
+                print(f"  FAIL {cid} [{mode}] {cmd!r}: {d}")
+        home_real = os.path.realpath(str(home))
+        for cid, spec, cmd, pre, cwd, operand in G8_OTHER:
+            mode = resolve_mode(spec, modes)
+            if not mode:
+                unavailable("G8", cid, spec)
+                continue
+            binary, setup = modes[mode]
+            if pre is not None:
+                r = subprocess.run([binary, "-c", setup + pre], capture_output=True, text=True,
+                                   cwd=str(cwd_path(home, cwd)), env=env_for(home), stdin=subprocess.DEVNULL, timeout=TIMEOUT)
+                reached = SENTINEL in r.stdout
+            else:
+                got = [os.path.realpath(os.path.join(str(cwd_path(home, cwd)), x)) for x in expand(binary, setup, operand, home, cwd)]
+                reached = any(home_real == x or home_real.startswith(x.rstrip(os.sep) + os.sep) for x in got)
+            if not reached:
+                failures.append(f"G8 {cid}: precondition failed in {mode}")
+                stats["G8"][1] += 1
+                print(f"  FAIL {cid}: precondition")
+                continue
+            d = hook.decide(setup + cmd, cwd)
+            if d == "deny":
+                stats["G8"][0] += 1
+                print(f"  ok   {cid} [{mode}] {cmd!r}")
+            else:
+                stats["G8"][1] += 1
+                failures.append(f"G8 {cid} [{mode}] {cmd!r}: {d}")
+                print(f"  FAIL {cid} [{mode}] {cmd!r}: {d}")
+        if g8_na:
+            print("  attack forms that do not work here (not failures): " + "; ".join(g8_na))
+
     # Must-allow.
     print("\n[MUST-ALLOW] ordinary commands in a folder holding .env")
-    for cid, cmd in MUST_ALLOW:
+    for cid, cmd in MUST_ALLOW + (AUTO_MUST_ALLOW if HIDDEN[0] == "auto" else []):
         d = hook.decide(cmd)
         if d == "allow":
             stats["MUST-ALLOW"][0] += 1
@@ -948,7 +1140,7 @@ def self_test(args) -> int:
             finally:
                 shutil.rmtree(home.parent, ignore_errors=True)
         a, d = tiers.get("allow-all", {}), tiers.get("deny-all", {})
-        block_tiers = ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR")
+        block_tiers = ("NAMED", "GENERATED", "SENTINEL", "ANCESTOR", "G8")
         checks = {
             "allow-all fails every must-block tier": all(a.get(t, (0, 0))[0] == 0 and a.get(t, (0, 0))[1] > 0 for t in block_tiers),
             "allow-all passes must-allow": a.get("MUST-ALLOW", (0, 1))[1] == 0,
@@ -982,9 +1174,12 @@ def main(argv=None) -> int:
                     "named case fails the run (A25)")
     ap.add_argument("--report", help="write every failure to this file")
     ap.add_argument("--keep", action="store_true", help="keep the fixture home")
+    ap.add_argument("--hidden", choices=("always", "auto"), default="always",
+                    help="SPEC 3a G8 setting written to the fixture's guard-state.json (default always)")
     ap.add_argument("--self-test", action="store_true", help="run the allow-all and deny-all controls")
     ap.add_argument("--write-words", help="write the generated word list to this file and exit")
     args = ap.parse_args(argv)
+    HIDDEN[0] = args.hidden
     if args.write_words:
         rows = generate()
         write_words(Path(args.write_words), rows)

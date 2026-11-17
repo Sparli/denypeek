@@ -41,6 +41,11 @@ python3 glob_oracle.py --self-test
 - `--self-test`: two controls, checked tier by tier. The allow-all hook must fail every must-block tier and pass must-allow; the deny-all hook the mirror. Any other result means the oracle is broken.
 - `--write-words words.tsv`: regenerate the list after changing the generator.
 - `--keep`: keep the fixture home for debugging.
+- `--hidden always|auto`: the SPEC 3a G8 setting under test. For `auto`, the fixture writes
+  `{"hidden_names": "auto"}` to `~/.denypeek/guard-state.json`; `always` writes nothing, because
+  a missing setting means `always`. **A23 to A25 need two full runs, one per setting**, each on
+  both Pythons. In `auto`, modes that turn dotglob or globdots on are not required (known miss
+  7); they still run when present, and their setup line is then a switch the hook must catch.
 
 Exit 0 means all passed, 1 means a failure, 2 means a usage or environment problem.
 
@@ -71,11 +76,19 @@ Exit 0 means all passed, 1 means a failure, 2 means a usage or environment probl
    above it.
    - **Covered:** `rm`, `rmdir`, `unlink`, `shred`, `trash`; `sudo`, `env`, `/bin/rm` and `\rm` forms; `mv` and `mv -t`; `chmod`, `chown`, `chgrp` and `chflags`; `git clean` (from home, `-C ~`, `cd ~ &&`); `rsync --delete…` and `--remove-source-files`; `find ~ -delete` and `-exec`; and Cursor's `Delete` tool on the home folder.
    - **Never run:** the precondition only expands the operand with `printf` and checks that it resolves to the home folder or above.
-5. **MUST-ALLOW**: 74 ordinary commands, run in a folder that holds `.env`, including every
+5. **MUST-ALLOW**: 81 ordinary commands (91 under `auto`). They include `cat app/[lang]/[id]/page.tsx`,
+   `ls */`, `ls -d */`, `ls */README.md`, `rm -rf */__pycache__`, `cat ~/.ssh/id_ed25519.pub` and `cat ~/.ssh/*.pub`, which the spec ruled on 2026-11-17, plus, run in a folder that holds `.env`, including every
    command in SPEC section 3a "What must stay allowed" and its G7 list (`mv notes.md ~`,
    `ls ..`, `cd ~ && ls`, `chmod +x ~/bin/tool`, `rm -rf .*_cache`, `git clean -fd` in a project,
    `find ~ -name x` and others).
-6. **INFORMATIONAL**: reported, not asserted: SPEC 3a's accepted over-blocks (`ls (src|tests)`,
+6. **G8** (hidden names).
+   - **`always`:** the five bare-`*` commands (`du -sh *`, `cat *`, `wc -l *`, `grep foo *`, `rm -rf ./*`) must be denied.
+   - **`auto`:** the switch forms must be denied. Each first runs for real in `proj/g8`, which holds `.env`, `sub/.env` and plain files, and must print a hidden file's sentinel.
+     - **the spec's 24 forms (`H-`):** a failed precondition is a failure.
+     - **the review's attack forms (`V-`):** a form that does not work in that shell is reported, not failed.
+     - **Four other must-blocks:** `grep -r foo *` beside `sub/.env`, `rm -rf *` from the folder above home, `x=.; cat $x*`, `cat *(D)`.
+     - **Must-allow:** the five bare-`*` commands plus `set -euo pipefail; ls *`, `shopt -s nullglob; ls *.py`, `setopt extendedglob; ls *.py`, `ls *`, `echo *`.
+7. **INFORMATIONAL**: reported, not asserted: SPEC 3a's accepted over-blocks (`ls (src|tests)`,
    `grep ^foo`, `echo C#`, a pattern in `[[ … ]]`, `ls .*`, `ls .e*`, `rg TODO .`, and under G7
    `chmod 700 ~` and `grep -r rm ~`).
 
@@ -122,7 +135,7 @@ must not rely on seeing it.
 
 ## Safety
 
-- **Real pattern file:** the fixture home holds `~/.denypeek/secretfiles` with the guard's default list, copied into the oracle (`DEFAULT_SECRETFILES`), as a real install does. The installer is never run, so the oracle can judge any commit's hook on its own. If the default list changes, update that constant.
+- **Real pattern file:** the fixture home holds `~/.denypeek/secretfiles` with the guard's default list, copied into the oracle (`DEFAULT_SECRETFILES`, byte-identical to `54f8d31`: `!*.pub` last), as a real install does. The SENTINEL tier checks `~/.ssh`: private keys, `~/.ssh/*` and `known_hosts` must be denied; public keys pass. The installer is never run, so the oracle can judge any commit's hook on its own. If the default list changes, update that constant.
 - **Temp fixture only:** the fixture home is created under the system temp folder and deleted afterwards. The script refuses a temp folder under the real home.
 - **No real paths:** every shell and the hook get `HOME=<fixture>` and `PATH=/usr/bin:/bin`. The guard also gets `--home <fixture>`.
 - **Nothing is deleted, moved or locked:** `rm`, `mv` and every G7 command are only judged by the hook. Their operands are expanded with `printf` and never run. Only the SENTINEL tier runs commands, and those only `cat` fixture files, through `sh -c`, `eval` or a pipe into `sh`.

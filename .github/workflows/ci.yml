@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        hook-python: ["3.9", "3.x"]
+        hook-python: ["3.9", "3"]  # uv reads "3" as the newest 3.x
     runs-on: ${{ matrix.os }}
     env:
       DENYPEEK_ORACLE_REQUIRE: "1"
@@ -83,20 +83,24 @@ jobs:
       - id: py
         run: echo "path=$(uv python find ${{ matrix.hook-python }})" >> "$GITHUB_OUTPUT"
       - name: Full oracle run
+        shell: bash  # bash -eo pipefail: the oracle's exit code survives the pipe into tee
         run: >-
           "${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --require auto
           --hook "$PWD/src/denypeek/guard/guard.py" --python "${{ steps.py.outputs.path }}"
           --report oracle-failures.txt | tee oracle-output.txt
       # Fail if the run checked nothing: every tier must have run cases, none skipped.
+      # Fail if the run checked nothing: every tier in the RESULT line must have run cases,
+      # none failed and nothing was skipped.
       - name: The oracle ran words
         run: >-
-          "${{ steps.py.outputs.path }}" -c "import re,sys;
+          "${{ steps.py.outputs.path }}" -c "import re;
           t=open('oracle-output.txt').read();
           r=[l for l in t.splitlines() if l.startswith('RESULT')];
           assert r, 'no RESULT line';
-          n={k:int(v) for k,v in re.findall(r'(NAMED|GENERATED|SENTINEL|MUST-ALLOW) \\d+/(\\d+)', r[-1])};
+          n=dict(re.findall(r'([A-Z][A-Z-]+) \\d+/(\\d+)', r[-1]));
           print(r[-1], n);
-          assert len(n)==4 and all(v>0 for v in n.values()), 'a tier ran no cases';
+          assert {'NAMED','GENERATED','SENTINEL','ANCESTOR','MUST-ALLOW'} <= set(n), 'a tier is missing';
+          assert all(int(v) > 0 for v in n.values()), 'a tier ran no cases';
           assert ' 0 failed' in r[-1] and 'skipped cases: 0' in r[-1] and 'skipped modes: none' in r[-1]"
       - name: Oracle self-test
         run: '"${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --self-test --quick'

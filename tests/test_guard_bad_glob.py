@@ -2,16 +2,14 @@
 
 `["z-a"]` in a written settings file made fnmatch raise `re.error` (bad character range) on 3.9,
 so an ordinary settings edit was denied with "guard error". The first fix compared such a word
-as plain text, which let `cat .en[!z-a]` through on 3.9 (the review's L1). Now every bracket
-expression is turned into `?` before matching (see test_guard_glob_syntax.py), so fnmatch never
-sees a bracket, and a pattern that still fails to compile counts as a match. Real hook errors
-still block (see test_guard_hook.py, A14).
+as plain text, which let `cat .en[!z-a]` through on 3.9 (the review's L1). The guard now has its own
+matcher (SPEC 3a): a bracket expression is one character, and nothing reaches fnmatch.
+Real hook errors still block (see test_guard_hook.py, A14).
 """
 
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -44,23 +42,11 @@ def write_event(path: Path, content: str) -> dict:
     }
 
 
-def test_a_pattern_that_fails_to_compile_counts_as_a_match(monkeypatch):
-    def broken(name, pattern):
-        raise re.error("bad character range z-a")
-
-    monkeypatch.setattr(g.fnmatch, "fnmatchcase", broken)
-    assert g.name_matches("notes.md", "anything") is True
-
-
-def test_brackets_never_reach_fnmatch():
-    assert g.shell_glob(".en[!z-a]") == ".en?"
-    assert g.name_matches(".env", ".en[!z-a]")
-    assert g.name_matches(".env", ".en[^x]")
-
-
-def test_name_matches_still_globs_ignoring_case():
-    assert g.name_matches(".env", "*.ENV")
-    assert g.name_matches("a", "[z-a]") in (True, False)  # never raises, on any Python
+def test_a_reversed_range_is_one_character_and_never_raises(tmp_path):
+    (tmp_path / ".env").write_text("X=1\n")
+    w = g.shell_words("cat .en[!z-a] .en[^z-a] .e[z-a]v", str(tmp_path)).words()
+    found = [p for word in w for p in g.word_paths(word, [str(tmp_path)])]
+    assert str(tmp_path / ".env") in found
 
 
 def test_settings_write_with_a_reversed_range_is_allowed(isolated, tmp_path):

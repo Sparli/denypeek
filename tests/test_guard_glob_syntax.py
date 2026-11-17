@@ -162,7 +162,6 @@ def test_other_shell_forms_on_protected_folders_are_denied(command, lab):
         "grep '^.env' app.py",
         "ls  # list files (a|b) ^x",
         "git diff HEAD^ -- app.py",
-        "echo a#b",
         "f() { ls; }; f",
         "(ls|wc)",
         "diff <(ls) <(ls -a)",
@@ -172,3 +171,12 @@ def test_ordinary_commands_are_still_allowed(command, lab):
     home, proj = lab
     denied, out = run_hook(command, home, proj)
     assert not denied, (command, out)
+
+
+@pytest.mark.parametrize("command", ["echo a#b", "echo C#", "ls (src|tests)", "grep ^foo app.py"])
+def test_listed_costs_are_denied_in_a_folder_with_a_secret(command, lab):
+    """SPEC 3a "What it costs": harmless, but a covered shell mode could read them as a
+    pattern that reaches .env, so they are denied where a secret file sits."""
+    home, proj = lab
+    denied, out = run_hook(command, home, proj)
+    assert denied, (command, out)

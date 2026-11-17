@@ -16,8 +16,6 @@ remove it: denypeek guard uninstall.
 
 from __future__ import annotations
 
-import fnmatch
-import glob
 import json
 import os
 import re
@@ -150,60 +148,6 @@ def parse_patterns(text):
         if line:
             rules.append((negate, line, compile_pattern(line)))
     return rules
-
-
-def _bracket_end(pat, i):
-    """Index just past the shell bracket expression starting at pat[i] == "[", or -1.
-
-    Follows bash, zsh and sh: an optional `!` or `^`, then a `]` right after it is a member,
-    `[:class:]`, `[=c=]` and `[.c.]` hold their own `]`, and a `/` ends the attempt (the `[`
-    is then literal)."""
-    j = i + 1
-    if j < len(pat) and pat[j] in "!^":
-        j += 1
-    if j < len(pat) and pat[j] == "]":
-        j += 1
-    while j < len(pat):
-        c = pat[j]
-        if c == "/":
-            return -1
-        if c == "[" and j + 1 < len(pat) and pat[j + 1] in ":=.":
-            close = pat.find(pat[j + 1] + "]", j + 2)
-            if close != -1:
-                j = close + 2
-                continue
-        if c == "]":
-            return j + 1
-        j += 1
-    return -1
-
-
-def shell_glob(pattern):
-    """A Python glob that matches at least everything the shell glob can (L1, L2).
-
-    Every bracket expression becomes `?`, and so does a `[` with no closing `]` (the shell
-    reads it as a literal `[`, which `?` also matches). Python then never sees `[`: its fnmatch
-    reads `[^x]` as a literal `^` or `x`, and Python 3.9 raises on `[z-a]`. This can only make
-    the guard block more, never less."""
-    out, i = [], 0
-    while i < len(pattern):
-        if pattern[i] == "[":
-            end = _bracket_end(pattern, i)
-            out.append("?")
-            i = end if end != -1 else i + 1
-        else:
-            out.append(pattern[i])
-            i += 1
-    return "".join(out)
-
-
-def name_matches(name, pattern):
-    """Shell glob match of one name, ignoring case, as a superset of what the shell matches.
-    A pattern that still fails to compile counts as a match, so the guard blocks."""
-    try:
-        return fnmatch.fnmatchcase(name.lower(), shell_glob(pattern).lower())
-    except re.error:
-        return True
 
 
 def _norm(path):
@@ -662,7 +606,7 @@ def is_agent_folder(path):
     )
 
 
-def shell_settings_problem(command, folders):
+def shell_settings_problem(command, folders, depth=0):
     """Shell commands may read agent settings files but not write them, and may not use an
     agent settings folder itself as the source or target of a change (R2): `cp x .claude/`,
     `mv dir .claude`, `tar -C .claude`, `dd of=.claude/settings.json`."""
@@ -670,36 +614,41 @@ def shell_settings_problem(command, folders):
         for target in REDIRECT_TARGET.findall(raw):
             if any(settings_kind(expand(target, f) or "") for f in folders):
                 return "the command writes an agent settings file; edit it in your own terminal"
-        text = REDIRECT_TARGET.sub(" ", raw)
-        try:
-            words = shlex.split(text, posix=True)
-        except ValueError:
-            words = text.split()
-        while words and "=" in words[0] and not words[0].startswith("-"):
+    sw = shell_words(command, folders[0] if folders else ".")
+    for script in shell_scripts(sw, depth):
+        problem = shell_settings_problem(script, folders, depth + 1)
+        if problem:
+            return problem
+    for seg in sw.segments:
+        words = [w for w in seg if not _skip_word(w)]
+        while words and _is_assignment(words[0]) != -1:
             words = words[1:]
         if not words:
             continue
+        literals = [w.literal for w in words]
         args = []
-        for w in words[1:]:
+        for w in literals[1:]:
             args.append(w)
             if "=" in w:  # dd of=..., --target-directory=...
                 args.append(w.split("=", 1)[1])
         files = [w for w in args if any(settings_kind(expand(w, f) or "") for f in folders)]
-        dirs = [w for w in args if any(is_agent_folder(expand(w, f)) for f in folders)]
+        dirs = [w for w in words[1:] if _names_agent_dir(w, folders)]
+        dirs += [w for w in args if any(is_agent_folder(expand(w, f)) for f in folders)]
         if not files and not dirs:
             continue
-        verb = os.path.basename(words[0]).lower()
+        verb = os.path.basename(literals[0]).lower()
         if verb == "git":
-            sub = next((w for w in words[1:] if not w.startswith("-")), "")
+            sub = next((w for w in literals[1:] if not w.startswith("-")), "")
             read_only = sub in GIT_READ
         else:
             folder_only = bool(dirs) and not files
             read_only = verb in READ_VERBS or (
                 folder_only
                 and (verb == "mkdir" or verb in DIR_READ_VERBS)
-                and not (verb == "find" and FIND_ACTIONS & set(words))
+                and not (verb == "find" and FIND_ACTIONS & set(literals))
             )
-        if verb in IN_PLACE_EDITORS and any(w.startswith("-i") or w == "--in-place" for w in words):
+        in_place = any(w.startswith("-i") or w == "--in-place" for w in literals)
+        if verb in IN_PLACE_EDITORS and in_place:
             read_only = False
         if not read_only:
             return (
@@ -751,35 +700,8 @@ def is_agent_dir(path):
 
 
 def _names_agent_dir(word, folders):
-    """True if the word, after braces and globs, names an agent settings folder (R3)."""
-    for variant in expand_braces(word):
-        for f in folders:
-            full = expand(variant, f)
-            if not full:
-                continue
-            if is_agent_dir(full):
-                return True
-            if any(ch in variant for ch in "*?["):
-                try:
-                    pat = expand(variant, f, True)
-                    for n, match in enumerate(glob.iglob(pat, recursive=True)):
-                        tick()
-                        if n >= MAX_GLOB_RESULTS:
-                            raise HookTimeout("a glob matches too many files to check")
-                        if is_agent_dir(match):
-                            return True
-                except (OSError, re.error):
-                    pass
-                folder, pattern = os.path.split(full)
-                try:
-                    literal_folder = not any(c in os.path.dirname(variant) for c in "*?[")
-                    names = os.listdir(folder) if literal_folder else []
-                except OSError:
-                    names = []
-                for n in names:  # glob skips hidden names for a leading *
-                    if name_matches(n, pattern) and is_agent_dir(os.path.join(folder, n)):
-                        return True
-    return False
+    """True if the word, as written or widened (SPEC 3a G5), names an agent settings folder."""
+    return any(is_agent_dir(p) for p in word_paths(word, folders))
 
 
 def _find_reaches_agent_dir(words, folders):
@@ -802,33 +724,38 @@ def _find_reaches_agent_dir(words, folders):
     return False
 
 
-def shell_folder_problem(command, folders):
+def shell_folder_problem(command, folders, depth=0):
     message = (
         "the command may move, delete or change an agent's settings folder, which "
         "would remove the denypeek hook; do that in your own terminal"
     )
-    for raw in SHELL_OPERATORS.split(command):
-        text = REDIRECT_TARGET.sub(" ", raw)
-        try:
-            words = shlex.split(text, posix=True)
-        except ValueError:
-            words = text.split()
-        while words and "=" in words[0] and not words[0].startswith("-"):
+    sw = shell_words(command, folders[0] if folders else ".")
+    for script in shell_scripts(sw, depth):
+        if shell_folder_problem(script, folders, depth + 1):
+            return message
+    for seg in sw.segments:
+        words = [w for w in seg if not _skip_word(w)]
+        while words and _is_assignment(words[0]) != -1:
             words = words[1:]
         if not words:
             continue
-        verb = os.path.basename(words[0]).lower()
-        if verb == "find" and FIND_ACTIONS & set(words) and _find_reaches_agent_dir(words, folders):
+        literals = [w.literal for w in words]
+        verb = os.path.basename(literals[0]).lower()
+        if (
+            verb == "find"
+            and FIND_ACTIONS & set(literals)
+            and _find_reaches_agent_dir(literals, folders)
+        ):
             return message
         named = [w for w in words[1:] if _names_agent_dir(w, folders)]
         if not named:
             continue
         if verb == "git":
-            sub = next((w for w in words[1:] if not w.startswith("-")), "")
+            sub = next((w for w in literals[1:] if not w.startswith("-")), "")
             if sub not in GIT_READ:
                 return message
             continue
-        if verb not in DIR_READ_VERBS or (verb == "find" and FIND_ACTIONS & set(words)):
+        if verb not in DIR_READ_VERBS or (verb == "find" and FIND_ACTIONS & set(literals)):
             return message
     return None
 
@@ -849,17 +776,11 @@ def reason_for(path, verb="names"):
 # --- resolving paths in tool input ---------------------------------------------------
 
 
-def expand(token, cwd, for_glob=False):
-    """The absolute path a token names. With `for_glob`, a Python glob pattern instead: the
-    token's own glob syntax is converted by shell_glob, and the home and working folders are
-    escaped, because the shell never treats those as patterns."""
+def expand(token, cwd):
     t = token.strip().strip("'\"")
     if not t:
         return None
     home = home_dir()
-    if for_glob:
-        t = shell_glob(t)
-        home, cwd = glob.escape(home), glob.escape(cwd)
     for var in ("${HOME}", "$HOME"):
         t = t.replace(var, home)
     for var in ("${PWD}", "$PWD"):
@@ -875,13 +796,11 @@ def expand(token, cwd, for_glob=False):
 
 
 def path_hits(token, cwd, rules):
-    """Paths named by one token, including braces and globs. Returns the blocked ones."""
-    found = []
-    for variant in expand_braces(token):
-        found += _path_hits(variant, cwd, rules)
-        if variant.startswith("@") and len(variant) > 1:  # curl -F f=@.env, --data @.env
-            found += _path_hits(variant[1:], cwd, rules)
-    return found
+    """Blocked paths a tool's path field names. Tools do not run a shell, so only `*`, `?`,
+    brackets and braces count as patterns, as some tools (read_many_files) expand those."""
+    w = Word()
+    w.chars = [(c, U if c in "*?[]{},." else Q) for c in token]
+    return [p for p in word_paths(w, [cwd]) if blocked_path(p, rules)]
 
 
 BRACE_SEQ = re.compile(r"\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.(-?\d+))?\}")
@@ -898,64 +817,6 @@ def _brace_sequence(m, limit):
         return None
     rng = range(lo, hi + 1, step) if lo <= hi else range(lo, hi - 1, -step)
     return [fmt(v) for _, v in zip(range(limit), rng)]
-
-
-def expand_braces(word, limit=256):
-    """Bash brace expansion of {a,b} (nested allowed) and sequences such as {m..o}, capped at
-    `limit` results."""
-    seq = BRACE_SEQ.search(word)
-    m = re.search(r"\{([^{}]*,[^{}]*)\}", word)
-    if seq and (not m or seq.start() < m.start()):
-        items = _brace_sequence(seq, limit)
-        if items is not None:
-            out = []
-            for item in items:
-                tick()
-                for w in expand_braces(word[: seq.start()] + item + word[seq.end() :], limit):
-                    out.append(w)
-                    if len(out) >= limit:
-                        return out
-            return out
-    if not m:
-        return [word]
-    out = []
-    for alt in m.group(1).split(","):
-        tick()
-        for w in expand_braces(word[: m.start()] + alt + word[m.end() :], limit):
-            out.append(w)
-            if len(out) >= limit:
-                return out
-    return out
-
-
-def _path_hits(token, cwd, rules):
-    full = expand(token, cwd)
-    if not full:
-        return []
-    found = []
-    if blocked_path(full, rules):
-        found.append(full)
-    if any(ch in token for ch in "*?["):
-        candidates = []
-        try:
-            # recursive: zsh (and bash with globstar) read `**/` as any number of folders
-            for n, match in enumerate(glob.iglob(expand(token, cwd, True), recursive=True)):
-                tick()
-                if n >= MAX_GLOB_RESULTS:
-                    raise HookTimeout("a glob matches too many files to check")
-                candidates.append(match)
-        except (OSError, re.error):
-            pass
-        # glob skips hidden files for `*`; check names in the folder directly too.
-        folder, pattern = os.path.split(full)
-        try:
-            literal_folder = not any(ch in os.path.dirname(token) for ch in "*?[")
-            names = os.listdir(folder) if literal_folder else []
-        except OSError:
-            names = []
-        candidates += [os.path.join(folder, n) for n in names if name_matches(n, pattern)]
-        found += [c for c in candidates if blocked_path(c, rules)]
-    return found
 
 
 def folder_holds_secret(folder, rules, deadline, honours_ignores=True):
@@ -1007,93 +868,760 @@ ANSI_C = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
 
 def _ansi_c(match):
     """Decode bash $'...' quoting (\\x2e, \\056, \\n ...) into a plain quoted word."""
-    body = match.group(1)
-    try:
-        decoded = body.encode("latin-1", "backslashreplace").decode("unicode_escape")
-    except (UnicodeDecodeError, ValueError):
-        decoded = body
-    return shlex.quote(decoded)
+    return shlex.quote(_ansi_c_text(match.group(1)))
 
 
-# Glob syntax the shell expands only in some modes, rewritten as `*` (a superset). Run over a
-# mask in which every quoted character is "a", so only unquoted syntax counts.
-GLOB_FLAGS = re.compile(r"\(#[A-Za-z0-9.,:]*\)")  # zsh (#i) and similar
-GLOB_GROUP = re.compile(r"(?<![$=<>\\])[@+!?*]?\([^()\s]*\)")  # zsh (a|b), bash/ksh @(...)
-GLOB_EXTENDED = re.compile(r"\^[^/]*|##?")  # zsh EXTENDED_GLOB: ^x (rest of the name is
-# "not x"), x# and x## (repeats)
+# --- shell words: SPEC section 3a, the shell-word rule ------------------------------------
+# One lexer reads a command into words whose characters are tagged unquoted ("u") or quoted
+# ("q"). Only unquoted characters can be glob syntax (G1). A literal value put into an
+# unquoted $name counts as unquoted; values are data, so they never open quotes, start
+# comments or end commands. Each word is then checked twice (G5): as written, and widened
+# into a pattern that matches at least every path bash, zsh or sh could reach with it.
+
+U, Q = "u", "q"
+NUMERIC_RANGE = re.compile(r"<\d*-\d*>")
+CMD_KEYWORDS = {"!", "if", "then", "else", "elif", "do", "while", "until", "time", "{", "}"}
+WORD_WALK_LIMIT = 20_000  # entries one word's pattern may visit; past this it is denied (G6)
+MAX_NESTING = 3  # $(...) inside $(...) ...; deeper is denied
 
 
-def _unquote_with_mask(word):
-    """(text without quotes, mask): the mask has "a" for every character that was quoted."""
-    text, mask, i, quote = [], [], 0, None
-    while i < len(word):
-        c = word[i]
-        if quote == "'":
-            if c == "'":
+class Word:
+    __slots__ = ("chars", "cmdpos")
+
+    def __init__(self, cmdpos=False):
+        self.chars = []
+        self.cmdpos = cmdpos
+
+    @property
+    def literal(self):
+        return "".join(c for c, _ in self.chars)
+
+
+class ShellWords:
+    __slots__ = ("segments", "nested")
+
+    def __init__(self):
+        self.segments = []  # list of list[Word], one per simple command
+        self.nested = []  # command text inside $(...), `...`, <(...), >(...), =(...)
+
+    def words(self):
+        return [w for seg in self.segments for w in seg]
+
+
+def _matching(s, i, open_ch, close_ch):
+    """Index of the close_ch balancing s[i] == open_ch, skipping quotes; -1 if none."""
+    depth, j, quote = 0, i, None
+    while j < len(s):
+        c = s[j]
+        if quote:
+            if c == "\\" and quote == '"':
+                j += 2
+                continue
+            if c == quote:
                 quote = None
-            else:
-                text.append(c)
-                mask.append("a")
-        elif c == "\\" and i + 1 < len(word) and quote != "'":
-            text.append(word[i + 1])
-            mask.append("a")
-            i += 1
-        elif quote == '"':
-            if c == '"':
-                quote = None
-            else:
-                text.append(c)
-                mask.append("a" if c != "$" else "$")
+        elif c == "\\":
+            j += 2
+            continue
         elif c in "'\"":
             quote = c
-        else:
-            text.append(c)
-            mask.append(c)
-        i += 1
-    return "".join(text), "".join(mask)
+        elif c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return -1
 
 
-def _rewrite(text, mask, rx, repl):
-    while True:
-        m = rx.search(mask)
-        if not m:
-            return text, mask
-        text = text[: m.start()] + repl + text[m.end() :]
-        mask = mask[: m.start()] + repl + mask[m.end() :]
+ANSI_SIMPLE = {
+    "a": "\a",
+    "b": "\b",
+    "e": "\x1b",
+    "E": "\x1b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\\": "\\",
+    "'": "'",
+    '"': '"',
+    "?": "?",
+}
+ANSI_NUMERIC = re.compile(
+    r"([0-7]{1,3})|x([0-9A-Fa-f]{1,2})|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})"
+)
 
 
-def glob_variants(text):
-    """Argument words rewritten so the guard's glob check covers shell modes it cannot see.
-
-    zsh, the macOS default shell, expands `(a|b)` groups in arguments by default; with options
-    an agent can turn on in the same command, bash and zsh also expand `@(...)`, `+(...)`,
-    `!(...)` (extglob, kshglob) and zsh's `^x`, `x#`, `x~y` and `(#i)` (EXTENDED_GLOB). Each
-    unquoted use becomes `*` (and `~y` is dropped), so the result matches at least what the
-    shell could. The operator split below would otherwise cut `(a|b)` words apart. Words in
-    command position (`(ls|wc)` is a subshell there) and comments are left alone."""
-    out = []
-    text = re.sub(r"(?:^|(?<=\s))#[^\n]*", "", text)  # comments
-    for m in re.finditer(r"\S+", text):
-        word = m.group(0)
-        if not any(c in word for c in "()^#~"):
+def _ansi_c_text(body):
+    """bash $'...' decoding: \\n, \\x2e, \\056, \\u002e, \\cX; anything else stays as written."""
+    out, i = [], 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\" or i + 1 >= len(body):
+            out.append(c)
+            i += 1
             continue
-        before = text[: m.start()].rstrip()
-        if not before or before[-1] in ";&|(\n":
-            continue  # command position
-        plain, mask = _unquote_with_mask(word)
-        new, nmask = _rewrite(plain, mask, GLOB_FLAGS, "")
-        for _ in range(8):  # nested groups, innermost first
-            before_pass = new
-            new, nmask = _rewrite(new, nmask, GLOB_GROUP, "*")
-            if new == before_pass:
-                break
-        new, nmask = _rewrite(new, nmask, GLOB_EXTENDED, "*")
-        cut = nmask.find("~", 1)
-        if cut > 0:
-            new, nmask = new[:cut], nmask[:cut]
-        if new != plain and "(" not in nmask and ")" not in nmask:
-            out.append(new)
+        nxt = body[i + 1]
+        if nxt in ANSI_SIMPLE:
+            out.append(ANSI_SIMPLE[nxt])
+            i += 2
+            continue
+        if nxt == "c" and i + 2 < len(body):
+            out.append(chr(ord(body[i + 2]) & 0x1F))
+            i += 3
+            continue
+        m = ANSI_NUMERIC.match(body, i + 1)
+        if m:
+            octal, hx, u4, u8 = m.groups()
+            code = int(octal, 8) if octal else int(hx or u4 or u8, 16)
+            out.append(chr(code) if code < 0x110000 else "?")
+            i = m.end()
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _is_assignment(word):
+    """`name=...` with an unquoted `=`; returns the index of the `=` or -1."""
+    lit = word.literal
+    m = re.match(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?=", lit)
+    if not m:
+        return -1
+    eq = m.end() - 1
+    return eq if word.chars[eq][1] == U else -1
+
+
+class _Lexer:
+    def __init__(self, text, cwd, home, env):
+        self.s, self.cwd, self.home, self.env = text, cwd, home, env
+        self.out = ShellWords()
+        self.seg, self.word = [], None
+        self.cmdpos, self.array = True, 0
+        self.budget = MAX_COMMAND
+
+    # words and segments
+    def _start(self):
+        if self.word is None:
+            self.word = Word(self.cmdpos and not self.array)
+        return self.word
+
+    def _add(self, ch, kind):
+        self.budget -= 1
+        if self.budget < 0:
+            raise HookTimeout("the command's variables expand to too much text to check")
+        self._start().chars.append((ch, kind))
+
+    def _end_word(self):
+        w, self.word = self.word, None
+        if w is None or not w.chars:
+            return
+        self.seg.append(w)
+        eq = _is_assignment(w)
+        if eq != -1:
+            self.env[w.literal[:eq].split("[")[0]] = [c for c, _ in w.chars[eq + 1 :]]
+            return  # an assignment keeps command position
+        lit = w.literal
+        if w.cmdpos and (
+            lit in CMD_KEYWORDS or lit in ("export", "local", "readonly", "declare", "typeset")
+        ):
+            return
+        if not self.array:
+            self.cmdpos = False
+
+    def _end_segment(self):
+        self._end_word()
+        if self.seg:
+            self.out.segments.append(self.seg)
+        self.seg, self.cmdpos = [], True
+
+    def _splice(self, value, quoted):
+        """A variable's literal value: data. Unquoted, it may glob and is split on blanks."""
+        for ch in value:
+            if not quoted and ch in " \t\n":
+                self._end_word()
+            else:
+                self._add(ch, Q if quoted else U)
+
+    def _variable(self, name, quoted):
+        if name == "IFS":
+            value, quoted = (" ", False) if not quoted else (" ", True)
+        elif name == "HOME":
+            value = self.home
+            quoted = True  # a path the shell inserts; its own characters are not globs
+        elif name == "PWD":
+            value, quoted = self.cwd, True
+        else:
+            value = self.env.get(name)
+        if value is not None:
+            self._start()
+            self._splice(value, quoted)
+        else:
+            self._start()  # unknown: run-time text (known miss 2); the word still exists
+
+    def _nested(self, i, open_ch, close_ch):
+        end = _matching(self.s, i, open_ch, close_ch)
+        if end == -1:
+            self.out.nested.append(self.s[i + 1 :])
+            return len(self.s)
+        self.out.nested.append(self.s[i + 1 : end])
+        self._start()
+        return end + 1
+
+    def _dollar(self, i, quoted):
+        s = self.s
+        nxt = s[i + 1] if i + 1 < len(s) else ""
+        if nxt == "'" and not quoted:
+            end = i + 2
+            while end < len(s) and s[end] != "'":
+                end += 2 if s[end] == "\\" else 1
+            for ch in _ansi_c_text(s[i + 2 : end]):
+                self._add(ch, Q)
+            return end + 1
+        if nxt == '"' and not quoted:
+            return i + 1  # $"..." is "..." here
+        if s.startswith("$((", i):
+            end = _matching(s, i + 1, "(", ")")
+            self._start()
+            return len(s) if end == -1 else end + 1  # arithmetic: run-time text
+        if nxt == "(":
+            return self._nested(i + 1, "(", ")")
+        if nxt == "{":
+            end = _matching(s, i + 1, "{", "}")
+            if end == -1:
+                self._add("$", Q if quoted else U)
+                return i + 1
+            body = s[i + 2 : end].lstrip("~=^")  # zsh ${~x}, ${=x}, ${^x}
+            m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(:?[-=+])?(.*)", body, re.S)
+            if m and not m.group(2) and not m.group(3):
+                self._variable(m.group(1), quoted)
+            elif m and m.group(2) and m.group(2).lstrip(":") in "-=":
+                # ${x:-word}: when x is unset the shell uses `word`; check that reading too
+                sub = _Lexer(m.group(3), self.cwd, self.home, self.env)
+                sub.run()
+                for w in sub.out.words():
+                    self._splice(w.literal, quoted)
+                self.out.nested.extend(sub.out.nested)
+            else:
+                self._start()  # ${#x}, ${x#p}, ${x^^}, ${x[1]}: run-time text
+            return end + 1
+        m = re.match(r"[~=^]*([A-Za-z_][A-Za-z0-9_]*)", s[i + 1 :])  # zsh $~x, $=x, $^x
+        if m:
+            self._variable(m.group(1), quoted)
+            return i + 1 + m.end()
+        if nxt and (nxt.isdigit() or nxt in "#?@*$!-"):
+            self._start()  # $1, $#, $?, $@ ...: run-time text
+            return i + 2
+        self._add("$", Q if quoted else U)
+        return i + 1
+
+    def run(self):
+        s, i = self.s, 0
+        while i < len(s):
+            tick()
+            c = s[i]
+            if c in " \t":
+                self._end_word()
+                i += 1
+            elif c in "\n;&|":
+                self._end_segment()
+                i += 1
+            elif c == "#" and self.word is None:
+                end = s.find("\n", i)
+                i = len(s) if end == -1 else end  # a comment
+            elif c == "'":
+                end = s.find("'", i + 1)
+                end = len(s) if end == -1 else end
+                self._start()
+                for ch in s[i + 1 : end]:
+                    self._add(ch, Q)
+                i = end + 1
+            elif c == '"':
+                i = self._double(i + 1)
+            elif c == "\\":
+                if i + 1 < len(s):
+                    self._add(s[i + 1], Q)
+                i += 2
+            elif c == "$":
+                i = self._dollar(i, False)
+            elif c == "`":
+                end = s.find("`", i + 1)
+                end = len(s) if end == -1 else end
+                self.out.nested.append(s[i + 1 : end])
+                self._start()
+                i = end + 1
+            elif c == "<" and NUMERIC_RANGE.match(s, i):
+                end = NUMERIC_RANGE.match(s, i).end()
+                for ch in s[i:end]:
+                    self._add(ch, U)  # zsh <1-99> and <->: a pattern, not a redirection
+                i = end
+            elif c in "<>":
+                if i + 1 < len(s) and s[i + 1] == "(":
+                    i = self._nested(i + 1, "(", ")")  # process substitution
+                    continue
+                m = re.match(r"\d*\s*$", self.word.literal) if self.word else None
+                if self.word is not None and m and all(k == U for _, k in self.word.chars):
+                    self.word = None  # the fd number in 2>file
+                self._end_word()
+                j = i
+                while j < len(s) and s[j] in "<>&|":
+                    j += 1
+                i = j  # the next word is the redirection target, checked like any word
+            elif c == "(":
+                i = self._paren(i)
+            elif c == ")":
+                if self.array:
+                    self._end_word()
+                    self.array -= 1
+                    if not self.array:
+                        self._end_word()
+                else:
+                    self._end_segment()
+                i += 1
+            elif c == "=" and self.word is None and i + 1 < len(s) and s[i + 1] == "(":
+                i = self._nested(i + 1, "(", ")")  # zsh =(...)
+            else:
+                self._add(c, U)
+                i += 1
+        self._end_segment()
+        return self.out
+
+    def _double(self, i):
+        s = self.s
+        self._start()
+        while i < len(s):
+            c = s[i]
+            if c == '"':
+                return i + 1
+            if c == "\\" and i + 1 < len(s) and s[i + 1] in '$`"\\\n':
+                self._add(s[i + 1], Q)
+                i += 2
+            elif c == "$":
+                i = self._dollar(i, True)
+            elif c == "`":
+                end = s.find("`", i + 1)
+                end = len(s) if end == -1 else end
+                self.out.nested.append(s[i + 1 : end])
+                i = end + 1
+            else:
+                self._add(c, Q)
+                i += 1
+        return i
+
+    def _paren(self, i):
+        w = self.word
+        if w is not None and w.chars and w.chars[-1] == ("=", U) and _is_assignment(w) != -1:
+            self.array += 1  # x=(a b c): the elements are words; the `(` is not a glob
+            self._end_word_keep_array()
+            return i + 1
+        if w is None and self.cmdpos and not self.array:
+            self._end_segment()  # a subshell: (cd src && ls)
+            return i + 1
+        # An unquoted `(` in an argument: a glob group in zsh, or after @ + ! ? * in
+        # extglob. Keep it and everything up to its balancing `)` in the word.
+        end = _matching(self.s, i, "(", ")")
+        if end == -1 or "\n" in self.s[i:end]:
+            self._add("(", U)
+            return i + 1
+        self._add("(", U)
+        j = i + 1
+        while j < end:
+            c = self.s[j]
+            if c == "'":
+                e = self.s.find("'", j + 1)
+                for ch in self.s[j + 1 : e]:
+                    self._add(ch, Q)
+                j = e + 1
+            elif c == '"':
+                j = self._double(j + 1)
+            elif c == "\\" and j + 1 < end:
+                self._add(self.s[j + 1], Q)
+                j += 2
+            elif c == "$":
+                j = self._dollar(j, False)
+            else:
+                self._add(c, U)
+                j += 1
+        self._add(")", U)
+        return end + 1
+
+    def _end_word_keep_array(self):
+        w, self.word = self.word, None
+        if w is not None and w.chars:
+            self.seg.append(w)
+            eq = _is_assignment(w)
+            if eq != -1:
+                self.env.pop(w.literal[:eq].split("[")[0], None)
+
+
+def shell_words(command, cwd, env=None):
+    """Lex a command (SPEC 3a G1). Raises HookTimeout on runaway input."""
+    text = unicodedata.normalize("NFC", command)
+    text = text.replace("\\\r\n", "").replace("\\\n", "")
+    text = windows_paths(text)
+    lexer = _Lexer(text, cwd, home_dir(), {} if env is None else env)
+    return lexer.run()
+
+
+# --- from a word to paths ------------------------------------------------------------------
+
+
+def _brace_expand(chars, limit=256):
+    """Bash and zsh brace expansion (G3d): {a,b} lists and {x..y} sequences, exactly; nested
+    allowed; unquoted braces only. Anything else stays as written."""
+    n = len(chars)
+    for i in range(n):
+        if chars[i] != ("{", U):
+            continue
+        depth, j, commas = 0, i, []
+        while j < n:
+            ch = chars[j]
+            if ch == ("{", U):
+                depth += 1
+            elif ch == ("}", U):
+                depth -= 1
+                if depth == 0:
+                    break
+            elif ch == (",", U) and depth == 1:
+                commas.append(j)
+            j += 1
+        if j >= n:
+            continue
+        inner = chars[i + 1 : j]
+        if commas:
+            bounds = [i] + commas + [j]
+            alts = [chars[a + 1 : b] for a, b in zip(bounds, bounds[1:])]
+        else:
+            m = BRACE_SEQ.fullmatch("{" + "".join(c for c, _ in inner) + "}")
+            items = _brace_sequence(m, limit) if m and all(k == U for _, k in inner) else None
+            if items is None:
+                continue  # literal, or `..` that is not a sequence: widened later (G3)
+            alts = [[(c, U) for c in item] for item in items]
+        out = []
+        for alt in alts:
+            tick()
+            for w in _brace_expand(chars[:i] + alt + chars[j + 1 :], limit):
+                out.append(w)
+                if len(out) >= limit:
+                    return out
+        return out
+    return [chars]
+
+
+def _pieces(chars):
+    """The word, the text after `=` (--file=.env, VAR=.env), the parts around `:`
+    (HEAD:.env) and the text after a leading `@` (curl -F f=@.env)."""
+    out = [chars]
+    lit = "".join(c for c, _ in chars)
+    if "=" in lit and not lit.startswith("="):
+        out.append(chars[lit.index("=") + 1 :])
+    if ":" in lit:
+        start = 0
+        for k, (c, _) in enumerate(chars + [(":", Q)]):
+            if c == ":":
+                if k > start:
+                    out.append(chars[start:k])
+                start = k + 1
+    out += [p[1:] for p in list(out) if p and p[0][0] == "@" and len(p) > 1]
     return out
+
+
+def _tilde(chars, folders, home):
+    """(base folders, rest) for a word that starts with an unquoted `~` (G4), else None."""
+    if not chars or chars[0] != ("~", U):
+        return None
+    k = 1
+    while k < len(chars) and chars[k][0] != "/":
+        k += 1
+    head = "".join(c for c, _ in chars[1:k])
+    rest = chars[k + 1 :] if k < len(chars) else []
+    if head == "":
+        return [home], rest
+    if head == "+":
+        return list(folders), rest
+    return [home] + list(folders), rest  # ~-, ~user, zsh ~name: an unknown folder
+
+
+GLOB_CHARS = set("*?[")
+OPERATOR_CHARS = set("(#^{<~")
+
+
+def _has_glob(chars):
+    return any(k == U and (c in GLOB_CHARS or c in OPERATOR_CHARS) for c, k in chars)
+
+
+def _bracket_close(chars, i):
+    """Index of the `]` closing an unquoted bracket at i (POSIX rules), or -1."""
+    j = i + 1
+    if j < len(chars) and chars[j][0] in "!^":
+        j += 1
+    if j < len(chars) and chars[j][0] == "]":
+        j += 1
+    while j < len(chars):
+        c, k = chars[j]
+        if c == "/":
+            return -1
+        if c == "[" and k == U and j + 1 < len(chars) and chars[j + 1][0] in ":=.":
+            mark = chars[j + 1][0]
+            e = j + 2
+            while e + 1 < len(chars) and not (chars[e][0] == mark and chars[e + 1][0] == "]"):
+                e += 1
+            if e + 1 < len(chars):
+                j = e + 2
+                continue
+        if c == "]" and k == U:
+            return j
+        j += 1
+    return -1
+
+
+def _closes_after_slash(chars, i, open_ch, close_ch):
+    """True if the bracket, group or brace opening at i could end after a `/` (G3c)."""
+    rest = chars[i + 1 :]
+    slash = next((n for n, (c, _) in enumerate(rest) if c == "/"), -1)
+    if slash == -1:
+        return False
+    if open_ch == "[":
+        return any(c == "]" and k == U for c, k in rest[slash:])
+    depth = 1
+    for n, (c, k) in enumerate(rest):
+        if k != U:
+            continue
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                return n > slash
+    return True  # never closes: it could reach anywhere
+
+
+def _operator_at(chars, i):
+    """Is the unquoted char at i a pattern operator in some covered mode (G3)?"""
+    c = chars[i][0]
+    nxt = chars[i + 1] if i + 1 < len(chars) else ("", Q)
+    if c in "@+!?*" and nxt == ("(", U):
+        return True
+    if c in "(#^":
+        return True
+    if c == "{":
+        depth, j = 0, i
+        while j < len(chars):
+            if chars[j] == ("{", U):
+                depth += 1
+            elif chars[j] == ("}", U):
+                depth -= 1
+                if depth == 0:
+                    return ".." in "".join(x for x, _ in chars[i + 1 : j])
+            j += 1
+        return False  # never closes: literal
+    if c == "<":
+        j = i + 1
+        while j < len(chars) and chars[j][0] in "0123456789-" and chars[j][1] == U:
+            j += 1
+        return j < len(chars) and chars[j] == (">", U)
+    return False
+
+
+def widen(chars):
+    """The widened pattern of a word (G2, G3): a list of path parts, each ("lit", text),
+    ("pat", regex) or ("any", regex-or-None), and a flag: the last part also stands for
+    everything under it (G3c). None if the word holds no glob syntax."""
+    if not _has_glob(chars):
+        return None
+    # G3b: an unquoted `~` that is not at the start of the word cuts the whole word
+    for n in range(1, len(chars)):
+        if chars[n] == ("~", U) and chars[n - 1][0] not in "=:":
+            chars = chars[:n]
+            break
+    parts, cur, tree = [], [], False
+    i = 0
+
+    def close_part():
+        toks = list(cur)
+        if not toks:
+            parts.append(("lit", ""))
+            return
+        if all(t[0] == "lit" for t in toks):
+            parts.append(("lit", "".join(t[1] for t in toks)))
+            return
+        rx = "".join(re.escape(t[1]) if t[0] == "lit" else t[1] for t in toks)
+        first_dot = toks[0][0] == "lit" and toks[0][1] == "."
+        if any(
+            t == ("star", ".*") and n + 1 < len(toks) and toks[n + 1] == ("star", ".*")
+            for n, t in enumerate(toks)
+        ):
+            parts.append(("any", None if rx == ".*.*" else rx, first_dot))
+        else:
+            parts.append(("pat", rx, first_dot))
+
+    while i < len(chars):
+        c, k = chars[i]
+        if c == "/":
+            close_part()
+            cur = []
+            i += 1
+            continue
+        if k == U and c == "[":
+            if _closes_after_slash(chars, i, "[", "]"):
+                cur.append(("star", ".*"))
+                tree = True
+                break
+            end = _bracket_close(chars, i)
+            cur.append(("one", "."))
+            i = end + 1 if end != -1 else i + 1
+            continue
+        if k == U and c in OPERATOR_CHARS | set("@+!?*") and _operator_at(chars, i):
+            open_ch = "(" if c in "@+!?*" else c
+            close_ch = {"(": ")", "{": "}", "<": ">"}.get(open_ch)
+            if close_ch and _closes_after_slash(chars, i, open_ch, close_ch):
+                cur.append(("star", ".*"))
+                tree = True
+                break
+            if c == "#" and cur:
+                cur.pop()  # G3a: `#` repeats the unit before it, which may be absent
+            cur.append(("star", ".*"))
+            while i < len(chars) and chars[i][0] != "/":
+                i += 1
+            continue
+        if k == U and c == "*":
+            cur.append(("star", ".*"))
+        elif k == U and c == "?":
+            cur.append(("one", "."))
+        else:
+            cur.append(("lit", c))
+        i += 1
+    close_part()
+    return parts, tree
+
+
+class _Budget:
+    def __init__(self):
+        self.left = WORD_WALK_LIMIT
+
+    def spend(self, n=1):
+        self.left -= n
+        tick()
+        if self.left < 0:
+            raise HookTimeout("a pattern in the command matches too many files to check")
+
+
+def _entries(folder, budget):
+    try:
+        with os.scandir(folder) as it:
+            names = []
+            for e in it:
+                budget.spend()
+                names.append(e.name)
+            return names
+    except OSError:
+        return []
+
+
+def _descendants(path, budget, include_self=True):
+    out = [path] if include_self else []
+    stack = [path]
+    while stack:
+        d = stack.pop()
+        if not os.path.isdir(d) or os.path.islink(d) and d != path:
+            continue
+        for n in _entries(d, budget):
+            p = os.path.join(d, n)
+            out.append(p)
+            if os.path.isdir(p) and not os.path.islink(p):
+                stack.append(p)
+    return out
+
+
+def walk_pattern(bases, parts, tree, budget):
+    """Every existing path the widened pattern can reach from the base folders."""
+    cur = list(dict.fromkeys(bases))
+    for n, part in enumerate(parts):
+        kind = part[0]
+        nxt = []
+        if kind == "lit":
+            nxt = [os.path.join(d, part[1]) if part[1] else d for d in cur]
+        else:
+            rx = part[1]
+            first_dot = part[2]
+            if kind == "any":
+                dirs = []
+                for d in cur:
+                    dirs += [p for p in _descendants(d, budget) if os.path.isdir(p)]
+                if rx is None:  # a part that is exactly `**`
+                    if n == len(parts) - 1:
+                        for d in cur:
+                            nxt += _descendants(d, budget)
+                    else:
+                        nxt = dirs
+                    cur = list(dict.fromkeys(nxt))
+                    continue
+                cur = dirs
+            pat = re.compile(rx.replace(".*.*", ".*"), re.S | re.I)
+            for d in cur:
+                names = _entries(d, budget)
+                if first_dot:
+                    names += [".", ".."]
+                nxt += [os.path.join(d, x) for x in names if pat.fullmatch(x)]
+        cur = list(dict.fromkeys(nxt))
+        if not cur:
+            return []
+    if tree:
+        out = []
+        for p in cur:
+            out += _descendants(p, budget)
+        cur = out
+    return [os.path.normpath(p) for p in cur]
+
+
+def _word_paths(chars, folders, budget):
+    """Paths a word names (G5): as written, and through its widened pattern."""
+    home = home_dir()
+    out = []
+    for expanded in _brace_expand(chars):
+        for n, piece in enumerate(_pieces(expanded)):
+            if not piece:
+                continue
+            literal = "".join(c for c, _ in piece)
+            t = _tilde(piece, folders, home)
+            if t is not None:
+                bases, rest = t
+                rest_lit = "".join(c for c, _ in rest)
+                out += [os.path.normpath(os.path.join(b, rest_lit)) for b in bases]
+            else:
+                rest = piece
+                for f in folders:
+                    full = expand(literal, f)
+                    if full:
+                        out.append(full)
+                if literal.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:[\\/]", literal):
+                    bases = [os.path.abspath(os.sep)]
+                    rest = piece[1:] if literal[:1] in "/\\" else piece
+                else:
+                    bases = list(folders)
+            if len(literal) > MAX_PATH:
+                raise HookTimeout("a path in the command is too long to check")
+            # The shell globs the whole word only; the text after `=`, `:` or `@` is a name a
+            # program may read, so it is checked as written (above), not as a pattern.
+            w = widen(rest) if n == 0 else None
+            if w is not None:
+                parts, tree = w
+                out += walk_pattern(bases, parts, tree, budget)
+    return out
+
+
+def word_paths(word, folders):
+    """All paths a lexed word can name, from every working folder."""
+    return _word_paths(list(word.chars), list(folders), _Budget())
+
+
+def plain_word(text):
+    """A word from a tool's path field: every character counts as written."""
+    w = Word()
+    w.chars = [(c, U) for c in text]
+    return w
 
 
 def split_tokens(command, _resolve=True):
@@ -1105,18 +1633,13 @@ def split_tokens(command, _resolve=True):
     text = windows_paths(text)
     text = text.replace('$"', '"')  # $"..." locale quoting is plain quoting here
     text = text.replace("${IFS}", " ").replace("$IFS", " ")
-    groups = glob_variants(text)
     text = re.sub(r"[<>]+&?\d*", " ", text)  # redirections: cat<.env, >out
     tokens = []
-    parts = SHELL_OPERATORS.split(text)
-    for part in parts + [None]:
-        if part is None:
-            words = groups  # already unquoted
-        else:
-            try:
-                words = shlex.split(part, posix=True)
-            except ValueError:
-                words = part.split()
+    for part in SHELL_OPERATORS.split(text):
+        try:
+            words = shlex.split(part, posix=True)
+        except ValueError:
+            words = part.split()
         for w in words:
             tokens.append(w)
             if "=" in w and not w.startswith("="):  # --file=.env, VAR=.env, f=@.env
@@ -1250,9 +1773,63 @@ def switches_guard(tokens):
     )
 
 
-def check_command(command, cwd, rules, deadline, depth=0, extra=()):
+SCRIPT_CHARS = set(" \t\n;|&<>$`")
+SHELL_RUNNERS = {
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "mksh",
+    "yash",
+    "busybox",
+    "eval",
+    "su",
+    "watch",
+    "script",
+}
+
+
+def shell_scripts(sw, depth):
+    """Text the shell itself reads again as a command (SPEC 3a): $(...), `...`, <(...), and
+    words given to sh -c, bash -c, zsh -c, eval and similar. Other quoted text is data."""
+    out = list(sw.nested)
+    for seg in sw.segments:
+        runner = False
+        for w in seg:
+            lit = w.literal
+            if runner and SCRIPT_CHARS & set(lit):
+                out.append(lit)
+            if os.path.basename(lit).lower() in SHELL_RUNNERS:
+                runner = True
+    if out and depth >= MAX_NESTING:
+        raise HookTimeout("commands are nested too deeply to check")
+    return out
+
+
+def _skip_word(w):
+    return w.cmdpos and w.literal in ("[", "[[", "]]")
+
+
+def _literal_hits(token, folder, rules):
+    """Blocked paths a token names as written, with {a,b} braces and a leading `@`."""
+    found = []
+    for chars in _brace_expand([(c, U if c in "{},." else Q) for c in token]):
+        variant = "".join(c for c, _ in chars)
+        for v in (variant, variant[1:] if variant.startswith("@") else ""):
+            full = expand(v, folder) if v else None
+            if full and blocked_path(full, rules):
+                found.append(full)
+    return found
+
+
+def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True):
+    """`globs`: read the command as the shell would (SPEC 3a). False for text that is only
+    data to its program, such as python3 -c '...': there only names written out count."""
     tokens, parts = split_tokens(command)
-    if switches_guard(tokens):
+    sw = shell_words(command, cwd)
+    words = sw.words()
+    if switches_guard(tokens) or switches_guard([w.literal for w in words]):
         return (
             "denypeek guard install and uninstall change the guard itself; "
             "run them yourself in a terminal"
@@ -1260,20 +1837,33 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=()):
     # `cd dir && cat .env`: relative paths are checked against every folder the command
     # changes into, as well as the starting one.
     folders = [cwd] + list(extra) + cd_targets(parts, cwd)
-    if len(tokens) > MAX_TOKENS:
+    if len(words) > MAX_TOKENS or len(tokens) > MAX_TOKENS:
         raise HookTimeout("the command has too many words to check")
+    # 1. names written out, in any word or quoted text (G5, as written)
     for tok in tokens:
         tick()
-        if depth < 3 and any(ch in tok for ch in " \t;|&<>$`"):
-            # a nested script: bash -c '...', sh -lc "...", eval "..."
-            reason = check_command(tok, cwd, rules, deadline, depth + 1, extra)
+        if depth < MAX_NESTING and SCRIPT_CHARS & set(tok):
+            reason = check_command(tok, cwd, rules, deadline, depth + 1, extra, globs=False)
             if reason:
                 return reason
             continue
         for folder in folders:
-            hits = path_hits(tok, folder, rules)
+            hits = _literal_hits(tok, folder, rules)
             if hits:
                 return reason_for(hits[0], "names")
+    if globs:
+        # 2. what the shell can expand each word to (G1 to G6)
+        for script in shell_scripts(sw, depth):
+            reason = check_command(script, cwd, rules, deadline, depth + 1, extra)
+            if reason:
+                return reason
+        for w in words:
+            tick()
+            if _skip_word(w):
+                continue
+            for path in word_paths(w, folders):
+                if blocked_path(path, rules):
+                    return reason_for(path, "names")
     for part in parts:
         for folder, honours_ignores in grep_targets(part, cwd):
             try:

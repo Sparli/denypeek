@@ -1158,7 +1158,14 @@ class _Lexer:
                 i = end
             elif c in "<>":
                 if i + 1 < len(s) and s[i + 1] == "(":
-                    i = self._nested(i + 1, "(", ")")  # process substitution
+                    # process substitution: its contents are a command. At the start of a word
+                    # that is all; in the middle, shells differ, so it also widens (G3).
+                    mid = self.word is not None and bool(self.word.chars)
+                    end = self._nested(i + 1, "(", ")")
+                    if mid:
+                        for ch in s[i:end]:
+                            self._add(ch, U)
+                    i = end
                     continue
                 m = re.match(r"\d*\s*$", self.word.literal) if self.word else None
                 if self.word is not None and m and all(k == U for _, k in self.word.chars):
@@ -1219,8 +1226,11 @@ class _Lexer:
             self._end_segment()  # a subshell: (cd src && ls)
             return i + 1
         # An unquoted `(` in an argument: a glob group in zsh, or after @ + ! ? * in
-        # extglob. Keep it and everything up to its balancing `)` in the word.
+        # extglob. Keep it and everything up to its balancing `)` in the word. After a `=`
+        # in the middle of a word it may also be zsh =(...), so its contents are a command too.
         end = _matching(self.s, i, "(", ")")
+        if w is not None and w.chars and w.chars[-1] == ("=", U) and end != -1:
+            self.out.nested.append(self.s[i + 1 : end])
         if end == -1 or "\n" in self.s[i:end]:
             self._add("(", U)
             return i + 1
@@ -1401,7 +1411,7 @@ def _operator_at(chars, i):
     """Is the unquoted char at i a pattern operator in some covered mode (G3)?"""
     c = chars[i][0]
     nxt = chars[i + 1] if i + 1 < len(chars) else ("", Q)
-    if c in "@+!?*" and nxt == ("(", U):
+    if c in "@+!?*<>" and nxt == ("(", U):  # extglob, and <(...) >(...) inside a word
         return True
     if c in "(#^":
         return True
@@ -1472,8 +1482,9 @@ def widen(chars):
             cur.append(("one", "."))
             i = end + 1 if end != -1 else i + 1
             continue
-        if k == U and c in OPERATOR_CHARS | set("@+!?*") and _operator_at(chars, i):
-            open_ch = "(" if c in "@+!?*" else c
+        if k == U and c in OPERATOR_CHARS | set("@+!?*>") and _operator_at(chars, i):
+            nxt_open = i + 1 < len(chars) and chars[i + 1] == ("(", U)
+            open_ch = "(" if c in "@+!?*>" or (c == "<" and nxt_open) else c
             close_ch = {"(": ")", "{": "}", "<": ">"}.get(open_ch)
             if close_ch and _closes_after_slash(chars, i, open_ch, close_ch):
                 cur.append(("star", ".*"))

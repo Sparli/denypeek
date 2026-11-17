@@ -124,6 +124,10 @@ MUST_DENY_PROJ = [
     "diff <(cat .env) README.md",
     "cat $(echo .e?v)",
     "x=(.e?v); cat ${x[0]}",
+    # process substitution in the middle of a word: a command, and widened (the spec, 3a G1)
+    "cat x<(cat .env)",
+    "cat .en<(true)",
+    "cat --x=(cat .env)",
 ]
 
 

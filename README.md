@@ -209,18 +209,19 @@ How a blocked `.env` read works:
    - `*`, `?` and bracket expressions keep their meaning. Letter case never counts, and `**`
      matches at any depth.
    - Hidden names (those starting with `.`) depend on a setting, `hidden_names`, which
-     `denypeek guard install` picks and prints. **`always`:** hidden names always count.
-     **`auto`:** a `*`, `?` or bracket at the start of a path part does not match a hidden name,
-     as in bash, zsh and sh without `dotglob`, `globdots` or `GLOBIGNORE`; so `cat *` passes
-     beside a `.env`. Install picks `always` when one of your bash or zsh startup files (yours
-     or the system's) names `dotglob`, `globdots` or `GLOBIGNORE`, and `auto` otherwise;
-     `guard status` checks again and says so if that has changed;
-     `guard install --hidden always` forces `always`. In `auto`, widened text and an expansion
-     the guard cannot resolve (`cat $x*`) still count hidden names, and any command that turns
-     hidden-name matching on, or might, is denied: `shopt -s dotglob`, `setopt globdots`,
-     `zsh -4`, `shopt -s $o`, or setting a variable whose name is not written out
-     (`declare ${n}IGNORE=x`). A missing or unknown setting means `always`, and Windows is
-     always `always`.
+     `denypeek guard install` sets and prints. **`always`, the default:** hidden names always
+     count. **`auto`, experimental in v0.1.0, chosen with `guard install --hidden auto`:** a `*`,
+     `?` or bracket at the start of a path part does not match a hidden name, as in bash, zsh
+     and sh without `dotglob`, `globdots` or `GLOBIGNORE`; so `cat *` passes beside a `.env`.
+     With `--hidden auto`, install still reads your bash and zsh startup files (yours and the
+     system's) and sets `always` when one of them names `dotglob`, `globdots` or `GLOBIGNORE`;
+     `guard status` checks again and says so if that has changed. A later plain `guard install`
+     keeps the setting you chose. In `auto`, widened text and an expansion the guard cannot
+     resolve (`cat $x*`) still count hidden names, and the commands the guard knows to turn
+     hidden-name matching on are denied: `shopt -s dotglob`, `setopt globdots`, `zsh -4`,
+     `shopt -s $o`, or setting a variable whose name is not written out
+     (`declare ${n}IGNORE=x`). Some forms get through (see Known misses). A missing or unknown
+     setting means `always`, and Windows is always `always`.
    - Any other pattern syntax a covered mode can read (`(…)`, `#`, `^`, `x~y`, `<1-9>`, `@(…)`,
      `{....}`) widens the rest of that path part to "anything". If it could reach past a `/`, it
      widens to everything under that point.
@@ -357,6 +358,13 @@ denypeek guard install
 denypeek guard test
 ```
 
+**Hidden files, the default.** The guard counts hidden files such as `.env` for every pattern
+(the setting `always`). The cost: in a folder that holds a hidden secret file, a command with a
+bare `*`, such as `cat *`, `ls *` or `rm -rf ./*`, is denied. Name the files instead: `ls`,
+`cat *.md`, `rm -rf build/`. `denypeek guard install --hidden auto` lets a bare `*` skip hidden
+files, as your shell does. It is experimental in v0.1.0 and has known gaps (see
+[Limitations](#limitations-honest)).
+
 To install a reviewed release without cloning, pin its tag (works once v0.1.0 is tagged and the
 repository is public; the same command was tested against a local clone):
 
@@ -386,7 +394,7 @@ fake keys made at run time and runs the commands against it
 | `denypeek redact [--yes] [--include-active]` | Replaces each found key with `[REDACTED:<rule>:<fingerprint>]` in JSONL and JSON history, after a backup. Then rescans. |
 | `denypeek undo [--set NAME]` | Restores the files changed by the last redact, byte for byte. |
 | `denypeek backups list` / `purge --yes` | Lists or deletes redact backups. They still hold the keys. `purge --config` deletes the copies of agent settings that `guard install` made instead. |
-| `denypeek guard install [--agent NAME] [--hidden always]` | Wires the guard into each agent's own pre-tool hook, and picks and prints the hidden-names setting (`--hidden always` forces it). |
+| `denypeek guard install [--agent NAME] [--hidden always\|auto]` | Wires the guard into each agent's own pre-tool hook, and sets and prints the hidden-names setting: `always` by default; `--hidden auto` is experimental. A later install keeps the setting you chose. |
 | `denypeek guard status [--json]` | Shows where it is installed, checks the hook's Python exists and whether your account can modify it, and runs the hook once per agent. Exit 0 only if every asked-for agent is covered and working. |
 | `denypeek guard test` | Feeds each agent's real hook input format to the installed hook and prints blocked or allowed, per agent and case. |
 | `denypeek guard uninstall [--agent NAME]` | Removes only denypeek's entries. Run it in your own terminal: the guard denies it when an agent tries. |
@@ -576,8 +584,12 @@ in-place `.bak` files.
   commands are denied:
   - with the `always` setting, every bare `*`, `?` or bracket word in a folder that holds a
     hidden secret file: `cat *`, `du -sh *`, `grep foo *`, `rm -rf ./*`;
-  - with the `auto` setting, a command that turns `dotglob` or `globdots` on, such as
-    `shopt -s dotglob; cp -r tmpl/* out/`;
+  - with the experimental `auto` setting, in any folder, with or without a secret file: a
+    command that turns `dotglob` or `globdots` on (`shopt -s dotglob; cp -r tmpl/* out/`); a
+    command that only mentions `dotglob`, `globdots`, `GLOBIGNORE` or `BASHOPTS`, including in
+    `grep` and commit messages (`grep -rn globdots src/`, `git commit -m 'drop dotglob'`); and
+    one that sets a variable whose name is not written out (`export "$k=$v"`, `read -r "$var"`,
+    `printf -v "$n" x`);
   - a word that starts with a group or an extended operator: `ls (src|tests)`, an unquoted
     `grep ^foo file`;
   - a `#` after a one-character name: `echo C#`, `echo a#b`;
@@ -620,11 +632,19 @@ in-place `.bak` files.
     into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
     `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see;
-  - with the `auto` setting, hidden-name matching that is on although neither the command nor
-    a startup file names it: an option set in a file that a startup file loads (a plugin, a
-    framework), or set after `guard install` and before the next `guard status`. Then `cat *`
-    reaches `.env` and the guard allows it. Which startup files each agent's shell loads is
-    unverified. If you want no such gap, run `denypeek guard install --hidden always`.
+  - with the experimental `auto` setting, ways to make a bare `*` reach `.env` that the guard
+    allows:
+    - hidden-name matching that is on although neither the command nor a startup file names it:
+      an option set in a file that a startup file loads (a plugin, a framework), or set after
+      `guard install` and before the next `guard status`. Which startup files each agent's
+      shell loads is unverified;
+    - zsh `setopt -m` with an option-name pattern: `setopt -m '*dots'; cat *` (V1);
+    - a bash option name built by a glob, with a file named `dotglob` in the folder:
+      `shopt -s dotgl?b; cat *` (V2);
+    - a shell startup file (`~/.zshrc`, `~/.bashrc`) edited with the agent's own file tools to
+      turn hidden-name matching on, which a later shell then loads (V3).
+
+    The default, `always`, has none of these gaps.
 - **A Python your account can modify weakens the guard.** If the only usable Python has a
   program file or standard library your account can write to, an agent allowed to write there
   can still make the hook allow everything. denypeek warns at install and in `guard status`;
@@ -698,6 +718,7 @@ in-place `.bak` files.
 | **v0.1** | Guard for four agents with `guard test`, scan, redact with verify and undo, offline tests, CI on three systems |
 | v0.2 | A live test of what each agent passes to hook processes (environment, timeout behaviour, the `{}` reply); an allowlist instead of a denylist for `env` in project settings; a Windows wrapper (clean environment, fail closed when Python is missing); catching `tar` extraction and `git checkout`/`stash` restoring settings files; cached folder walks so big projects are not denied; a short guide for running agents in a sandbox; Claude Code plugin and MCP server |
 | v0.2 (scan and redact, from the security review) | Find double-quoted values inside JSON history (`api_key = \"…\"`), which generic rules miss today (S2); save the manifest before the rename, so `undo` can restore a file after a crash at that moment (S3); a stronger warning, or a second confirmation, for `--include-active`, since an agent that keeps the file open can lose lines it writes later (S4); a full disk skips that file and still prints the summary, rotate list and backup path, instead of a traceback (S5); skip every symlink in `redact` instead of replacing a link inside the history folders with a plain file (S6); scan long dense lines in windows around keyword hits (S7); say that purged backups can survive in Time Machine, APFS snapshots and cloud-synced home folders (S8) |
+| v0.2 (shell-word rule, from the final security check) | Close V1 to V3, so `--hidden auto` can stop being experimental; cancel the hook's watchdog timer before it answers, so a busy machine cannot end the hook with SIGALRM after it has decided (W1; the wrapper already turns that into a block); handle `IFS` set to a literal in the same command and then used by an unquoted expansion (`x=q.env; IFS=q; cat $x`), a known miss in both settings today (W2); read zsh's letter form (`setopt -4`) in startup files as a switch when `--hidden auto` checks them (W3) |
 | later | More agents, faster scan on large histories, verified Windows paths |
 
 ## Use from an agent

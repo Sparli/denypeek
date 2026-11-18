@@ -24,6 +24,9 @@ from denypeek.sources import resolve_home
 from .conftest import run_cli
 
 GUARD = Path(__file__).resolve().parents[1] / "src" / "denypeek" / "guard" / "guard.py"
+# G8: Windows is always `always` (PowerShell and cmd wildcards match dot files), so the hook
+# ignores an `auto` state there. Tests of `auto` assert the `always` answer on Windows.
+WINDOWS = os.name == "nt"
 
 
 def set_hidden(home: Path, value):
@@ -80,6 +83,8 @@ AUTO_ALLOW = [
     "cat [R]EADME.md",
     "cat **/*.py",
 ]
+# The AUTO_ALLOW commands whose bare `*` reaches the folder's .env: denied in `always`.
+BARE_STAR = {"du -sh *", "cat *", "wc -l *", "grep foo *", "rm -rf ./*", "set -euo pipefail; ls *"}
 
 
 @pytest.mark.parametrize("command", AUTO_ALLOW)
@@ -87,7 +92,10 @@ def test_auto_must_allow(command, lab):
     home, proj, _ = lab
     set_hidden(home, "auto")
     denied, out = run_hook(command, home, proj)
-    assert not denied, (command, out)
+    if WINDOWS and command in BARE_STAR:  # `always` on Windows: the .env counts
+        assert denied, (command, out)
+    else:
+        assert not denied, (command, out)
 
 
 AUTO_DENY = [
@@ -181,6 +189,9 @@ def test_auto_denies_turning_hidden_names_on(command, lab):
     (proj / ".env").unlink()  # the switch itself is denied, whatever is in the folder
     set_hidden(home, "auto")
     denied, out = run_hook(command, home, proj)
+    if WINDOWS:  # `always` on Windows: hidden names always count, so a switch is not denied
+        assert not denied, (command, out)
+        return
     assert denied, (command, out)
     assert "hidden" in out, out
 
@@ -236,7 +247,8 @@ def test_install_picks_always_when_a_startup_file_names_a_switch(name, text, iso
     code, out, _ = run_cli(
         "guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto"
     )
-    assert "Hidden files: always" in out and name in out, out
+    assert "Hidden files: always" in out, out
+    assert ("Windows: PowerShell and cmd wildcards" if WINDOWS else name) in out, out
     state = json.loads((isolated / ".denypeek" / "guard-state.json").read_text())
     assert state["hidden_names"] == "always"
 
@@ -265,7 +277,7 @@ def test_hidden_auto_is_opt_in_says_why_and_warns(isolated):
         "guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto"
     )
     assert code == 0, out
-    if os.name == "nt":  # Windows is always `always` (G8)
+    if WINDOWS:  # Windows is always `always` (G8)
         assert "Hidden files: always (--hidden auto was asked for" in out, out
         return
     assert "Hidden files: auto (chosen with --hidden auto, experimental: no bash or zsh" in out
@@ -282,7 +294,7 @@ def test_a_later_plain_install_keeps_an_explicit_choice(choice, isolated):
     assert code == 0, out
     state = read_state(isolated)
     assert state["hidden_names_choice"] == choice
-    expected = "always" if os.name == "nt" else choice
+    expected = "always" if WINDOWS else choice
     assert state["hidden_names"] == expected
 
 
@@ -320,7 +332,7 @@ def test_a_system_startup_file_counts(isolated, tmp_path, monkeypatch):
     etc.write_text("setopt globdots\n")
     monkeypatch.setattr(install_base, "SYSTEM_STARTUP_FILES", (str(etc),))
     value, reason = install_base.detect_hidden(resolve_home(str(isolated)))
-    assert value == "always" and "globdots" in reason
+    assert value == "always" and ("Windows" if WINDOWS else "globdots") in reason
 
 
 @pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs POSIX file modes")
@@ -342,7 +354,7 @@ def test_hidden_always_forces_and_survives_reinstall(isolated):
     assert state["hidden_names"] == "always" and state["hidden_names_forced"] is True
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows is always `always`")
+@pytest.mark.skipif(WINDOWS, reason="Windows is always `always`")
 def test_status_reports_a_change_in_the_startup_files(isolated):
     run_cli("guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto")
     _, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")

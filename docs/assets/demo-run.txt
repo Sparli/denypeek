@@ -6,10 +6,10 @@ denypeek scan: offline, nothing leaves this machine.
 Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.
 
 Possible secrets (4):
-  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp e6770080
-  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 1863991c
-  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp 8fa1f469
-  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 6db46f63
+  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp 97903948
+  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp de69a366
+  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp 3e287e80
+  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 4df8fd58
 
 Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.
 To scrub them from history: denypeek redact (keeps a backup).
@@ -27,6 +27,7 @@ denypeek guard installed:
       note: Cursor's docs say terminal and MCP protection is not guaranteed; see the README limits.
   Gemini CLI   ~/.gemini/settings.json  updated
 Secret-file patterns: ~/.denypeek/secretfiles
+Hidden files: always (the default). Hidden files such as .env count for every pattern, so in a folder that holds one, `cat *`, `ls *` and `rm -rf ./*` are denied; name the files instead (`ls`, `cat *.md`).
 Restart open agent sessions, then check it works: denypeek guard test
 [exit code 0]
 
@@ -68,11 +69,11 @@ Redacted 3 secret(s) in 3 file(s).
 Verified: a rescan of the changed files finds no known key shapes.
 
 Rotate these keys now (3). Redaction does not make a leaked key safe:
-  generic-api-key  (40 chars)  fp e6770080
-  aws-access-token  AKIA… (20 chars)  fp 1863991c
-  stripe-access-token  sk_l… (32 chars)  fp 8fa1f469
+  generic-api-key  (40 chars)  fp 97903948
+  aws-access-token  AKIA… (20 chars)  fp de69a366
+  stripe-access-token  sk_l… (32 chars)  fp 3e287e80
 
-Backup: ~/.denypeek/backups/20261114T004718Z-76c79c
+Backup: ~/.denypeek/backups/20261118T213646Z-49e675
 WARNING: the backup still holds the secrets. Check your history, then delete it with:
   denypeek backups purge --yes
 To put everything back instead: denypeek undo

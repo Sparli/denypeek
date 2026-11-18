@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1216" height="1482" viewBox="0 0 1216 1482" role="img" aria-label="denypeek terminal run">
-<rect width="1216" height="1482" rx="8" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1754" height="1500" viewBox="0 0 1754 1500" role="img" aria-label="denypeek terminal run">
+<rect width="1754" height="1500" rx="8" fill="#0d1117"/>
 <circle cx="18" cy="16" r="5" fill="#ff5f56"/><circle cx="36" cy="16" r="5" fill="#ffbd2e"/><circle cx="54" cy="16" r="5" fill="#27c93f"/>
 <style>text { white-space: pre; }</style>
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" xml:space="preserve">
@@ -11,10 +11,10 @@
 <text x="16" y="146" fill="#e6edf3">Scanned 4 file(s): claude 1, codex 1, cursor 1, gemini 1.</text>
 <text x="16" y="164" fill="#e6edf3"></text>
 <text x="16" y="182" fill="#e6edf3">Possible secrets (4):</text>
-<text x="16" y="200" fill="#e6edf3">  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp e6770080</text>
-<text x="16" y="218" fill="#e6edf3">  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp 1863991c</text>
-<text x="16" y="236" fill="#e6edf3">  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp 8fa1f469</text>
-<text x="16" y="254" fill="#e6edf3">  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 6db46f63</text>
+<text x="16" y="200" fill="#e6edf3">  claude  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl:2  generic-api-key  (40 chars)  fp 97903948</text>
+<text x="16" y="218" fill="#e6edf3">  codex   ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl:3  aws-access-token  AKIA… (20 chars)  fp de69a366</text>
+<text x="16" y="236" fill="#e6edf3">  gemini  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json:9  stripe-access-token  sk_l… (32 chars)  fp 3e287e80</text>
+<text x="16" y="254" fill="#e6edf3">  cursor  ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb:ItemTable row 1  slack-bot-token  xoxb… (55 chars)  fp 4df8fd58</text>
 <text x="16" y="272" fill="#e6edf3"></text>
 <text x="16" y="290" fill="#e6edf3">Found 4 possible secret(s). Rotate every real key found here, whether or not you redact it.</text>
 <text x="16" y="308" fill="#e6edf3">To scrub them from history: denypeek redact (keeps a backup).</text>
@@ -32,54 +32,55 @@
 <text x="16" y="524" fill="#e6edf3">      note: Cursor&#x27;s docs say terminal and MCP protection is not guaranteed; see the README limits.</text>
 <text x="16" y="542" fill="#e6edf3">  Gemini CLI   ~/.gemini/settings.json  updated</text>
 <text x="16" y="560" fill="#e6edf3">Secret-file patterns: ~/.denypeek/secretfiles</text>
-<text x="16" y="578" fill="#e6edf3">Restart open agent sessions, then check it works: denypeek guard test</text>
-<text x="16" y="596" fill="#e6edf3">[exit code 0]</text>
-<text x="16" y="614" fill="#e6edf3"></text>
-<text x="16" y="632" fill="#7ee787">$ denypeek guard test --agent claude --agent cursor --home &quot;$DEMO&quot;</text>
-<text x="16" y="650" fill="#e6edf3">agent        case                                 expected  result</text>
-<text x="16" y="668" fill="#e6edf3">Claude Code  read .env                            blocked   blocked  ok</text>
-<text x="16" y="686" fill="#e6edf3">Claude Code  cat .env                             blocked   blocked  ok</text>
-<text x="16" y="704" fill="#e6edf3">Claude Code  grep -r KEY . (folder holds .env)    blocked   blocked  ok</text>
-<text x="16" y="722" fill="#e6edf3">Claude Code  edit .dev.vars                       blocked   blocked  ok</text>
-<text x="16" y="740" fill="#e6edf3">Claude Code  read ~/.ssh/id_rsa                   blocked   blocked  ok</text>
-<text x="16" y="758" fill="#e6edf3">Claude Code  overwrite ~/.denypeek/secretfiles    blocked   blocked  ok</text>
-<text x="16" y="776" fill="#e6edf3">Claude Code  read .env.example                    allowed   allowed  ok</text>
-<text x="16" y="794" fill="#e6edf3">Claude Code  read src/app.py                      allowed   allowed  ok</text>
-<text x="16" y="812" fill="#e6edf3">Claude Code  ls                                   allowed   allowed  ok</text>
-<text x="16" y="830" fill="#e6edf3">Claude Code  grep -r KEY src/ (no secret file)    allowed   allowed  ok</text>
-<text x="16" y="848" fill="#e6edf3">Cursor       read .env                            blocked   blocked  ok</text>
-<text x="16" y="866" fill="#e6edf3">Cursor       cat .env                             blocked   blocked  ok</text>
-<text x="16" y="884" fill="#e6edf3">Cursor       grep -r KEY . (folder holds .env)    blocked   blocked  ok</text>
-<text x="16" y="902" fill="#e6edf3">Cursor       edit .dev.vars                       blocked   blocked  ok</text>
-<text x="16" y="920" fill="#e6edf3">Cursor       read ~/.ssh/id_rsa                   blocked   blocked  ok</text>
-<text x="16" y="938" fill="#e6edf3">Cursor       overwrite ~/.denypeek/secretfiles    blocked   blocked  ok</text>
-<text x="16" y="956" fill="#e6edf3">Cursor       read .env.example                    allowed   allowed  ok</text>
-<text x="16" y="974" fill="#e6edf3">Cursor       read src/app.py                      allowed   allowed  ok</text>
-<text x="16" y="992" fill="#e6edf3">Cursor       ls                                   allowed   allowed  ok</text>
-<text x="16" y="1010" fill="#e6edf3">Cursor       grep -r KEY src/ (no secret file)    allowed   allowed  ok</text>
-<text x="16" y="1028" fill="#e6edf3"></text>
-<text x="16" y="1046" fill="#e6edf3">All 20 cases behaved as expected: secret files blocked, others allowed.</text>
-<text x="16" y="1064" fill="#e6edf3">[exit code 0]</text>
-<text x="16" y="1082" fill="#e6edf3"></text>
-<text x="16" y="1100" fill="#7ee787">$ denypeek redact --yes --home &quot;$DEMO&quot;</text>
-<text x="16" y="1118" fill="#e6edf3">denypeek will redact 3 possible secret(s) in 3 file(s).</text>
-<text x="16" y="1136" fill="#e6edf3">A backup of each file goes to ~/.denypeek/backups/ first. Cursor&#x27;s database is not changed.</text>
-<text x="16" y="1154" fill="#e6edf3"></text>
-<text x="16" y="1172" fill="#e6edf3">Redacted 3 secret(s) in 3 file(s).</text>
-<text x="16" y="1190" fill="#e6edf3">  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl</text>
-<text x="16" y="1208" fill="#e6edf3">  ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl</text>
-<text x="16" y="1226" fill="#e6edf3">  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json</text>
-<text x="16" y="1244" fill="#e6edf3"></text>
-<text x="16" y="1262" fill="#e6edf3">Verified: a rescan of the changed files finds no known key shapes.</text>
-<text x="16" y="1280" fill="#e6edf3"></text>
-<text x="16" y="1298" fill="#e6edf3">Rotate these keys now (3). Redaction does not make a leaked key safe:</text>
-<text x="16" y="1316" fill="#e6edf3">  generic-api-key  (40 chars)  fp e6770080</text>
-<text x="16" y="1334" fill="#e6edf3">  aws-access-token  AKIA… (20 chars)  fp 1863991c</text>
-<text x="16" y="1352" fill="#e6edf3">  stripe-access-token  sk_l… (32 chars)  fp 8fa1f469</text>
-<text x="16" y="1370" fill="#e6edf3"></text>
-<text x="16" y="1388" fill="#e6edf3">Backup: ~/.denypeek/backups/20261114T004718Z-76c79c</text>
-<text x="16" y="1406" fill="#ffa657">WARNING: the backup still holds the secrets. Check your history, then delete it with:</text>
-<text x="16" y="1424" fill="#e6edf3">  denypeek backups purge --yes</text>
-<text x="16" y="1442" fill="#e6edf3">To put everything back instead: denypeek undo</text>
-<text x="16" y="1460" fill="#e6edf3">[exit code 0]</text>
+<text x="16" y="578" fill="#e6edf3">Hidden files: always (the default). Hidden files such as .env count for every pattern, so in a folder that holds one, `cat *`, `ls *` and `rm -rf ./*` are denied; name the files instead (`ls`, `cat *.md`).</text>
+<text x="16" y="596" fill="#e6edf3">Restart open agent sessions, then check it works: denypeek guard test</text>
+<text x="16" y="614" fill="#e6edf3">[exit code 0]</text>
+<text x="16" y="632" fill="#e6edf3"></text>
+<text x="16" y="650" fill="#7ee787">$ denypeek guard test --agent claude --agent cursor --home &quot;$DEMO&quot;</text>
+<text x="16" y="668" fill="#e6edf3">agent        case                                 expected  result</text>
+<text x="16" y="686" fill="#e6edf3">Claude Code  read .env                            blocked   blocked  ok</text>
+<text x="16" y="704" fill="#e6edf3">Claude Code  cat .env                             blocked   blocked  ok</text>
+<text x="16" y="722" fill="#e6edf3">Claude Code  grep -r KEY . (folder holds .env)    blocked   blocked  ok</text>
+<text x="16" y="740" fill="#e6edf3">Claude Code  edit .dev.vars                       blocked   blocked  ok</text>
+<text x="16" y="758" fill="#e6edf3">Claude Code  read ~/.ssh/id_rsa                   blocked   blocked  ok</text>
+<text x="16" y="776" fill="#e6edf3">Claude Code  overwrite ~/.denypeek/secretfiles    blocked   blocked  ok</text>
+<text x="16" y="794" fill="#e6edf3">Claude Code  read .env.example                    allowed   allowed  ok</text>
+<text x="16" y="812" fill="#e6edf3">Claude Code  read src/app.py                      allowed   allowed  ok</text>
+<text x="16" y="830" fill="#e6edf3">Claude Code  ls                                   allowed   allowed  ok</text>
+<text x="16" y="848" fill="#e6edf3">Claude Code  grep -r KEY src/ (no secret file)    allowed   allowed  ok</text>
+<text x="16" y="866" fill="#e6edf3">Cursor       read .env                            blocked   blocked  ok</text>
+<text x="16" y="884" fill="#e6edf3">Cursor       cat .env                             blocked   blocked  ok</text>
+<text x="16" y="902" fill="#e6edf3">Cursor       grep -r KEY . (folder holds .env)    blocked   blocked  ok</text>
+<text x="16" y="920" fill="#e6edf3">Cursor       edit .dev.vars                       blocked   blocked  ok</text>
+<text x="16" y="938" fill="#e6edf3">Cursor       read ~/.ssh/id_rsa                   blocked   blocked  ok</text>
+<text x="16" y="956" fill="#e6edf3">Cursor       overwrite ~/.denypeek/secretfiles    blocked   blocked  ok</text>
+<text x="16" y="974" fill="#e6edf3">Cursor       read .env.example                    allowed   allowed  ok</text>
+<text x="16" y="992" fill="#e6edf3">Cursor       read src/app.py                      allowed   allowed  ok</text>
+<text x="16" y="1010" fill="#e6edf3">Cursor       ls                                   allowed   allowed  ok</text>
+<text x="16" y="1028" fill="#e6edf3">Cursor       grep -r KEY src/ (no secret file)    allowed   allowed  ok</text>
+<text x="16" y="1046" fill="#e6edf3"></text>
+<text x="16" y="1064" fill="#e6edf3">All 20 cases behaved as expected: secret files blocked, others allowed.</text>
+<text x="16" y="1082" fill="#e6edf3">[exit code 0]</text>
+<text x="16" y="1100" fill="#e6edf3"></text>
+<text x="16" y="1118" fill="#7ee787">$ denypeek redact --yes --home &quot;$DEMO&quot;</text>
+<text x="16" y="1136" fill="#e6edf3">denypeek will redact 3 possible secret(s) in 3 file(s).</text>
+<text x="16" y="1154" fill="#e6edf3">A backup of each file goes to ~/.denypeek/backups/ first. Cursor&#x27;s database is not changed.</text>
+<text x="16" y="1172" fill="#e6edf3"></text>
+<text x="16" y="1190" fill="#e6edf3">Redacted 3 secret(s) in 3 file(s).</text>
+<text x="16" y="1208" fill="#e6edf3">  ~/.claude/projects/-home-maya-shop-api/7f3c.jsonl</text>
+<text x="16" y="1226" fill="#e6edf3">  ~/.codex/sessions/2026/11/12/rollout-2026-11-12T09-14-03.jsonl</text>
+<text x="16" y="1244" fill="#e6edf3">  ~/.gemini/tmp/5b1e/chats/session-2026-11-10.json</text>
+<text x="16" y="1262" fill="#e6edf3"></text>
+<text x="16" y="1280" fill="#e6edf3">Verified: a rescan of the changed files finds no known key shapes.</text>
+<text x="16" y="1298" fill="#e6edf3"></text>
+<text x="16" y="1316" fill="#e6edf3">Rotate these keys now (3). Redaction does not make a leaked key safe:</text>
+<text x="16" y="1334" fill="#e6edf3">  generic-api-key  (40 chars)  fp 97903948</text>
+<text x="16" y="1352" fill="#e6edf3">  aws-access-token  AKIA… (20 chars)  fp de69a366</text>
+<text x="16" y="1370" fill="#e6edf3">  stripe-access-token  sk_l… (32 chars)  fp 3e287e80</text>
+<text x="16" y="1388" fill="#e6edf3"></text>
+<text x="16" y="1406" fill="#e6edf3">Backup: ~/.denypeek/backups/20261118T213646Z-49e675</text>
+<text x="16" y="1424" fill="#ffa657">WARNING: the backup still holds the secrets. Check your history, then delete it with:</text>
+<text x="16" y="1442" fill="#e6edf3">  denypeek backups purge --yes</text>
+<text x="16" y="1460" fill="#e6edf3">To put everything back instead: denypeek undo</text>
+<text x="16" y="1478" fill="#e6edf3">[exit code 0]</text>
 </g></svg>

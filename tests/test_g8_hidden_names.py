@@ -233,16 +233,86 @@ def test_windows_is_always(isolated, monkeypatch):
 )
 def test_install_picks_always_when_a_startup_file_names_a_switch(name, text, isolated):
     (isolated / name).write_text(text)
-    code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    code, out, _ = run_cli(
+        "guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto"
+    )
     assert "Hidden files: always" in out and name in out, out
     state = json.loads((isolated / ".denypeek" / "guard-state.json").read_text())
     assert state["hidden_names"] == "always"
 
 
-def test_install_picks_auto_and_says_why(isolated):
+def read_state(home):
+    return json.loads((home / ".denypeek" / "guard-state.json").read_text())
+
+
+def test_install_defaults_to_always_and_says_what_it_costs(isolated):
+    """v0.1.0 (decision, 2026-11-19): a plain install sets `always`, even when no startup file
+    names a switch, and says in one line what that means."""
     (isolated / ".zshrc").write_text("setopt extendedglob\n")
     code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
-    assert "Hidden files: auto (no bash or zsh startup file" in out, out
+    assert code == 0, out
+    assert "Hidden files: always (the default)" in out, out
+    assert "`cat *`" in out and "`cat *.md`" in out and "WARNING: --hidden auto" not in out
+    state = read_state(isolated)
+    assert state["hidden_names"] == "always" and "hidden_names_choice" not in state
+    _, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")
+    assert "Hidden files: always (the default)" in out and "CHANGED" not in out, out
+
+
+def test_hidden_auto_is_opt_in_says_why_and_warns(isolated):
+    (isolated / ".zshrc").write_text("setopt extendedglob\n")
+    code, out, _ = run_cli(
+        "guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto"
+    )
+    assert code == 0, out
+    if os.name == "nt":  # Windows is always `always` (G8)
+        assert "Hidden files: always (--hidden auto was asked for" in out, out
+        return
+    assert "Hidden files: auto (chosen with --hidden auto, experimental: no bash or zsh" in out
+    assert "WARNING: --hidden auto is experimental" in out
+    for gap in ("setopt -m", "dotgl?b", "startup file edited"):
+        assert gap in out, gap
+    assert read_state(isolated)["hidden_names"] == "auto"
+
+
+@pytest.mark.parametrize("choice", ["auto", "always"])
+def test_a_later_plain_install_keeps_an_explicit_choice(choice, isolated):
+    run_cli("guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", choice)
+    code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    assert code == 0, out
+    state = read_state(isolated)
+    assert state["hidden_names_choice"] == choice
+    expected = "always" if os.name == "nt" else choice
+    assert state["hidden_names"] == expected
+
+
+def test_an_old_automatic_auto_becomes_always_on_reinstall(isolated):
+    """State written by an install before this change: `auto` picked automatically, not
+    chosen. A plain reinstall moves it to the new default."""
+    run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    state = read_state(isolated)
+    state.update(
+        hidden_names="auto",
+        hidden_names_forced=False,
+        hidden_names_reason="no bash or zsh startup file turns on dotglob",
+    )
+    (isolated / ".denypeek" / "guard-state.json").write_text(json.dumps(state))
+    run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    assert read_state(isolated)["hidden_names"] == "always"
+
+
+def test_a_plain_install_reads_no_startup_file(isolated, monkeypatch):
+    def boom(home):
+        raise AssertionError("startup files read without --hidden auto")
+
+    monkeypatch.setattr(install_base, "detect_hidden", boom)
+    import denypeek.guard as guard_pkg
+
+    monkeypatch.setattr(guard_pkg, "detect_hidden", boom)
+    code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    assert code == 0, out
+    code, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")
+    assert "Hidden files: always" in out
 
 
 def test_a_system_startup_file_counts(isolated, tmp_path, monkeypatch):
@@ -272,8 +342,9 @@ def test_hidden_always_forces_and_survives_reinstall(isolated):
     assert state["hidden_names"] == "always" and state["hidden_names_forced"] is True
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows is always `always`")
 def test_status_reports_a_change_in_the_startup_files(isolated):
-    run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
+    run_cli("guard", "install", "--home", str(isolated), "--agent", "claude", "--hidden", "auto")
     _, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")
     assert "Hidden files: auto" in out and "CHANGED" not in out, out
     (isolated / ".bashrc").write_text("shopt -s dotglob\n")

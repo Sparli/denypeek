@@ -180,6 +180,22 @@ def _guard_errors(changes) -> int:
     return 2 if bad else 0
 
 
+def hidden_line(value: str, reason: str) -> str:
+    """One plain line: the hidden-names setting, why, and what it means for the user."""
+    if value == "auto":
+        meaning = (
+            "A bare * skips hidden files, as your shell does. Experimental in v0.1.0, with known "
+            "gaps: see the README's Known misses"
+        )
+    else:
+        meaning = (
+            "Hidden files such as .env count for every pattern, so in a folder that holds one, "
+            "`cat *`, `ls *` and `rm -rf ./*` are denied; name the files instead (`ls`, "
+            "`cat *.md`)"
+        )
+    return f"Hidden files: {value} ({safe_text(reason)}). {meaning}."
+
+
 def cmd_guard_install(args) -> int:
     from .guard import SPECS, do_install
 
@@ -199,13 +215,16 @@ def cmd_guard_install(args) -> int:
         for note in SPECS[c.agent].notes:
             print(f"      note: {note}")
     print(f"Secret-file patterns: {home.display(home.denypeek_dir / 'secretfiles')}")
-    from .guard.install_base import load_state
+    from .guard.install_base import AUTO_GAPS, load_state
 
     state = load_state(home)
-    print(
-        f"Hidden files: {state.get('hidden_names', 'always')} "
-        f"({state.get('hidden_names_reason', 'default')})"
-    )
+    print(hidden_line(state.get("hidden_names", "always"), state.get("hidden_names_reason", "")))
+    if state.get("hidden_names_choice") == "auto":
+        print(
+            "WARNING: --hidden auto is experimental in v0.1.0. Known gaps an agent can use to "
+            "read a hidden secret file: " + "; ".join(AUTO_GAPS) + ". See the README's Known "
+            "misses. For no such gap: denypeek guard install --hidden always"
+        )
     if warning:
         print(f"WARNING: {warning}")
     print("Restart open agent sessions, then check it works: denypeek guard test")
@@ -292,7 +311,7 @@ def cmd_guard_status(args) -> int:
                 "example: denypeek guard install --python /usr/bin/python3"
             )
         print(f"  Patterns:    {'present' if info['patterns_present'] else 'defaults (no file)'}")
-        print(f"  Hidden files: {info['hidden_names']} ({info['hidden_names_reason']})")
+        print("  " + hidden_line(info["hidden_names"], info["hidden_names_reason"]))
         if info["hidden_names_changed"]:
             print(
                 f"  CHANGED: your startup files now say {info['hidden_names_detected']} "
@@ -381,9 +400,10 @@ def build_parser() -> argparse.ArgumentParser:
     gi.add_argument("--python", help="Python to run the hook with (default: a stable python3)")
     gi.add_argument(
         "--hidden",
-        choices=["always"],
-        help="count hidden files for every pattern, as when dotglob or globdots is on "
-        "(default: decided from your bash and zsh startup files)",
+        choices=["always", "auto"],
+        help="always (the default): hidden files count for every pattern; auto (experimental, "
+        "known gaps): a bare * skips hidden files as your shell does, unless a bash or zsh "
+        "startup file turns dotglob or globdots on. A later install keeps your choice",
     )
     gi.set_defaults(func=cmd_guard_install)
     gs = gsub.add_parser("status", parents=[common], help="show where the guard is installed")

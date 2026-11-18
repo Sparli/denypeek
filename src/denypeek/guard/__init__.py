@@ -69,7 +69,9 @@ def copy_guard(home: Home) -> None:
 
 def do_install(home: Home, agents=None, python: Optional[str] = None, hidden=None):
     """Returns (changes, warning about the chosen Python or None). Records the hidden-name
-    setting (SPEC 3a G8): `hidden="always"` forces it; otherwise it is detected."""
+    setting (SPEC 3a G8). v0.1.0: `always` unless the user asks for `auto` with `--hidden auto`
+    (experimental); an explicit choice is kept by a later plain install. `auto` still reads the
+    startup files and falls back to `always` when one names a switch."""
     py, warning = stable_python(python)
     copy_guard(home)
     if USE_WRAPPER:
@@ -79,12 +81,29 @@ def do_install(home: Home, agents=None, python: Optional[str] = None, hidden=Non
     changes = [
         install(spec, home, hook_command(py, home, spec.name), state) for spec in pick(agents)
     ]
-    if hidden == "always":
-        state.update(hidden_names="always", hidden_names_reason="forced with --hidden always")
-        state["hidden_names_forced"] = True
-    elif not state.get("hidden_names_forced"):
-        value, reason = detect_hidden(home)
-        state.update(hidden_names=value, hidden_names_reason=reason, hidden_names_forced=False)
+    choice = hidden or state.get("hidden_names_choice")
+    if (
+        choice is None
+        and state.get("hidden_names_forced")
+        and state.get("hidden_names") == "always"
+    ):
+        choice = "always"  # `--hidden always` given to an older version
+    if choice == "auto":
+        value, why = detect_hidden(home)
+        if value == "auto":
+            reason = f"chosen with --hidden auto, experimental: {why}"
+        else:
+            reason = f"--hidden auto was asked for, but {why}"
+        state.update(hidden_names=value, hidden_names_reason=reason)
+    elif choice == "always":
+        state.update(hidden_names="always", hidden_names_reason="chosen with --hidden always")
+    else:
+        state.update(hidden_names="always", hidden_names_reason="the default")
+    state["hidden_names_forced"] = choice is not None
+    if choice:
+        state["hidden_names_choice"] = choice
+    else:
+        state.pop("hidden_names_choice", None)
     save_state(home, state)
     return changes, warning
 
@@ -157,17 +176,18 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
         "patterns_present": patterns_path(home).exists(),
     }
     state = load_state(home)
-    detected, why = detect_hidden(home)
     stored = state.get("hidden_names")
+    choice = state.get("hidden_names_choice")
+    # Startup files are read only for an explicit `auto`, the one setting they can change.
+    detected, why = detect_hidden(home) if choice == "auto" else (stored, "")
     info["hidden_names"] = stored if stored in ("always", "auto") else "always"
     info["hidden_names_reason"] = state.get("hidden_names_reason") or (
         "no setting recorded, so the safe default" if stored is None else "unknown setting"
     )
     info["hidden_names_forced"] = bool(state.get("hidden_names_forced"))
     info["hidden_names_detected"] = detected
-    info["hidden_names_changed"] = (
-        not info["hidden_names_forced"] and stored is not None and detected != stored
-    )
+    info["hidden_names_choice"] = choice
+    info["hidden_names_changed"] = choice == "auto" and stored is not None and detected != stored
     info["hidden_names_detected_reason"] = why
     return rows, info
 

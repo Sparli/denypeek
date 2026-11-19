@@ -1479,3 +1479,71 @@ def test_a_read_only_shell_string_is_not_a_writer(command, isolated, tmp_path):
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     expected = command.startswith("rg foo $(")  # a path from a substitution cannot be told
     assert denied == expected, (command, out)
+
+
+# --- confirmation review: pipes into a search, and read-only steps --------------------------------
+
+PIPE_AND_READ_ONLY = [
+    "npm test 2>&1 | rg error",
+    "git log --oneline | rg fix",
+    "cat README.md | rg text",
+    "git status && rg text src",
+    "cat package.json && rg text src",
+    "head -5 README.md; rg text src",
+    "which rg && rg text src",
+    "mkdir -p out && rg text src",
+    "tail -n 20 README.md | ag text",
+    "git diff | ack text",
+    "wc -l README.md && type rg && file README.md && stat README.md && rg text src",
+    "test -f README.md && [ -d src ] && rg text src",
+    "sort README.md | uniq -c && rg text src",
+    "grep -n text README.md && rg text src",
+    "git show HEAD --stat; rg text src",
+    "bash -c 'ls src && cat README.md'; rg foo src",
+]
+
+
+def _clean_with_files(tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    (proj / "README.md").write_text("text\n")
+    (proj / "package.json").write_text("{}\n")
+    return proj
+
+
+@pytest.mark.parametrize("command", PIPE_AND_READ_ONLY)
+def test_pipes_into_a_search_and_read_only_steps_are_allowed(command, isolated, tmp_path):
+    proj = _clean_with_files(tmp_path)
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert not denied, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["npm test 2>&1 | rg error", "git log --oneline | rg fix", "cat README.md | ag text"],
+)
+def test_a_search_reading_a_pipe_is_allowed_beside_a_secret(command, p_proj, isolated):
+    (p_proj / "README.md").write_text("text\n")
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert not denied, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat README.md | grep -r text",  # grep -r with no path walks . (GNU grep does)
+        "sort -o out.txt README.md; rg text src",
+        "sort --output=out.txt README.md; rg text src",
+        "uniq README.md out.txt; rg text src",
+        "file -C -m magic; rg text src",
+        "git diff --output=x.txt; rg text src",
+        "cat README.md > src/copy.md; rg text src",
+        "npm test; rg text src",
+    ],
+)
+def test_writers_and_tree_searches_after_a_pipe_still_count(command, p_proj, isolated):
+    (p_proj / "README.md").write_text("text\n")
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied, (command, out)

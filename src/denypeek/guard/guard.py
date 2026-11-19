@@ -2600,7 +2600,43 @@ def _redirects(text):
     return "".join(out), found
 
 
-READ_ONLY_COMMANDS = {"cd", "pushd", "popd", "echo", "pwd", "ls", "true", "export", "set", "unset"}
+# Commands that cannot put a file into a folder, so a search after them in the same command
+# reads what the guard walked. Each holds only without an output redirection to a file, which
+# read_only_part checks; options that do write are refused there.
+READ_ONLY_COMMANDS = {
+    "cd",
+    "pushd",
+    "popd",
+    "pwd",
+    "true",  # change or print the folder
+    "export",
+    "set",
+    "unset",  # shell variables and options only
+    "echo",  # prints its arguments
+    "ls",
+    "stat",
+    "file",
+    "which",
+    "type",
+    "test",
+    "[",  # look at names and metadata
+    "cat",
+    "head",
+    "tail",
+    "wc",  # read files and print to the terminal or a pipe
+    "sort",  # prints sorted lines; -o/--output writes and is refused below
+    "uniq",  # prints; a second file argument is its output file and is refused below
+    "grep",
+    "egrep",
+    "fgrep",
+    "zgrep",  # print matches; recursive forms are tree searches
+    # creates empty folders only: the walk reports files, a folder with no file in it holds
+    # nothing a search can read, and one made unlistable (-m 000) denies the search
+    "mkdir",
+}
+# git subcommands that print history or state and write no file into the work tree
+# (--output writes and is refused below)
+READ_ONLY_GIT = {"status", "log", "diff", "show"}
 HARMLESS_TARGETS = {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"}
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "eval", "source", "."}
 TREE_WRITES = (
@@ -2620,11 +2656,34 @@ def read_only_part(part):
     """A part that cannot write files: empty, or on the short read-only list with no output
     redirection to anything but /dev/null, a terminal or another descriptor."""
     words = _part_words(part)
-    if words and os.path.basename(words[0]) in SHELLS:
+    name = os.path.basename(words[0]) if words else ""
+    while words and "=" in words[0] and not words[0].startswith("-"):
+        words = words[1:]  # VAR=value in front changes no file
+        name = os.path.basename(words[0]) if words else ""
+    if name in SHELLS:
         if not _read_only_shell(words):
             return False
-    elif words and os.path.basename(words[0]) not in READ_ONLY_COMMANDS:
+    elif name in ("rg", "ag", "ack", "ugrep"):
+        # search tools print matches; rg --pre and ag --pager run another program
+        if any(w.startswith(("--pre", "--pager")) for w in words):
+            return False
+    elif name == "git":
+        sub = next((w for w in words[1:] if not w.startswith("-")), "")
+        if sub not in READ_ONLY_GIT and sub != "grep":
+            return False
+        if any(w.startswith("--output") for w in words):
+            return False
+    elif words and name not in READ_ONLY_COMMANDS:
         return False  # anything not known to be read-only counts as writing
+    if name == "sort" and any(
+        w.startswith("--o") or (w.startswith("-") and not w.startswith("--") and "o" in w)
+        for w in words[1:]
+    ):
+        return False  # sort -o FILE writes FILE
+    if name == "uniq" and len([w for w in words[1:] if not w.startswith("-")]) > 1:
+        return False  # uniq IN OUT writes OUT
+    if name == "file" and any(w in ("-C", "--compile") for w in words[1:]):
+        return False  # file -C compiles a magic file
     for op, target in _redirects(part)[1]:
         if ">" not in op:
             continue
@@ -2804,7 +2863,7 @@ def command_parts(text):
     return [(p, op) for p, op in parts]
 
 
-def search_targets(part, cwd, command="", folders=None):
+def search_targets(part, cwd, command="", folders=None, from_pipe=False):
     """SPEC 3b: the searches a command segment runs, as Search objects (a folder, and what
     grep's own options narrow). Only recursive searches; a folder that does not exist is left
     out. A search whose folders or files cannot be told is a Search that denies."""
@@ -2855,6 +2914,12 @@ def search_targets(part, cwd, command="", folders=None):
     readings = [pos, pos2]
     opts = opts + [o for o in opts2 if o not in opts]
     names = {n for n, _ in opts}
+    if (
+        from_pipe
+        and prog in ("rg", "ag", "ack")
+        and not any((r if names & {"-e", "-f", "--regexp", "--file"} else r[1:]) for r in readings)
+    ):
+        return []  # after a pipe with no path these read the pipe, not a folder
     # S1: forms that read no file contents are not searches
     if prog == "rg" and names & {"--files", "--type-list", "--help", "-h", "--version", "-V"}:
         return []
@@ -3218,7 +3283,9 @@ def tree_searches(command, cwd, extra=(), after_write=False, depth=0):
     bases = list(dict.fromkeys([cwd] + list(extra)))
     chain_start = list(bases)  # where the current && chain began: a failed cd leaves it there
     bases_unknown = False
+    prev_op = ""
     for part, op in command_parts(main):
+        from_pipe, prev_op = prev_op == "|", op
         if op not in ("&&", "|", "$(", ")", "("):
             # after `;`, `||`, `&` or a line break the next command runs even if a cd in this
             # chain failed, so it may run in the folder the chain started from
@@ -3242,7 +3309,7 @@ def tree_searches(command, cwd, extra=(), after_write=False, depth=0):
             if after is not None:
                 bases = chain_start = list(dict.fromkeys(after + bases))
             continue
-        found = search_targets(part, cwd, main, bases)
+        found = search_targets(part, cwd, main, bases, from_pipe)
         if after is not None:
             bases = chain_start = after
         if found and bases_unknown:

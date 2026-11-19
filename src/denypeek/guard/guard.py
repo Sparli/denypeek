@@ -2867,7 +2867,7 @@ def search_targets(part, cwd, command="", folders=None, from_pipe=False):
     """SPEC 3b: the searches a command segment runs, as Search objects (a folder, and what
     grep's own options narrow). Only recursive searches; a folder that does not exist is left
     out. A search whose folders or files cannot be told is a Search that denies."""
-    part = strip_redirects(part)
+    raw_part, part = part, strip_redirects(part)
     try:
         words = shlex.split(part, posix=True)
     except ValueError:
@@ -2914,12 +2914,18 @@ def search_targets(part, cwd, command="", folders=None, from_pipe=False):
     readings = [pos, pos2]
     opts = opts + [o for o in opts2 if o not in opts]
     names = {n for n, _ in opts}
-    if (
+    # rg, ag or ack reads the pipe, not a folder, only when it consumes a pipe, names no
+    # path, has no input redirection of its own (`</dev/null`, `<&-`, `<<<`) and no option
+    # that gives it a list of files. Anything else is a tree search and is walked.
+    reads_pipe = (
         from_pipe
         and prog in ("rg", "ag", "ack")
         and not any((r if names & {"-e", "-f", "--regexp", "--file"} else r[1:]) for r in readings)
-    ):
-        return []  # after a pipe with no path these read the pipe, not a folder
+        and not any("<" in op for op, _t in _redirects(raw_part)[1])
+        and not (prog == "ack" and ("-x" in names or _any_abbrev(names, ("--files-from",))))
+    )
+    if reads_pipe:
+        return []
     # S1: forms that read no file contents are not searches
     if prog == "rg" and names & {"--files", "--type-list", "--help", "-h", "--version", "-V"}:
         return []

@@ -1547,3 +1547,41 @@ def test_writers_and_tree_searches_after_a_pipe_still_count(command, p_proj, iso
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
     assert denied, (command, out)
+
+
+# --- final check: a search reads the pipe only when nothing else can feed it -------------------
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command,top",
+    [
+        ("echo | rg {m} </dev/null", "server.pem"),
+        ("echo | rg -uu {m} <&-", ".env"),
+        ("echo | rg -uu {m} 0<&-", ".env"),
+        ("echo | rg -uu {m} 2>&1 <&-", ".env"),
+        ("echo | rg -uu {m} <<< x", ".env"),
+        ("echo .env | ack -x {m}", ".env"),
+        ("echo .env | ack --files-from=- {m}", ".env"),
+    ],
+)
+def test_a_search_after_a_pipe_with_its_own_input_is_walked(command, top, isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "src").mkdir(parents=True)
+    (proj / top).write_text(f"{MARK}\n")
+    installed(isolated)
+    command = command.format(m=MARK)
+    if command.startswith("echo | rg") and "<<<" not in command and _rg():
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        (bindir / "rg").symlink_to(_rg())
+        proc = subprocess.run(
+            ["/bin/sh", "-c", command],
+            cwd=str(proj),
+            env={"PATH": f"{bindir}:/usr/bin:/bin"},
+            capture_output=True,
+            timeout=60,
+        )
+        assert MARK in proc.stdout.decode(), "fixture: rg reads nothing"
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)

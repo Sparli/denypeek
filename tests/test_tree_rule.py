@@ -1585,3 +1585,13 @@ def test_a_search_after_a_pipe_with_its_own_input_is_walked(command, top, isolat
         assert MARK in proc.stdout.decode(), "fixture: rg reads nothing"
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     assert denied, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["git diff --out=src/x.txt; rg text src", "ugrep --save-config=src/x foo; rg text src"],
+)
+def test_abbreviated_output_options_count_as_writing(command, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied and g.TREE_WRITES in reason_of(out), (command, out)

@@ -2665,14 +2665,14 @@ def read_only_part(part):
             return False
     elif name in ("rg", "ag", "ack", "ugrep"):
         # search tools print matches; rg --pre and ag --pager run another program
-        if any(w.startswith(("--pre", "--pager")) for w in words):
-            return False
+        if any(w.startswith(("--pre", "--pager", "--save-config")) for w in words):
+            return False  # ugrep --save-config writes a file
     elif name == "git":
         sub = next((w for w in words[1:] if not w.startswith("-")), "")
         if sub not in READ_ONLY_GIT and sub != "grep":
             return False
-        if any(w.startswith("--output") for w in words):
-            return False
+        if any(_abbrev(w.split("=", 1)[0], "--output") for w in words):
+            return False  # --output, or an abbreviation of it (--out=), writes a file
     elif words and name not in READ_ONLY_COMMANDS:
         return False  # anything not known to be read-only counts as writing
     if name == "sort" and any(

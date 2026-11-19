@@ -276,13 +276,26 @@ How a blocked `.env` read works:
    `-d recurse`, `rg`, `ag`, `ack`, `git grep`, the agents' own search tools and Gemini's
    `read_many_files`, the guard walks the target folder by names and asks whether the tool, run
    as written, would read a secret file there:
-   - `grep -r`, `ack` and any tool not on this list read everything (only `.git` and
-     `__pycache__` are left out). grep's own `--include`, `--exclude` and `--exclude-dir` count.
+   - `grep -r` and `ack` read everything (only `.git` and `__pycache__` are left out). grep's
+     own `--include`, `--exclude` and `--exclude-dir` count. A search tool not on this list is
+     not checked.
    - `rg` with no widening flag skips every hidden name, so `rg foo` beside `.env` is allowed.
      `rg --hidden`, `ag`, `git grep` and the agents' own search tools read hidden names.
    - Inside a git repository, those tools also skip a `node_modules` folder that a `.gitignore`
-     names, and a folder whose own `.gitignore` is `*` (virtualenvs write one). Outside a
-     repository, ripgrep does not read `.gitignore`, so nothing is skipped.
+     names in a plain line (`node_modules`, `node_modules/`, `/node_modules`), and a folder whose
+     own `.gitignore` is exactly `*` (virtualenvs write one). Outside a repository, ripgrep does
+     not read `.gitignore`, so nothing is skipped.
+   - The guard trusts an ignore file only when it is certain. If any ignore source the tools
+     read holds a `!` line (which can bring a file back), or cannot be read in full, nothing is
+     skipped, hidden names included. That covers `.gitignore`, `.ignore` and `.rgignore` in every
+     folder walked and above, `.git/info/exclude`, git's global ignore file
+     (`~/.config/git/ignore`), and any `core.excludesFile` or `include` in git's configuration.
+     A command that names one of these files or git's configuration counts as reading
+     everything, since it may change them before it searches.
+   - Wrapper commands (`env`, `nice`, `timeout`, `command`, `sudo` and similar) and `cd` do not
+     hide a search. A recursive search fed by `xargs`, and `git grep` with a revision or a
+     pattern path, are denied: the guard cannot list what they read. A command that defines a
+     function or an alias counts as reading everything.
    - A flag that widens the tool (`rg -uu`, `--no-ignore`, `-g '*'`, `git grep --no-index`) or a
      ripgrep config file counts as reading everything. `guard install` records whether
      `RIPGREP_CONFIG_PATH` is set; if it was, or if nothing is recorded, every `rg` counts so.
@@ -618,13 +631,25 @@ in-place `.bak` files.
   - as before, `ls .e*`;
   - a recursive search that would read a secret file: `grep -rn foo .` beside `.env`, or in a
     project with a virtualenv that holds `cacert.pem` (`*.pem` is on the list) unless you add
-    `--exclude-dir` for it; `rg --hidden foo` beside `.env`, even when `.gitignore` names it;
-    every `rg` search beside a secret file if a ripgrep config was set when you installed, or if
-    you installed before v0.1.0's tree rule (run `denypeek guard install` again); an agent's own
-    search tool over a project with a `.env`, until its defaults are checked;
-  - a recursive search over more than 100,000 entries, such as `grep -r` over a project with a
-    big `node_modules`: add `--exclude-dir=node_modules`, or use `rg`, which skips it in a git
-    repository;
+    `--exclude-dir` for it; every `rg` search beside a secret file if a ripgrep config was set
+    when you installed, or if you installed before v0.1.0's tree rule (run `denypeek guard
+    install` again); an agent's own search tool over a project with a `.env`, until its defaults
+    are checked;
+  - searches the tools would allow but the guard denies on purpose, because it cannot be sure:
+    `rg --hidden foo` beside a `.env` that `.gitignore` names, and the same through a ripgrep
+    config; `git grep` outside a repository; `git grep --untracked`;
+  - every `rg`, `ag`, `git grep` or agent search beside a hidden secret file, when any ignore
+    source holds a `!` line or git's configuration sets `core.excludesFile` (many people set a
+    global one): then the guard skips nothing. Search a folder without the secret file, or
+    exclude it with grep;
+  - a search in a command that also names an ignore file or git's configuration, or defines a
+    function or an alias; a recursive search fed by `xargs`; `git grep` with a revision or a
+    pattern path (`git grep foo HEAD`): name folders instead (`git grep foo -- src`);
+  - a recursive search over more than 100,000 entries, or that takes over a second, such as
+    `grep -r` over a project with a big `node_modules`: add `--exclude-dir=node_modules`, or use
+    `rg`, which skips it in a git repository. The first search of a large tree after a restart,
+    when the disk cache is cold, may run out of time and be denied this way; the same search
+    usually passes when repeated;
   - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree;
   - anywhere, a command that holds one of the delete, move or lock verbs above and names your
     home folder or a folder above it: `chmod 700 ~`, `grep -r rm ~`.
@@ -661,11 +686,19 @@ in-place `.bak` files.
     into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
     `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see;
-  - recursive searches (the tree rule): a ripgrep config set after `guard install`, or present
-    in the agent's environment but not in your terminal when you installed; an ignore file named
-    in git's own config (`core.excludesFile`); a folder reached only through a symbolic link that
-    `grep -R` or `rg -L` follows; a file `git grep` reads because it is tracked inside a folder
-    that `.gitignore` names; and search tools not on the list above;
+  - recursive searches (the tree rule):
+    - a ripgrep config set after `guard install`, or present in the agent's environment but not
+      in your terminal when you installed;
+    - git or ignore settings that only the agent's environment points to (`XDG_CONFIG_HOME`,
+      `GIT_CONFIG_GLOBAL` and similar), since the hook runs with an empty environment;
+    - a folder reached only through a symbolic link that `grep -R` or `rg -L` follows;
+    - a file `git grep` reads because it is tracked inside a folder that `.gitignore` names;
+    - a wrapper command not in the guard's list, and an alias or function defined outside the
+      command (in a shell startup file);
+    - search tools not on the list above;
+    - one unverified assumption: that the agents' own search tools skip git-ignored folders as
+      ripgrep does. If one does not, a secret file inside a git-ignored `node_modules` or
+      virtualenv can be searched with that tool;
   - with the experimental `auto` setting, ways to make a bare `*` reach `.env` that the guard
     allows:
     - hidden-name matching that is on although neither the command nor a startup file names it:
@@ -713,7 +746,8 @@ in-place `.bak` files.
   `--include` or `--exclude-dir`.
 - **Commands you type yourself are not checked.** A command you run with the `!` prefix in the
   agent's prompt is your own: it does not go through the agent's tool hooks, so the guard does
-  not see it.
+  not see it. Its output goes into the conversation and the agent's history, so `!cat .env`
+  puts the key there. (Checked against Claude Code's hook documentation only.)
 - **Over-limit input is denied, not checked:** hook inputs over 4 MB, commands over 100,000
   characters (also after expanding variables), paths over 4,096, and a pattern that has to look
   at more than 20,000 entries, such as `ls **/*` in a big tree. A line break in
@@ -757,6 +791,7 @@ in-place `.bak` files.
 | **v0.1** | Guard for four agents with `guard test`, scan, redact with verify and undo, offline tests, CI on three systems |
 | v0.2 | A live test of what each agent passes to hook processes (environment, timeout behaviour, the `{}` reply); an allowlist instead of a denylist for `env` in project settings; a Windows wrapper (clean environment, fail closed when Python is missing); catching `tar` extraction and `git checkout`/`stash` restoring settings files; cached folder walks so big projects are not denied; a short guide for running agents in a sandbox; Claude Code plugin and MCP server |
 | v0.2 (scan and redact, from the security review) | Find double-quoted values inside JSON history (`api_key = \"…\"`), which generic rules miss today (S2); save the manifest before the rename, so `undo` can restore a file after a crash at that moment (S3); a stronger warning, or a second confirmation, for `--include-active`, since an agent that keeps the file open can lose lines it writes later (S4); a full disk skips that file and still prints the summary, rotate list and backup path, instead of a traceback (S5); skip every symlink in `redact` instead of replacing a link inside the history folders with a plain file (S6); scan long dense lines in windows around keyword hits (S7); say that purged backups can survive in Time Machine, APFS snapshots and cloud-synced home folders (S8) |
+| v0.2 (tree rule, from the security review) | Follow gitignore matching closely enough that a `!` line no longer makes the guard skip nothing, checked against real ripgrep and git in the tool tier; move `git grep --untracked` to "honours ignore files" after a Linux run of the tier; check GNU grep's and `ag`'s option handling in the tier; set each agent's own search tool's class from the live probe; read a ripgrep config and git's configuration that only the agent's environment points to |
 | v0.2 (shell-word rule, from the final security check) | Close V1 to V3, so `--hidden auto` can stop being experimental; cancel the hook's watchdog timer before it answers, so a busy machine cannot end the hook with SIGALRM after it has decided (W1; the wrapper already turns that into a block); handle `IFS` set to a literal in the same command and then used by an unquoted expansion (`x=q.env; IFS=q; cat $x`), a known miss in both settings today (W2); read zsh's letter form (`setopt -4`) in startup files as a switch when `--hidden auto` checks them (W3) |
 | later | More agents, faster scan on large histories, verified Windows paths |
 

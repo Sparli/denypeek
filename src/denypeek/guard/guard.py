@@ -964,6 +964,15 @@ TREE_TOO_BIG = (
 )
 
 
+GIT_GREP_UNCHECKED = (
+    "git grep with a revision or a pattern path reads files the guard cannot list; search the "
+    "working tree and name folders instead (for example `git grep foo -- src`)"
+)
+# A command that defines a function or an alias may give a search tool's name to another
+# command, so every search in it counts as reading everything.
+DEFINES_COMMAND = re.compile(
+    r"(?:^|[;&|(){}\s])(?:function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\))|(?:^|[;&|(\s])alias\s"
+)
 XARGS_SEARCH = (
     "a recursive search that gets its folders from xargs cannot be checked; name the folders "
     "in the command instead (for example `grep -rn foo src`)"
@@ -2644,6 +2653,8 @@ def search_targets(part, cwd, command="", folders=None):
     # With -e or -f the pattern is an option value, so every positional word is a path.
     if cls != CLASS_E and IGNORE_SOURCE_WORDS.search(command or part):
         cls = CLASS_E  # the command may change what the search skips
+    if cls != CLASS_E and DEFINES_COMMAND.search(command or part):
+        cls = CLASS_E  # the search tool's name may now run another command
     pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
     paths = []
     for words in readings:  # every reading of an optional value: walk the paths of each
@@ -2652,6 +2663,12 @@ def search_targets(part, cwd, command="", folders=None):
                 paths.append(p)
     if via_xargs:  # its folders come from input the hook cannot see
         return [Search(bases[0], CLASS_E, reason=XARGS_SEARCH)]
+    if prog == "git-grep":
+        # A word that is neither a folder nor a file is a revision or a pathspec: git reads
+        # committed or tracked files there that the walk cannot list.
+        for p in paths:
+            if p != "." and not any(os.path.exists(expand(p, b) or "") for b in bases):
+                return [Search(bases[0], CLASS_E, reason=GIT_GREP_UNCHECKED)]
     out = []
     for p in paths:
         found = [expand(p, b) for b in bases]

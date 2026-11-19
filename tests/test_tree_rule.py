@@ -765,3 +765,42 @@ def test_xargs_message_suggests_an_allowed_rewrite(isolated, tmp_path):
     assert denied and "xargs" in reason_of(out), out
     denied, out, _ = hook("claude", shell_event("claude", "grep -rn foo src", proj), proj)
     assert not denied, out
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command", ["git grep {m} HEAD", "git grep {m} -- '*.env'", "git grep -e {m} main"]
+)
+def test_git_grep_with_a_revision_or_pathspec_is_denied(command, isolated, tmp_path):
+    """A revision reads committed files, even ones deleted from disk; a pathspec glob reads
+    tracked files the walk would not pick. The hook cannot list either."""
+    proj = ignored_only_project(tmp_path, isolated)
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command.format(m=MARK), proj), proj)
+    assert denied, out
+    assert "git grep" in reason_of(out)
+    denied, out, _ = hook("claude", shell_event("claude", f"git grep {MARK} -- src", proj), proj)
+    assert not denied, out  # the rewrite the message suggests
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command",
+    [
+        'rg(){ grep -r "$@"; }; rg {m} .',
+        'function rg { grep -r "$@"; }; rg {m} .',
+        "alias rg='grep -r'; rg {m} .",
+    ],
+)
+def test_a_command_that_defines_a_function_or_alias_counts_as_reading_everything(
+    command, isolated, tmp_path
+):
+    proj = review_project(tmp_path)
+    (proj / ".env").unlink()
+    (proj / "sub").mkdir()
+    (proj / "sub" / ".env").write_text("x\n")
+    installed(isolated)
+    plain = hook("claude", shell_event("claude", f"rg {MARK} .", proj), proj)
+    assert not plain[0], ("fixture: plain rg skips the hidden file", plain[1])
+    denied, out, _ = hook("claude", shell_event("claude", command.replace("{m}", MARK), proj), proj)
+    assert denied, out

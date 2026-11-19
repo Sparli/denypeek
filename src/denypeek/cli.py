@@ -29,9 +29,70 @@ def _print_problems(home: Home, title: str, problems) -> None:
 # --- scan -------------------------------------------------------------------------------
 
 
+STORE_NAMES = {
+    "claude": "Claude Code",
+    "codex": "Codex",
+    "gemini": "Gemini CLI",
+    "cursor": "Cursor",
+}
+
+
+def _size_text(n: float) -> str:
+    if n >= 1e9:
+        return f"{n / 1e9:.2f} GB"
+    return f"{n / 1e6:.0f} MB" if n >= 1e6 else f"{n / 1e3:.0f} kB"
+
+
+class ScanProgress:
+    """One line on stderr, rewritten in place, while the scan runs. Only on a terminal: when
+    stderr is piped or redirected, nothing is written. No path is shown, only counts."""
+
+    def __init__(self, stream=None):
+        self.stream = stream or sys.stderr
+        self.width = 0
+        self.last = 0.0
+
+    def __call__(self, done, total, done_bytes, total_bytes, found, agent) -> None:
+        import time
+
+        if agent is None:
+            if total:
+                print(
+                    f"Scanning {total} file(s), {_size_text(total_bytes)}. "
+                    "Press Ctrl-C to stop; what was found so far is still listed.",
+                    file=self.stream,
+                )
+            return
+        now = time.monotonic()
+        if done < total and now - self.last < 0.2:
+            return
+        self.last = now
+        line = (
+            f"  {STORE_NAMES.get(agent, agent)}: file {done} of {total}, "
+            f"{_size_text(done_bytes)} of {_size_text(total_bytes)}, {found} found so far"
+        )
+        self.stream.write("\r" + line.ljust(self.width))
+        self.width = len(line)
+        self.stream.flush()
+
+    def finish(self) -> None:
+        if self.width:
+            self.stream.write("\r" + " " * self.width + "\r")
+            self.stream.flush()
+
+
+def _scan_with_progress(home, quiet: bool = False):
+    show = None if quiet or not sys.stderr.isatty() else ScanProgress()
+    try:
+        return scan(home, progress=show)
+    finally:
+        if show:
+            show.finish()
+
+
 def cmd_scan(args) -> int:
     home = _home(args)
-    result = scan(home)
+    result = _scan_with_progress(home, quiet=args.json)
     print(report.scan_json(result, home) if args.json else report.scan_text(result, home))
     return result.exit_code
 
@@ -72,7 +133,10 @@ def cmd_redact(args) -> int:
 
     home = _home(args)
     # Every store, so a key in Cursor's database (never changed) is still counted and listed.
-    found = scan(home)
+    found = _scan_with_progress(home)
+    if found.stopped:
+        print(f"Stopped before redacting anything: the scan was {found.stopped}.")
+        return 2
     editable = {s.path for s in found.files if s.kind in ("jsonl", "json")}
     to_redact = [f for f in found.findings if f.path in editable]
     kept = [f for f in found.findings if f.path not in editable]
@@ -104,7 +168,13 @@ def cmd_redact(args) -> int:
         _print_problems(home, "VERIFICATION FAILED: still present after redaction", res.leftover)
     elif res.changed:
         print("\nVerified: a rescan of the changed files finds no known key shapes.")
-    still = {f.fingerprint for f in scan(home).findings}
+    after = _scan_with_progress(home)
+    still = {f.fingerprint for f in after.findings}
+    if after.stopped:
+        print("That check was stopped, so every key below is listed as NOT redacted.")
+        still = {f.fingerprint for f in found.findings} | {
+            r.fingerprint for r in res.rotate.values()
+        }
     _print_rotate(found.findings, still, res.rotate.values())
     if res.backup:
         print(f"\nBackup: {home.display(res.backup.path)}")
@@ -458,6 +528,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"denypeek: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
+        print("\ndenypeek: stopped (Ctrl-C).", file=sys.stderr)
         return 130
 
 

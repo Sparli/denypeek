@@ -22,6 +22,7 @@ def scan_json(result: ScanResult, home: Home) -> str:
         "version": __version__,
         "home": str(home.root),
         "complete": not result.incomplete,
+        "stopped": result.stopped,
         "exit_code": result.exit_code,
         "files_scanned": len(result.files),
         "files_per_agent": result.per_agent(),
@@ -66,6 +67,8 @@ def scan_text(result: ScanResult, home: Home) -> str:
     per = result.per_agent()
     agents = ", ".join(f"{a} {n}" for a, n in sorted(per.items())) or "no history files found"
     out.append(f"Scanned {len(result.files)} file(s): {agents}.")
+    if result.stopped:
+        out.append(f"INCOMPLETE: the scan was {result.stopped}.")
 
     if result.findings:
         out += ["", f"Possible secrets ({len(result.findings)}):"]
@@ -94,7 +97,9 @@ def scan_text(result: ScanResult, home: Home) -> str:
             f"No agent history found under {home.display(home.root)}; if that is not your "
             "home folder, check --home."
         )
-    if result.incomplete:
+    if result.stopped:
+        out.append("The scan was stopped before the end (exit code 2). Run it again to finish.")
+    elif result.incomplete:
         out.append("The scan was incomplete (exit code 2): see the list above.")
     out.append(NOT_PROOF)
     return "\n".join(out)

@@ -128,6 +128,8 @@ def _skip_reason(path: Path, roots: list[Path], include_active: bool, now: float
 def redact(home: Home, include_active: bool = False) -> RedactResult:
     result = RedactResult()
     found = scan(home, kinds={"jsonl", "json"})
+    if found.stopped:  # Ctrl-C: change nothing on a partial scan
+        raise KeyboardInterrupt
     files = {}
     for f in found.findings:
         files.setdefault(f.path, None)

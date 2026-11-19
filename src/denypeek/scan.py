@@ -9,6 +9,7 @@ import math
 import os
 import re
 import sqlite3
+from bisect import bisect_left
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -61,6 +62,7 @@ class ScanResult:
     findings: list[Finding] = field(default_factory=list)
     incomplete: list[Problem] = field(default_factory=list)  # not fully checked
     notes: list[Problem] = field(default_factory=list)  # checked, but worth knowing
+    stopped: Optional[str] = None  # set when the scan was stopped (Ctrl-C) before the end
 
     @property
     def exit_code(self) -> int:
@@ -84,9 +86,189 @@ def compiled_rules() -> list[dict]:
                 **r,
                 "re": re.compile(r["regex"], re.ASCII),
                 "allow": [_compile_allow(a) for a in r["allowlists"]],
+                "starts": _start_finder(r["regex"]),
             }
         )
     return out
+
+
+# --- exact fast matching on long text --------------------------------------------------
+#
+# Some gitleaks rules cost time proportional to the text length at every position they try:
+# the "generic" shape `[\w.-]{0,50}?(?:keyword)...` (up to 2,500 prefix choices per position
+# on base64) and the curl rules (`\bcurl\b.*?...`, which run to the end of the line from every
+# `curl`). On a JSONL record of several MB that is minutes. `_finditer` gives exactly what
+# `rule.finditer(text)` gives, but tries the rule only at positions where a match can start,
+# found by a necessary condition, and each try is the rule's own regex on the full text.
+
+FAST_MIN = 4096  # shorter texts use plain finditer (both give the same matches)
+_CLASS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
+_PREFIX_SHAPES = (  # (regex prefix, longest [\w.-] run it allows before the keyword group)
+    (r"[\w.-]{0,50}?(?i:[\w.-]{0,50}?(?:", 100),
+    (r"(?i)[\w.-]{0,50}?(?:", 50),
+)
+_CURL_FILLERS = (r"(?:.*?|.*?(?:[\r\n]{1,2}.*?){1,5})", r"(?:.*|.*(?:[\r\n]{1,2}.*){1,5})")
+
+
+def _top_alternatives(x: str) -> list[str]:
+    out, depth, i, in_class, start = [], 0, 0, False, 0
+    while i < len(x):
+        c = x[i]
+        if c == "\\":
+            i += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+        elif c == "[":
+            in_class = True
+            if x[i + 1 : i + 2] == "]":
+                i += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif c == "|" and depth == 0:
+            out.append(x[start:i])
+            start = i + 1
+        i += 1
+    out.append(x[start:])
+    return out
+
+
+def _group_end(x: str, i: int) -> int:
+    """Index just past the group that opens at x[i] == '('."""
+    depth, in_class = 0, False
+    while i < len(x):
+        c = x[i]
+        if c == "\\":
+            i += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+        elif c == "[":
+            in_class = True
+            if x[i + 1 : i + 2] == "]":
+                i += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise ValueError("unbalanced group")
+
+
+def _start_finder(regex: str):
+    """A function text -> next_start(pos), or None when the rule has no slow shape (plain
+    finditer then). next_start(pos) is the smallest position >= pos where the rule may match:
+    every real match start >= pos is >= it. None when there is none."""
+    alts = _top_alternatives(regex)
+    first = alts[0]
+    for prefix, width in _PREFIX_SHAPES:
+        if not first.startswith(prefix):
+            continue
+        # The match is 0..width [\w.-] characters, then `rest` (the keyword group onward).
+        if prefix.startswith("(?i)"):
+            rest = re.compile("(?i)" + first[len(prefix) - 3 :], re.ASCII)
+        else:
+            rest = re.compile("(?i:" + first[len(prefix) - 3 :], re.ASCII)
+        head_src = first[len(prefix) - 3 :]
+        head = re.compile(head_src[: _group_end(head_src, 0)], re.ASCII | re.I)
+        flags = re.ASCII | (re.I if regex.startswith("(?i)") else 0)
+        others = [re.compile(a, flags) for a in alts[1:]]
+        return lambda text: _prefix_next(text, head, rest, width, others)
+    if len(alts) == 1 and regex.startswith(r"\bcurl\b"):
+        for filler in _CURL_FILLERS:
+            if regex.startswith(r"\bcurl\b" + filler):
+                tail = re.compile(regex[len(r"\bcurl\b" + filler) :], re.ASCII)
+                return lambda text: _curl_next(text, tail)
+    return None
+
+
+def _prefix_next(text: str, head, rest, width: int, others):
+    r"""A match starting at s has `rest` matching at some h in [s, s + width] with only [\w.-]
+    characters between: so the leftmost start >= pos comes from the first h >= pos where
+    `rest` matches, at max(pos, h - (the [\w.-] run before h, at most width))."""
+    heads = _all_starts(head, text)
+    extra = sorted({s for rx in others for s in _all_starts(rx, text)})
+    state = {"i": 0}
+
+    def next_start(pos: int) -> Optional[int]:
+        i = state["i"]
+        while i < len(heads) and heads[i] < pos:
+            i += 1
+        found = None
+        while i < len(heads):
+            h = heads[i]
+            if rest.match(text, h):
+                s = h
+                while s > pos and h - s < width and text[s - 1] in _CLASS:
+                    s -= 1
+                found = s
+                break
+            i += 1
+        state["i"] = i
+        j = bisect_left(extra, pos)
+        if j < len(extra) and (found is None or extra[j] < found):
+            return extra[j]
+        return found
+
+    return next_start
+
+
+def _curl_next(text: str, tail):
+    """A match is `curl` as a word, any filler, then the rule's tail (`-H "Authorization: ..."`,
+    `-u user:pass`): so it starts at a `curl` before the last place the tail matches."""
+    tails = _all_starts(tail, text)
+    starts = _all_starts(_CURL_WORD, text, tails[-1]) if tails else []
+
+    def next_start(pos: int) -> Optional[int]:
+        j = bisect_left(starts, pos)
+        return starts[j] if j < len(starts) else None
+
+    return next_start
+
+
+_CURL_WORD = re.compile(r"\bcurl\b", re.ASCII)
+
+
+def _all_starts(rx, text: str, endpos: Optional[int] = None) -> list[int]:
+    """Every position where rx matches, overlapping ones too. A plain search per hit is much
+    faster than a (?=...) scan, which loses re's fast skip to the first character."""
+    out, pos, end = [], 0, len(text) if endpos is None else endpos
+    while True:
+        m = rx.search(text, pos, end)
+        if m is None:
+            return out
+        out.append(m.start())
+        pos = m.start() + 1
+
+
+def _finditer(rule: dict, text: str):
+    """Exactly the matches of rule["re"].finditer(text), faster on long text: the rule's own
+    regex is tried, on the full text, only from places where a match can start."""
+    rx, finder = rule["re"], rule["starts"]
+    if finder is None or len(text) < FAST_MIN:
+        yield from rx.finditer(text)
+        return
+    next_start = finder(text)
+    pos = 0
+    while True:
+        s = next_start(pos)
+        if s is None:
+            return
+        m = rx.match(text, s)
+        if m is None:
+            pos = s + 1
+            continue
+        if m.end() == m.start():  # never for these rules; keep finditer's exact semantics
+            yield from rx.finditer(text, s)
+            return
+        yield m
+        pos = m.end()
 
 
 def _compile_allow(a: dict) -> dict:
@@ -133,7 +315,7 @@ def find_secrets(text: str) -> list[Hit]:
         kws = rule["keywords"]
         if kws and not any(k in lower for k in kws):
             continue
-        for m in rule["re"].finditer(text):
+        for m in _finditer(rule, text):
             group = rule["secret_group"]
             if not group and m.re.groups:
                 group = next((i for i in range(1, m.re.groups + 1) if m.group(i)), 0)
@@ -325,14 +507,59 @@ def inside(path: Path, roots: list[Path]) -> bool:
     return False
 
 
-def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
+PARALLEL_MIN_BYTES = 8_000_000  # below this, one process is fast enough
+
+
+def _ignore_sigint() -> None:  # pragma: no cover - runs in worker processes
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def _scan_one(job):
+    """Scan one file (in a worker process, or in this one). Returns what the caller needs to
+    build Findings and Problems, in the file's own order."""
+    index, src = job
+    part = ScanResult()
+    hits: list = []
+    if src.kind == "sqlite":
+        items = scan_sqlite(src.path, part)
+    else:
+        try:
+            data = src.path.read_bytes()
+        except OSError as exc:
+            part.incomplete.append(Problem(src.path, "", f"cannot read: {exc.strerror or exc}"))
+            return index, hits, part.incomplete, part.notes
+        items = scan_text_lines(data, src.path, src.kind, part)
+    for where, hit in items:
+        hits.append((where, hit.rule, hit.secret))
+    return index, hits, part.incomplete, part.notes
+
+
+def _size(path: Path) -> int:
+    try:
+        return os.stat(path).st_size
+    except OSError:
+        return 0
+
+
+def scan(
+    home: Home,
+    kinds: Optional[set[str]] = None,
+    progress=None,
+    workers: Optional[int] = None,
+) -> ScanResult:
+    """`progress(done_files, total_files, done_bytes, total_bytes, findings, agent)` is called
+    once before the first file (done 0, agent None) and after each file. `workers`: worker
+    processes; None picks one per CPU for large histories, 1 scans in this process. Ctrl-C
+    stops the scan: the result keeps what was found so far and is marked incomplete."""
     result = ScanResult()
     errors: list = []
     sources = all_sources(home, errors)
     for p, reason in errors:
         result.incomplete.append(Problem(p, "", reason))
     allowed_roots = home.history_roots() + [home.cursor_dot_dir, *home.cursor_app_dirs]
-    key = None
+    todo: list[Source] = []
     for src in sources:
         if kinds and src.kind not in kinds:
             continue
@@ -341,19 +568,62 @@ def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
                 Problem(src.path, "", "symlink to outside the history folders; skipped")
             )
             continue
-        result.files.append(src)
-        if src.kind == "sqlite":
-            items = scan_sqlite(src.path, result)
+        todo.append(src)
+    sizes = [_size(src.path) for src in todo]
+    total = sum(sizes)
+    if workers is None:
+        workers = 1 if total < PARALLEL_MIN_BYTES else min(os.cpu_count() or 1, 16)
+    workers = max(1, min(workers, len(todo)))
+    if progress:
+        progress(0, len(todo), 0, total, 0, None)
+
+    done: dict = {}  # index -> (hits, incomplete, notes)
+    done_bytes = 0
+    n_hits = 0
+
+    def record(out) -> None:
+        nonlocal done_bytes, n_hits
+        index, hits, incomplete, notes = out
+        done[index] = (hits, incomplete, notes)
+        done_bytes += sizes[index]
+        n_hits += len(hits)
+        if progress:
+            progress(len(done), len(todo), done_bytes, total, n_hits, todo[index].agent)
+
+    # Largest files first, so one big file does not finish last on its own.
+    jobs = sorted(enumerate(todo), key=lambda j: -sizes[j[0]])
+    pool = None
+    try:
+        if workers == 1:
+            for job in sorted(jobs):
+                record(_scan_one(job))
         else:
-            try:
-                data = src.path.read_bytes()
-            except OSError as exc:
-                result.incomplete.append(
-                    Problem(src.path, "", f"cannot read: {exc.strerror or exc}")
-                )
-                continue
-            items = scan_text_lines(data, src.path, src.kind, result)
-        for where, hit in items:
+            import multiprocessing
+
+            pool = multiprocessing.get_context("spawn").Pool(workers, _ignore_sigint)
+            for out in pool.imap_unordered(_scan_one, jobs, chunksize=1):
+                record(out)
+            pool.close()
+    except KeyboardInterrupt:
+        result.stopped = (
+            f"stopped (Ctrl-C) after {len(done)} of {len(todo)} files, "
+            f"{done_bytes / 1e6:.0f} of {total / 1e6:.0f} MB; the rest was not scanned"
+        )
+    finally:
+        if pool is not None:
+            if result.stopped:
+                pool.terminate()
+            pool.join()
+
+    key = None
+    for index, src in enumerate(todo):
+        if index not in done:
+            continue
+        hits, incomplete, notes = done[index]
+        result.files.append(src)
+        result.incomplete += incomplete
+        result.notes += notes
+        for where, rule, secret in hits:
             if key is None:
                 key = salt(home)
             result.findings.append(
@@ -361,10 +631,12 @@ def scan(home: Home, kinds: Optional[set[str]] = None) -> ScanResult:
                     agent=src.agent,
                     path=src.path,
                     line=where,
-                    rule=hit.rule,
-                    preview=preview(hit.rule, hit.secret),
-                    length=len(hit.secret),
-                    fingerprint=fingerprint(hit.secret, key),
+                    rule=rule,
+                    preview=preview(rule, secret),
+                    length=len(secret),
+                    fingerprint=fingerprint(secret, key),
                 )
             )
+    if result.stopped:
+        result.incomplete.append(Problem(home.root, "", f"scan {result.stopped}"))
     return result

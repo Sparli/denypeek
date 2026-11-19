@@ -534,3 +534,102 @@ def test_a27_when_the_real_tool_prints_a_marker_the_hook_denies(
         assert denied, (command, "the real tool read a secret file, the hook allowed it")
     if change is None and command in [c.replace("foo", MARK) for c in A26_ALLOWED]:
         assert not prints, (command, "an A26 command printed a marker")
+
+
+# --- security review of the tree rule: reproductions -----------------------------------------
+# Each case: the real tool (where installed) and the hook on the same command. The hook must
+# deny every one: real ripgrep 14.1.1 read the secret in each.
+
+
+def review_project(tmp_path: Path, gitignore="node_modules/\n.env\n") -> Path:
+    proj = tmp_path / "proj"
+    (proj / ".git" / "info").mkdir(parents=True)
+    (proj / ".gitignore").write_text(gitignore)
+    (proj / ".env").write_text(f"KEY={MARK}\n")
+    (proj / "src").mkdir()
+    (proj / "src" / "app.py").write_text("print(1)\n")
+    (proj / "venv" / "lib").mkdir(parents=True)
+    (proj / "venv" / ".gitignore").write_text("*\n")
+    (proj / "venv" / "lib" / "cacert.pem").write_text(f"{MARK}\n")
+    (proj / "node_modules" / "pkg").mkdir(parents=True)
+    (proj / "node_modules" / "pkg" / "test.pem").write_text(f"{MARK}\n")
+    return proj
+
+
+def _write(rel, text, append=False):
+    def change(proj, home):
+        base = home if rel.startswith("~/") else proj
+        path = base / rel[2:] if rel.startswith("~/") else base / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a" if append else "w") as f:
+            f.write(text)
+
+    return change
+
+
+def _excludes_file(proj, home):
+    (home / "excl").write_text("!.env\n")
+    (home / ".gitconfig").write_text(f"[core]\n\texcludesFile = {home / 'excl'}\n")
+
+
+IGNORE_CASES = [
+    ("node_modules/\n.env\n", _write(".ignore", "!\\.env\n"), "rg M"),
+    ("node_modules/\n.env\n", _write(".ignore", "!.e[^x]v\n"), "rg M"),
+    ("node_modules/\n", _write(".git/info/exclude", "!.env\n"), "rg M"),
+    ("node_modules/\n", _write("~/.config/git/ignore", "!.env\n"), "rg M"),
+    ("node_modules/\n", _excludes_file, "rg M"),
+    ("node_modules/\n.env\n", _write(".ignore", "!node_modules/\n"), "rg M"),
+    ("node_modules/\n.env\n", _write(".gitignore", "!node_module*\n", append=True), "rg M"),
+    ("node_modules/\n.env\n", _write("venv/.rgignore", "!*\n"), "rg M"),
+    # one call: the command writes the ignore file and searches
+    ("node_modules/\n.env\n", None, "printf '!.e?v\\n' > .ignore; rg M"),
+    ("node_modules/\n.env\n", None, "sed -i '' '/node_modules/d' .gitignore; rg M"),
+]
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "gitignore,change,command", IGNORE_CASES, ids=[f"ignore-{i}" for i in range(len(IGNORE_CASES))]
+)
+def test_ignore_files_are_trusted_only_when_certain(gitignore, change, command, isolated, tmp_path):
+    proj = review_project(tmp_path, gitignore)
+    installed(isolated)
+    if change:
+        change(proj, isolated)
+    command = command.replace(" M", f" {MARK}")
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    rg = _rg()
+    if rg and "sed -i" not in command:  # BSD sed syntax; the hook side is what matters
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        (bindir / "rg").symlink_to(rg)
+        assert tool_prints_marker(command, proj, bindir, isolated), "fixture: rg reads nothing"
+    assert denied, (command, out)
+
+
+@pytest.mark.parametrize("folders", [700, 2_100])
+def test_many_folders_do_not_deny_plain_rg_or_error(folders, isolated, tmp_path):
+    """Only ignore files that exist are read and counted; no internal error past a limit."""
+    proj = review_project(tmp_path)
+    for i in range(folders):
+        (proj / "src" / f"d{i}").mkdir()
+    installed(isolated)
+    for command in ("rg foo", "rg --hidden foo"):
+        denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+        assert "guard error" not in out, out
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    assert not denied, out
+
+
+def test_too_many_ignore_files_is_message_b(isolated, tmp_path, monkeypatch):
+    proj = review_project(tmp_path)
+    for i in range(30):
+        (proj / "src" / f"d{i}").mkdir()
+        (proj / "src" / f"d{i}" / ".ignore").write_text("x\n")
+    installed(isolated)
+    g._home[0] = str(isolated)
+    monkeypatch.setattr(g, "IGNORE_FILES_MAX", 10)
+    reason = g.search_tree(
+        g.Search(str(proj), "D"), g.parse_patterns(g.DEFAULT_PATTERNS), time.monotonic() + 9
+    )
+    assert reason == g.TREE_TOO_BIG

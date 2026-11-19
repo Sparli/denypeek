@@ -934,8 +934,28 @@ def _brace_sequence(m, limit):
 # can match a pattern (T7).
 
 CLASS_E, CLASS_I, CLASS_D = "E", "I", "D"
-IGNORE_FILE_MAX = 64 * 1024  # a larger ignore file is not read: no skip from it
-IGNORE_FILES_MAX = 2_000  # more ignore files than this in one walk: class D becomes I (T4)
+IGNORE_FILE_MAX = 64 * 1024  # a larger ignore file cannot be read with certainty
+IGNORE_FILES_MAX = 5_000  # ignore files read in one walk; past this, too big to check
+IGNORE_NAMES = (".gitignore", ".ignore", ".rgignore")
+# The only lines that let the walk skip node_modules: exact, with no glob to interpret.
+NODE_MODULES_ANYWHERE = {"node_modules", "node_modules/"}
+NODE_MODULES_HERE = {"/node_modules", "/node_modules/"}
+# git configuration that can add an ignore file or pull in other configuration
+GIT_CONFIG_UNCERTAIN = re.compile(r"excludesfile|^\s*\[\s*include", re.I | re.M)
+SYSTEM_GIT_CONFIGS = (
+    "/etc/gitconfig",
+    "/usr/local/etc/gitconfig",
+    "/opt/homebrew/etc/gitconfig",
+    "/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig",
+    "/Applications/Xcode.app/Contents/Developer/usr/share/git-core/gitconfig",
+)
+# A command that names an ignore source or git's configuration may change what a search in the
+# same command skips: such a search counts as reading everything.
+IGNORE_SOURCE_WORDS = re.compile(
+    r"\.gitignore|\.ignore|\.rgignore|(?:^|[^\w-])exclude(?:$|[^\w-])|excludesfile|"
+    r"\.gitconfig|git/ignore|git/config|XDG_CONFIG_HOME|GIT_CONFIG|GIT_DIR|GIT_WORK_TREE",
+    re.I,
+)
 
 TIMEOUT_ADVICE = "try a shorter command, or search a narrower folder"
 TREE_TOO_BIG = (
@@ -953,10 +973,6 @@ class Search:
 
 
 class _WalkLimit(Exception):
-    pass
-
-
-class _Downgrade(Exception):
     pass
 
 
@@ -1014,32 +1030,64 @@ def _last_part_regex(rules):
     return re.compile("^(?:" + "|".join(out) + ")$")
 
 
-def _ignore_lines(folder, name, strict=False):
-    """The pattern lines of an ignore file, or None. A file too large to read gives no
-    evidence; with `strict` (class D, whose skip it could undo) it raises _Downgrade."""
-    path = os.path.join(folder, name)
+def _read_ignore(path):
+    """(lines, certain). (None, True) when there is no such file. A file that cannot be read
+    in full as UTF-8 is not certain."""
     try:
-        if os.path.getsize(path) > IGNORE_FILE_MAX:
-            if strict:
-                raise _Downgrade
-            return None
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            text = fh.read(IGNORE_FILE_MAX + 1)
+        size = os.path.getsize(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None, True
     except (OSError, ValueError):
-        return None
-    return [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+        return None, False
+    if size > IGNORE_FILE_MAX:
+        return None, False
+    try:
+        with open(path, "rb") as fh:
+            text = fh.read(IGNORE_FILE_MAX + 1).decode("utf-8")
+    except (OSError, ValueError):
+        return None, False
+    return [ln.rstrip() for ln in text.splitlines()], True
 
 
-def _in_repo(folder):
+def _negates(lines):
+    """Any line that may re-include a file. No attempt is made to follow gitignore matching:
+    a `!` anywhere in a line counts."""
+    return any("!" in ln for ln in lines or ())
+
+
+def _patterns(lines):
+    return [ln for ln in lines or () if ln and not ln.startswith("#")]
+
+
+def _repo_top(folder):
+    """The folder holding `.git` at or above `folder`, or None."""
     d = os.path.realpath(folder)
     for _ in range(64):
         if os.path.lexists(os.path.join(d, ".git")):
-            return True
+            return d
         up = os.path.dirname(d)
         if up == d:
-            return False
+            return None
         d = up
-    return False
+    return None
+
+
+def _git_dir(top):
+    """The repository's git folder (following a worktree's `gitdir:` file and its
+    `commondir`), or None when it cannot be told for certain."""
+    dot = os.path.join(top, ".git")
+    if os.path.isdir(dot):
+        return dot
+    lines, ok = _read_ignore(dot)
+    if not ok or not lines or not lines[0].startswith("gitdir:"):
+        return None
+    gd = os.path.normpath(os.path.join(top, lines[0][len("gitdir:") :].strip()))
+    common, ok = _read_ignore(os.path.join(gd, "commondir"))
+    if not ok:
+        return None
+    if common:
+        gd = os.path.normpath(os.path.join(gd, common[0].strip()))
+    return gd if os.path.isdir(gd) else None
 
 
 def _above(folder):
@@ -1054,45 +1102,37 @@ def _above(folder):
     return out
 
 
-def _whitelists(lines):
-    """Re-include lines (`!name`) of an ignore file, as patterns. True means "any name"."""
-    out = []
-    for ln in lines or ():
-        if ln.startswith("!"):
-            pat = ln[1:].strip().strip("/")
-            out.append(True if "/" in pat or not pat else pat.lower())
-    return out
-
-
-def _whitelisted(name, wl):
-    low = name.lower()
-    return any(w is True or fnmatch_case(low, w) for w in wl)
+def ignores_uncertain(folder, repo_top):
+    """True when an ignore source outside the walked folders may re-include a file, or
+    cannot be read with certainty. Then the walk skips nothing."""
+    home = home_dir()
+    configs = [os.path.join(home, ".gitconfig"), os.path.join(home, ".config", "git", "config")]
+    configs += list(SYSTEM_GIT_CONFIGS)
+    gd = None
+    if repo_top:
+        gd = _git_dir(repo_top)
+        if gd is None:
+            return True
+        configs.append(os.path.join(gd, "config"))
+    for cfg in configs:
+        lines, ok = _read_ignore(cfg)
+        if not ok or (lines and GIT_CONFIG_UNCERTAIN.search("\n".join(lines))):
+            return True
+    sources = [os.path.join(home, ".config", "git", "ignore")]
+    if gd:
+        sources.append(os.path.join(gd, "info", "exclude"))
+    sources += [os.path.join(d, n) for d in _above(folder) for n in IGNORE_NAMES]
+    for src in sources:
+        lines, ok = _read_ignore(src)
+        if not ok or _negates(lines):
+            return True
+    return False
 
 
 def fnmatch_case(name, pat):
     import fnmatch
 
     return fnmatch.fnmatchcase(name, pat)
-
-
-def _skips_node_modules(chain, parent_lines):
-    """T2: a .gitignore between the folder and the repository top names node_modules in a
-    plain line (`node_modules`, `node_modules/`, or `/node_modules` beside it)."""
-    named, unnamed = False, False
-    for lines in chain:
-        for ln in lines or ():
-            if ln.startswith("!") and "node_modules" in ln:
-                unnamed = True
-            elif ln in ("node_modules", "node_modules/"):
-                named = True
-    if any(ln == "/node_modules" for ln in parent_lines or ()):
-        named = True
-    return named and not unnamed
-
-
-def _ignores_all(folder):
-    lines = _ignore_lines(folder, ".gitignore")
-    return lines == ["*"]
 
 
 def search_tree(search, rules, deadline):
@@ -1104,17 +1144,19 @@ def search_tree(search, rules, deadline):
     if is_protected(folder):
         return tree_protected_reason(folder)
     try:
-        try:
-            hit = _walk(folder, search.cls, search, rules, deadline)
-        except _Downgrade:  # too many or too large ignore files to read: class I (T4)
-            hit = _walk(folder, CLASS_I, search, rules, deadline)
+        hit = _walk(folder, search.cls, search, rules, deadline)
     except _WalkLimit:
         return TREE_TOO_BIG
     return tree_secret_reason(hit) if hit else None
 
 
 def _walk(folder, cls, search, rules, deadline):
-    """The first file the search can read that is blocked, or None. Raises _WalkLimit."""
+    """The first file the search can read that is blocked, or None. Raises _WalkLimit.
+
+    Skips on the strength of an ignore file only when certain: inside a repository,
+    with no `!` line and no unreadable file in any ignore source that applies, and only for
+    an exact `node_modules` line or a folder whose own `.gitignore` is exactly `*`. Hidden
+    names are skipped for class D only under the same condition."""
     last_part = _last_part_regex(rules)
     root_full = last_part is None
     if not root_full:
@@ -1124,38 +1166,45 @@ def _walk(folder, cls, search, rules, deadline):
         except (OSError, ValueError):
             pass
         root_full = any(last_part.match(c) for r in roots for c in r.split("/") if c)
-    repo = cls != CLASS_E and _in_repo(folder)
-    chain0, wl0 = [], []
-    if cls != CLASS_E:
+    repo_top = _repo_top(folder) if cls != CLASS_E else None
+    if cls != CLASS_E and ignores_uncertain(folder, repo_top):
+        cls = CLASS_E
+    nm_above = False
+    if repo_top:
         for d in _above(folder):
-            for name in (".gitignore", ".ignore", ".rgignore") if cls == CLASS_D else ():
-                wl0 += _whitelists(_ignore_lines(d, name, strict=True))
-            if repo:
-                chain0.append(_ignore_lines(d, ".gitignore"))
-                if os.path.lexists(os.path.join(d, ".git")):
-                    break
+            if not d.startswith(repo_top):
+                break
+            lines, _ok = _read_ignore(os.path.join(d, ".gitignore"))
+            nm_above = nm_above or bool(set(_patterns(lines)) & NODE_MODULES_ANYWHERE)
     includes, excludes, exclude_dirs = search.includes, search.excludes, search.exclude_dirs
     seen = 0
-    ignore_files = 0
-    # (folder, full check for every name below?, .gitignore chain, re-include lines)
-    stack = [(folder, root_full, chain0, wl0)]
+    ignore_reads = 0
+    # (folder, full check below?, node_modules named above?, a `!` or doubt above?, root?)
+    stack = [(folder, root_full, nm_above, False, True)]
     while stack:
-        d, full, chain, wl = stack.pop()
-        here = None
-        if cls != CLASS_E:
-            here = _ignore_lines(d, ".gitignore", strict=cls == CLASS_D)
-            ignore_files += 1
-            if cls == CLASS_D:
-                wl = wl + _whitelists(here)
-                for name in (".ignore", ".rgignore"):
-                    wl = wl + _whitelists(_ignore_lines(d, name, strict=True))
-                ignore_files += 2
-            if ignore_files > IGNORE_FILES_MAX:
-                raise _Downgrade
+        d, full, nm_seen, doubt, is_root = stack.pop()
         try:
             entries = list(os.scandir(d))
         except OSError:
             continue
+        nm_here = False
+        if cls != CLASS_E:
+            names = {e.name for e in entries}
+            own = {}
+            for n in IGNORE_NAMES:
+                if n in names:
+                    ignore_reads += 1
+                    if ignore_reads > IGNORE_FILES_MAX:
+                        raise _WalkLimit
+                    lines, ok = _read_ignore(os.path.join(d, n))
+                    own[n] = lines
+                    doubt = doubt or not ok or _negates(lines)
+            gitignore = set(_patterns(own.get(".gitignore")))
+            if repo_top and not doubt and not is_root and gitignore == {"*"}:
+                continue  # T2: the folder's own .gitignore ignores everything in it
+            nm_seen = nm_seen or bool(gitignore & NODE_MODULES_ANYWHERE)
+            nm_here = nm_seen or bool(gitignore & NODE_MODULES_HERE)
+        skipping = cls != CLASS_E and repo_top is not None and not doubt
         for e in entries:
             seen += 1
             if seen > WALK_LIMIT or (seen & 255 == 0 and time.monotonic() > deadline):
@@ -1166,20 +1215,17 @@ def _walk(folder, cls, search, rules, deadline):
                 is_dir = not is_link and e.is_dir(follow_symlinks=False)
             except OSError:
                 is_link, is_dir = True, False  # cannot tell: give it the full check
-            if cls == CLASS_D and name.startswith(".") and not _whitelisted(name, wl):
+            if cls == CLASS_D and not doubt and name.startswith("."):
                 continue  # T2: ripgrep's default skips hidden names
             if is_dir:
                 if name in (".git", "__pycache__"):
                     continue
                 if any(fnmatch_case(name, x) for x in exclude_dirs):
                     continue  # T5
-                if repo:
-                    if name == "node_modules" and _skips_node_modules(chain + [here], here):
-                        continue
-                    if _ignores_all(e.path):
-                        continue
+                if skipping and name == "node_modules" and nm_here:
+                    continue  # T2: an exact .gitignore line names it, and nothing re-includes
                 need = full or bool(last_part.match(_norm(name)))
-                stack.append((e.path, need, chain + [here] if repo else chain, wl))
+                stack.append((e.path, need, nm_seen, doubt, False))
                 continue
             if includes and not any(fnmatch_case(name, x) for x in includes):
                 continue  # T5: not included
@@ -2497,6 +2543,8 @@ def search_targets(part, cwd, command=""):
     else:
         cls = SEARCH_CLASSES[prog]
     # With -e or -f the pattern is an option value, so every positional word is a path.
+    if cls != CLASS_E and IGNORE_SOURCE_WORDS.search(command or part):
+        cls = CLASS_E  # the command may change what the search skips
     pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
     paths = pos if pattern_in_opts else pos[1:]
     if not paths:

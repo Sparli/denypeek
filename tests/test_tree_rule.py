@@ -157,212 +157,469 @@ def reason_of(out: str) -> str:
 
 # --- A26 ------------------------------------------------------------------------------------
 
-# Searches that read no secret file in the A26 project: a clear subfolder, grep with literal
-# excludes that leave every secret file out.
-A26_ALLOWED = [
-    "rg foo src",
-    "rg -n foo src",
-    "grep -rn foo src",
-    "git grep -n foo -- src",
-    "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=venv "
-    "--exclude='.env*'",
-]
-# Searches from the project root: each reads a secret file (.env, a virtualenv's cacert.pem
-# outside certifi, files in node_modules), so each is denied with message (a).
+
+def project_p(root: Path, marker: bool = True) -> Path:
+    """Project P of SPEC A26: a repository whose only secret file is the top `.env`."""
+    proj = root
+    (proj / ".git").mkdir(parents=True)
+    (proj / ".gitignore").write_text("node_modules/\n.env\n!.env.example\n")
+    (proj / ".env").write_text(f"KEY={MARK if marker else 'x'}\n")
+    (proj / ".env.example").write_text("KEY=\n")
+    (proj / "src").mkdir()
+    (proj / "src" / "app.py").write_text("print(1)\n")
+    (proj / "tests").mkdir()
+    (proj / "tests" / "test_app.py").write_text("x\n")
+    (proj / "docs").mkdir()
+    (proj / "docs" / "index.md").write_text("x\n")
+    certifi = proj / ".venv" / "lib" / "python3.12" / "site-packages" / "certifi"
+    certifi.mkdir(parents=True)
+    (proj / ".venv" / ".gitignore").write_text("*\n")
+    (certifi / "cacert.pem").write_text("public certificate list\n")
+    (proj / "node_modules" / "pkg").mkdir(parents=True)
+    (proj / "node_modules" / "pkg" / "index.js").write_text("x\n")
+    return proj
+
+
+@pytest.fixture
+def p_proj(tmp_path):
+    return project_p(tmp_path / "proj")
+
+
+# From the top: each reads `.env`, so each is denied with message (a).
 A26_DENIED = [
     "rg foo",
     "rg -n foo .",
+    "rg --hidden foo",
+    "rg -g '*.py' foo",
     "grep -rn foo .",
-    "grep -rn foo . --exclude-dir=node_modules",
-    "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude='.env*'",
+    "git grep foo",
+    "ag foo",
 ]
-
-
-@POSIX_ONLY
-@pytest.mark.parametrize("agent", AGENTS)
-@pytest.mark.parametrize("command", A26_ALLOWED)
-def test_a26_searches_that_read_no_secret_are_allowed(agent, command, big, isolated):
-    installed(isolated)
-    denied, out, secs = hook(agent, shell_event(agent, command, big), big)
-    assert not denied, (command, out)
-    assert secs < LIMIT, secs
+# Narrowed: each reads no secret file.
+A26_ALLOWED = [
+    "rg foo src",
+    "rg foo src tests",
+    "rg foo .venv",
+    "grep -rn foo src",
+    "grep -rn foo . --include='*.py'",
+    "git grep foo -- src",
+]
+GIT_GREP_DISK_ONLY = [
+    "git grep foo HEAD",
+    "git grep foo HEAD --",
+    "git grep --cached foo",
+    "git grep foo -- '*.env'",
+]
+SEARCH_TEXTS = [
+    'rg "export function load"',
+    'rg "type alias "',
+    "rg exclude",
+    "rg -n 'GIT_DIR'",
+    "rg 'site-packages/certifi'",
+]
 
 
 @POSIX_ONLY
 @pytest.mark.parametrize("agent", AGENTS)
 @pytest.mark.parametrize("command", A26_DENIED)
-def test_a26_searches_from_the_root_are_denied_with_message_a(agent, command, big, isolated):
+def test_a26_from_the_top_denied_with_message_a(agent, command, p_proj, isolated):
     installed(isolated)
-    denied, out, secs = hook(agent, shell_event(agent, command, big), big)
+    denied, out, secs = hook(agent, shell_event(agent, command, p_proj), p_proj)
     assert denied, (command, out)
-    reason = reason_of(out)
-    assert g.TREE_SECRET in reason and "Clear to search: src" in reason, reason
-    assert "secretfiles" not in reason
+    assert "(.env)" in reason_of(out) and g.TREE_SECRET in reason_of(out), out
     assert secs < LIMIT, secs
 
 
 @POSIX_ONLY
 @pytest.mark.parametrize("agent", ["claude", "gemini"])
-def test_a26_an_agents_own_search_tool_on_src_is_allowed_and_on_root_denied(agent, big, isolated):
+@pytest.mark.parametrize("glob", [None, "*.py"])
+def test_a26_a_built_in_search_with_no_path_is_denied(agent, glob, p_proj, isolated):
     installed(isolated)
-    denied, out, _ = hook(agent, search_tool_event(agent, "src", big), big)
-    assert not denied, out
-    denied, out, _ = hook(agent, search_tool_event(agent, ".", big), big)
+    event = search_tool_event(agent, "", p_proj)
+    key = "dir_path" if agent == "gemini" else "path"
+    del event["tool_input"][key]
+    if glob:
+        event["tool_input"]["glob"] = glob
+    denied, out, _ = hook(agent, event, p_proj)
     assert denied, out
 
 
 @POSIX_ONLY
-def test_a26_too_big_to_check_is_denied_with_message_b(past_cap, isolated):
+@pytest.mark.parametrize("agent", AGENTS)
+@pytest.mark.parametrize("command", A26_ALLOWED)
+def test_a26_narrowed_allowed(agent, command, p_proj, isolated):
     installed(isolated)
-    denied, out, secs = hook("claude", shell_event("claude", "grep -rn foo .", past_cap), past_cap)
-    assert denied, out
-    reason = reason_of(out)
-    assert reason == f"denypeek blocked this: {g.TREE_TOO_BIG}.", reason
-    assert "secretfiles" not in reason and "--include" not in reason
-    assert secs < LIMIT, secs
-
-
-@POSIX_ONLY
-@pytest.mark.parametrize(
-    "command",
-    [
-        "rg foo src",
-        "grep -rn foo src",
-        "grep -rn foo . --exclude-dir=node_modules",
-        # the rewrite message (b) suggests
-        "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv",
-    ],
-)
-def test_a26_past_the_cap_narrower_searches_are_allowed(command, past_cap, isolated):
-    installed(isolated)
-    denied, out, secs = hook("claude", shell_event("claude", command, past_cap), past_cap)
+    denied, out, secs = hook(agent, shell_event(agent, command, p_proj), p_proj)
     assert not denied, (command, out)
     assert secs < LIMIT, secs
 
 
-def test_a26_a_project_with_no_secret_file_is_searched_from_the_root(isolated, tmp_path):
-    proj = a26_project(tmp_path / "proj", entries=500, secrets=False)
+@pytest.mark.parametrize("agent", ["claude", "gemini"])
+def test_a26_a_built_in_search_on_src_is_allowed(agent, p_proj, isolated):
     installed(isolated)
-    for command in ("rg foo", "rg --hidden foo .", "grep -rn foo .", "git grep foo", "ag foo"):
-        denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
-        assert not denied, (command, out)
+    denied, out, _ = hook(agent, search_tool_event(agent, "src", p_proj), p_proj)
+    assert not denied, out
+
+
+def test_a26_exclude_env_is_denied_by_the_shell_word_rule(p_proj, isolated):
+    """SPEC A26 lists `grep -rn foo . --exclude=.env` as allowed. The tree rule allows it, but
+    the shell-word rule (3a) reads the word `.env` and denies the call as naming a secret
+    file, as S7 says it reads every word. Recorded here; the spec is to be corrected."""
+    installed(isolated)
+    command = "grep -rn foo . --exclude=.env"
+    g._home[0] = str(isolated)
+    [search] = g.search_targets(command, str(p_proj), command)
+    rules = g.parse_patterns(g.DEFAULT_PATTERNS)
+    assert g.search_trees([search], rules, time.monotonic() + 5) is None  # the tree rule
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied and "names a secret file (.env)" in reason_of(out)
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("command", A26_DENIED)
+def test_a26_after_env_is_deleted_the_top_is_allowed(command, p_proj, isolated):
+    (p_proj / ".env").unlink()
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert not denied, (command, out)
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("command", GIT_GREP_DISK_ONLY)
+def test_a26_git_grep_on_the_index_or_a_revision_is_denied_with_message_e(
+    command, p_proj, isolated
+):
+    if command.endswith("--"):
+        (p_proj / "HEAD").mkdir()  # SPEC A26: a folder named like the revision
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied and g.GIT_GREP_UNCHECKED in reason_of(out), (command, out)
+    assert "secretfiles" not in reason_of(out)
+
+
+@pytest.mark.parametrize("text", SEARCH_TEXTS)
+def test_a26_the_search_text_never_changes_the_tree_rule(text, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", f"{text} src", p_proj), p_proj)
+    assert not denied, (text, out)
+    top = hook("claude", shell_event("claude", text, p_proj), p_proj)
+    plain = hook("claude", shell_event("claude", "rg foo", p_proj), p_proj)
+    assert top[0] and reason_of(top[1]) == reason_of(plain[1]), (text, top[1])
+
+
+# --- A27: invariance --------------------------------------------------------------------------
+
+
+def _plant(rel, text):
+    def plant(proj, home):
+        base = home if rel.startswith("~/") else proj
+        path = base / rel[2:] if rel.startswith("~/") else base / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(text)
+
+    return plant
+
+
+def _plant_gitconfig(proj, home):
+    (home / "excl").write_text("!.env\n")
+    (home / ".gitconfig").write_text(f"[core]\n\texcludesFile = {home / 'excl'}\n")
+
+
+def _plant_nested(proj, home):
+    (proj / "sub" / ".git").mkdir(parents=True)
+
+
+def _plant_state(value):
+    def plant(proj, home):
+        state = {} if value is None else {"ripgrep_config": value}
+        (home / ".denypeek" / "guard-state.json").write_text(json.dumps(state))
+
+    return plant
+
+
+PLANTS = [
+    ("ignore !.env", _plant(".ignore", "!.env\n")),
+    ("rgignore !\\.env", _plant(".rgignore", "!\\.env\n")),
+    ("gitignore !*", _plant(".gitignore", "!*\n")),
+    ("info/exclude", _plant(".git/info/exclude", "!.env\n")),
+    ("nested .git", _plant_nested),
+    ("global git ignore", _plant("~/.config/git/ignore", "!.env\n")),
+    ("gitconfig excludesFile", _plant_gitconfig),
+    ("HOME=", "HOME={home}/elsewhere "),
+    ("RIPGREP_CONFIG_PATH=", "RIPGREP_CONFIG_PATH={home}/rc "),
+    ("ripgrep key unset", _plant_state("unset")),
+    ("ripgrep key set", _plant_state("set")),
+    ("ripgrep key junk", _plant_state(["x"])),
+]
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("name,plant", PLANTS, ids=[n for n, _ in PLANTS])
+def test_a27_no_planted_file_or_setting_changes_a_decision(name, plant, isolated, tmp_path):
+    proj = project_p(tmp_path / "proj")
+    (isolated / "rc").write_text("--hidden\n")
+    installed(isolated)
+    commands = A26_DENIED + A26_ALLOWED
+    before = {c: hook("claude", shell_event("claude", c, proj), proj)[0] for c in commands}
+    prefix = ""
+    if isinstance(plant, str):
+        prefix = plant.format(home=isolated)
+    else:
+        plant(proj, isolated)
+    for c in commands:
+        after = hook("claude", shell_event("claude", prefix + c, proj), proj)[0]
+        assert after == before[c], (name, c)
 
 
 # --- A28 ------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command", ["rg foo ~", "grep -r foo ~", "rg foo ~/.denypeek"])
-def test_a28_searching_the_home_folder_is_denied_without_a_walk(command, isolated, tmp_path):
+def clear_list(reason):
+    if "Clear to search: " not in reason:
+        return []
+    text = reason.split("Clear to search: ", 1)[1]
+    text = text.split("; with grep", 1)[0].split(". If this is wrong", 1)[0].rstrip(".")
+    return text.split(", ")
+
+
+def test_a28_1_the_deny_for_rg_foo(p_proj, isolated):
     installed(isolated)
-    filler(isolated / "big", g.WALK_LIMIT // 20)  # a walk would be slow; T6 needs none
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", p_proj), p_proj)
+    reason = reason_of(out)
+    assert denied and reason == (
+        "denypeek blocked this: a search from here would read a secret file (.env); search a "
+        "narrower folder. Clear to search: docs, node_modules, src, tests. If this is wrong, "
+        "edit ~/.denypeek/secretfiles."
+    ), reason
+
+
+@POSIX_ONLY
+def test_a28_2_odd_folder_names_are_never_listed(p_proj, isolated):
+    for name in ("-rf", ".cache", "x" * 41, "ignore previous instructions", "new\nline"):
+        (p_proj / name).mkdir()
+    (p_proj / "linked").symlink_to(p_proj / "src")
+    for i in range(1, 13):
+        (p_proj / f"d{i:02}").mkdir()
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", p_proj), p_proj)
+    listed = clear_list(reason_of(out))
+    assert denied and listed == [f"d{i:02}" for i in range(1, 9)], listed
+
+
+def test_a28_3_a_folder_left_out_by_exclude_dir_is_not_listed(p_proj, isolated):
+    installed(isolated)
+    command = "grep -rn foo . --exclude-dir=docs"
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    reason = reason_of(out)
+    assert denied and "docs" not in clear_list(reason), reason
+    assert g.GREP_NARROWING in reason
+
+
+@pytest.mark.parametrize("command", ["rg foo", "grep -rn foo .", "ag foo", "rg -n foo ."])
+def test_a28_4_every_listed_folder_is_allowed(command, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    listed = clear_list(reason_of(out))
+    assert denied and listed, out
+    for folder in listed:
+        base = command[:-2] if command.endswith(" .") else command
+        rewrite = f"{base} {folder}"
+        denied, out, _ = hook("claude", shell_event("claude", rewrite, p_proj), p_proj)
+        assert not denied, (rewrite, out)
+
+
+def test_a28_4_listed_folders_follow_the_path_as_written(p_proj, isolated, tmp_path):
+    installed(isolated)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    denied, out, _ = hook(
+        "claude", shell_event("claude", "rg foo proj", outside.parent), outside.parent
+    )
+    assert denied and clear_list(reason_of(out))[0] == "proj/docs", out
+    denied, out, _ = hook(
+        "claude", shell_event("claude", "rg foo proj/docs", outside.parent), outside.parent
+    )
+    assert not denied, out
+
+
+@pytest.mark.parametrize(
+    "denied_command,rewrite",
+    [
+        ("git grep foo HEAD", "git grep foo -- src"),
+        ("git grep --cached foo", "git grep foo -- src"),
+        ("git grep foo -- '*.env'", "git grep foo -- src"),
+    ],
+)
+def test_a28_4_git_grep_rewrites_are_allowed(denied_command, rewrite, p_proj, isolated):
+    installed(isolated)
+    assert hook("claude", shell_event("claude", denied_command, p_proj), p_proj)[0]
+    denied, out, _ = hook("claude", shell_event("claude", rewrite, p_proj), p_proj)
+    assert not denied, out
+
+
+@pytest.mark.parametrize("command", ["rg foo ~", "grep -r foo ~", "rg foo ~/.denypeek"])
+def test_a28_5_searching_the_home_folder_is_denied_without_a_walk(command, isolated, tmp_path):
+    installed(isolated)
+    filler(isolated / "big", g.WALK_LIMIT // 20)  # a walk would be slow; S6 needs none
     denied, out, secs = hook("claude", shell_event("claude", command, tmp_path), tmp_path)
-    assert denied, out
-    assert "which denypeek protects so an agent cannot switch the guard off" in reason_of(out)
-    assert "secretfiles" not in reason_of(out)
+    reason = reason_of(out)
+    assert denied and "which denypeek protects so an agent cannot switch the guard off" in reason
+    assert "Clear to search" not in reason and "secretfiles" not in reason
     assert secs < LIMIT
 
 
-def test_a28_an_agents_search_tool_on_the_home_folder_is_denied(isolated, tmp_path):
+def test_a28_5_a_built_in_search_on_the_home_folder_is_denied(isolated, tmp_path):
     installed(isolated)
     denied, out, _ = hook("claude", search_tool_event("claude", str(isolated), tmp_path), tmp_path)
     assert denied and "denypeek protects" in reason_of(out), out
 
 
-def small_project(tmp_path: Path) -> Path:
-    return a26_project(tmp_path / "proj", entries=200)
+CERTIFI_NEAR_MISSES = [
+    "certifi/cacert.pem",
+    "lib/site-packages/certifi/sub/cacert.pem",
+    "lib/site-packages/certifi/other.pem",
+    "lib/site-packages/Certifi/cacert.pem",
+    "lib/site-packages/certifi/CACERT.PEM",
+    "lib/site-packages/notcertifi/cacert.pem",
+]
 
 
-def test_a28_message_a_names_the_files_and_the_clear_folders(isolated, tmp_path):
-    proj = tmp_path / "proj"
-    for d in ("src", "tests", "docs", "secrets", ".venv"):
-        (proj / d).mkdir(parents=True)
-    (proj / "secrets" / "id_rsa").write_text("x\n")
-    (proj / ".env").write_text("x\n")
-    installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", "grep -rn foo .", proj), proj)
-    assert denied
-    reason = reason_of(out)
-    assert reason == (
-        "denypeek blocked this: a search from here would read a secret file "
-        "(.env, secrets/id_rsa); search a narrower folder. Clear to search: docs, src, tests, "
-        ".venv."
-    ), reason
-
-
-def test_a28_message_a_caps_the_folders_and_escapes_names(isolated, tmp_path):
-    proj = tmp_path / "proj"
-    (proj / "sub").mkdir(parents=True)
-    bad = ".env.\x1b[31mred" + "y" * 100
-    (proj / "sub" / bad).write_text("x\n")
-    for i in range(12):
-        (proj / f"d{i:02}").mkdir()
-    installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert denied and "\x1b" not in out
-    reason = reason_of(out)
-    assert "sub/.env.\\x1b[31mred" in reason and "…" in reason, reason
-    assert "Clear to search: d00, d01, d02, d03, d04, d05, d06, d07 and 4 more." in reason
-    assert "secretfiles" not in reason
-
-
-def test_a28_message_a_when_no_folder_is_clear(isolated, tmp_path):
-    proj = tmp_path / "proj"
-    (proj / "a").mkdir(parents=True)
-    (proj / "a" / ".env").write_text("x\n")
-    installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert denied
-    assert "no folder directly under this one is clear" in reason_of(out)
-
-
-@pytest.mark.parametrize("denied_command", ["grep -rn foo .", "rg foo", "git grep foo"])
-def test_a28_every_folder_message_a_lists_is_allowed(denied_command, isolated, tmp_path):
-    proj = small_project(tmp_path)
-    installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", denied_command, proj), proj)
-    assert denied, out
-    reason = reason_of(out)
-    listed = reason.split("Clear to search: ", 1)[1].rstrip(".").split(", ")
-    assert listed == ["src"], reason
-    for folder in listed:
-        rewrite = denied_command.replace(" .", "") + f" {folder}"
-        if rewrite.startswith("git grep"):
-            rewrite = f"git grep foo -- {folder}"
-        denied, out, _ = hook("claude", shell_event("claude", rewrite, proj), proj)
-        assert not denied, (rewrite, out)
-
-
-# --- certificate bundles -----------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "path,counts",
-    [
-        ("venv/lib/python3.12/site-packages/certifi/cacert.pem", False),
-        ("venv/lib/python3.12/site-packages/pip/_vendor/certifi/cacert.pem", False),
-        ("venv/lib/cacert.pem", True),
-        ("certifi/sub/cacert.pem", True),
-        ("notcertifi/cacert.pem", True),
-        ("Certifi/cacert.pem", True),  # the exception matches names exactly
-        ("certifi/server.pem", True),
-    ],
-)
-def test_only_certifis_cacert_pem_is_exempt(path, counts, isolated, tmp_path):
+@pytest.mark.parametrize("path", CERTIFI_NEAR_MISSES)
+def test_a28_6_certifi_near_misses_count(path, isolated, tmp_path):
     proj = tmp_path / "proj"
     (proj / path).parent.mkdir(parents=True)
     (proj / path).write_text("x\n")
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert denied == counts, (path, out)
+    assert denied, (path, out)
 
 
-def test_certifis_cacert_pem_still_counts_when_named(isolated, tmp_path):
+@POSIX_ONLY
+def test_a28_6_a_symbolic_link_at_the_certifi_path_counts(isolated, tmp_path):
     proj = tmp_path / "proj"
-    (proj / "certifi").mkdir(parents=True)
-    (proj / "certifi" / "cacert.pem").write_text("x\n")
+    certifi = proj / "lib" / "site-packages" / "certifi"
+    certifi.mkdir(parents=True)
+    (tmp_path / "real.pem").write_text("x\n")
+    (certifi / "cacert.pem").symlink_to(tmp_path / "real.pem")
     installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", "cat certifi/cacert.pem", proj), proj)
+    assert hook("claude", shell_event("claude", "rg foo", proj), proj)[0]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "venv/lib/python3.12/site-packages/certifi/cacert.pem",
+        "venv/lib/python3.12/site-packages/pip/_vendor/certifi/cacert.pem",
+        "usr/lib/python3/dist-packages/certifi/cacert.pem",
+    ],
+)
+def test_a28_6_the_real_certifi_shape_does_not_count_unless_named(path, isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / path).parent.mkdir(parents=True)
+    (proj / path).write_text("public certificate list\n")
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    assert not denied, out
+    denied, out, _ = hook("claude", shell_event("claude", f"cat {path}", proj), proj)
     assert denied, out
+
+
+def test_a28_no_message_holds_more_than_two_paths(isolated, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    for name in (".env", ".env.local", "id_rsa", "server.pem"):
+        (proj / name).write_text("x\n")
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    reason = reason_of(out)
+    assert denied and "(.env, .env.local, and more)" in reason, reason
+
+
+# --- A29 ------------------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def project_q(tmp_path_factory):
+    if os.name == "nt":
+        pytest.skip("A29 runs on macOS and Linux")
+    q = tmp_path_factory.mktemp("q") / "proj"
+    (q / ".git").mkdir(parents=True)
+    (q / "src").mkdir()
+    (q / "src" / "app.py").write_text("x\n")
+    filler(q / "node_modules", g.WALK_LIMIT + 1_000)
+    return q
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("which", ["rg foo", "grep -rn foo .", "built-in"])
+def test_a29_past_the_limit_denied_with_message_b(which, project_q, isolated):
+    installed(isolated)
+    if which == "built-in":
+        event = search_tool_event("claude", "", project_q)
+        del event["tool_input"]["path"]
+    else:
+        event = shell_event("claude", which, project_q)
+    denied, out, secs = hook("claude", event, project_q)
+    reason = reason_of(out)
+    assert denied and reason.startswith(f"denypeek blocked this: {g.TREE_TOO_BIG}"), reason
+    assert "src" in clear_list(reason) and "secretfiles" not in reason
+    assert secs < LIMIT, secs
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("command", ["rg foo src", "grep -rn foo . --exclude-dir=node_modules"])
+def test_a29_narrowed_allowed(command, project_q, isolated):
+    installed(isolated)
+    denied, out, secs = hook("claude", shell_event("claude", command, project_q), project_q)
+    assert not denied, (command, out)
+    assert secs < LIMIT, secs
+
+
+# --- S2: start folders that cannot be told -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command,reason",
+    [
+        ("echo src | xargs grep -rn foo", "undetermined"),
+        ("rg foo $DIR", "undetermined"),
+        ("grep -rn foo `pwd`", "any"),  # split at the backtick: the working folder, (a)
+        ("ack --files-from=list foo", "undetermined"),
+        ("ack -x foo < list", "undetermined"),
+        ("git --git-dir=/tmp/x grep foo -- src", "git"),
+        ("git --work-tree=/tmp grep foo -- src", "git"),
+        ("GIT_DIR=/tmp/x git grep foo -- src", "git"),
+        ("env GIT_WORK_TREE=/tmp git grep foo -- src", "git"),
+        ("export GIT_INDEX_FILE=/tmp/i; git grep foo -- src", "git"),
+        ("git grep foo -- ':(glob)src/**'", "git"),
+        ("git grep foo -- ':!docs'", "git"),
+    ],
+)
+def test_s2_folders_that_cannot_be_told_are_denied(command, reason, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    text = {"undetermined": g.TREE_UNDETERMINED, "git": g.GIT_GREP_UNCHECKED, "any": ""}[reason]
+    assert denied and text in reason_of(out), (command, out)
+
+
+@pytest.mark.parametrize("command", ["rg --files", "rg --type-list", "ag -g app", "rg --version"])
+def test_s1_forms_that_read_no_contents_are_not_searches(command, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert not denied, (command, out)
+
+
+def test_s5_the_cap_counts_all_start_folders_together(isolated, tmp_path, monkeypatch):
+    for d in ("a", "b"):
+        filler(tmp_path / d, 600)
+    g._home[0] = str(isolated)
+    monkeypatch.setattr(g, "WALK_LIMIT", 1_000)
+    rules = g.parse_patterns(g.DEFAULT_PATTERNS)
+    one = [g.Search(str(tmp_path / "a"))]
+    both = one + [g.Search(str(tmp_path / "b"))]
+    assert g.search_trees(one, rules, time.monotonic() + 9) is None
+    assert g.search_trees(both, rules, time.monotonic() + 9).startswith(g.TREE_TOO_BIG)
 
 
 # --- finding the folders a search reads --------------------------------------------------------
@@ -455,7 +712,14 @@ def tool_prints_marker(command: str, cwd: Path, bindir: Path, home: Path) -> boo
 
 
 def tier_project(tmp_path: Path, change=None) -> Path:
-    proj = a26_project(tmp_path / "proj", entries=100)
+    """Project P (SPEC A27), with node_modules and virtualenv secrets added so the widening
+    flags have something to find."""
+    proj = project_p(tmp_path / "proj")
+    (proj / "node_modules" / "pkg" / ".env").write_text(f"{MARK}\n")
+    (proj / "node_modules" / "pkg" / "test.pem").write_text(f"{MARK}\n")
+    (proj / "venv" / "lib").mkdir(parents=True)
+    (proj / "venv" / ".gitignore").write_text("*\n")
+    (proj / "venv" / "lib" / "cacert.pem").write_text(f"{MARK}\n")
     if change:
         change(proj)
     return proj
@@ -735,7 +999,7 @@ def test_xargs_message_suggests_an_allowed_rewrite(isolated, tmp_path):
     denied, out, _ = hook(
         "claude", shell_event("claude", "echo src | xargs grep -rn foo", proj), proj
     )
-    assert denied and "xargs" in reason_of(out), out
+    assert denied and g.TREE_UNDETERMINED in reason_of(out), out
     denied, out, _ = hook("claude", shell_event("claude", "grep -rn foo src", proj), proj)
     assert not denied, out
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1409,3 +1410,47 @@ def test_the_invariant_holds_over_many_command_shapes(p_proj, isolated):
         if denied == allowed:
             wrong.append((command, "allowed" if not denied else "denied", "expected the other"))
     assert not wrong, wrong[:10]
+
+
+# --- confirmation review: substitutions and shell strings write before the search ----------------
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command",
+    [
+        "grep -r -f <(cp -r ../other/. src/; echo {m}) src",
+        "grep -r {m} src < <(cp -r ../other/. src/)",
+        "rg --pre <(cp -r ../other/. src/) -uu {m} src",
+        "rg -uu {m} $(cp -r ../other/. src/; echo src)",
+        "rg -uu {m} `cp -r ../other/. src/; echo src`",
+        "grep -r {m} src > >(cp -r ../other/. src/)",
+    ],
+)
+def test_a_substitution_runs_before_the_search(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    installed(isolated)
+    command = command.format(m=MARK)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+    if command.startswith("grep -r -f <("):
+        assert tool_prints_marker(
+            "/bin/bash -c " + shlex.quote(command), proj, tmp_path, isolated
+        ), "fixture: reads nothing"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -c 'echo hi'; rg foo src",
+        "bash -c 'ls src && cat README.md'; rg foo src",
+        "echo $(pwd); rg foo src",
+        "rg foo $(echo src)",
+    ],
+)
+def test_a_read_only_shell_string_is_not_a_writer(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    expected = command.startswith("rg foo $(")  # a path from a substitution cannot be told
+    assert denied == expected, (command, out)

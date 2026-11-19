@@ -2637,6 +2637,90 @@ def _starts_shell(part):
     return bool(words) and os.path.basename(words[0]) in SHELLS
 
 
+STREAM = "__denypeek_stream__"  # stands in for <(...) and >(...): a pipe, not a folder
+OUTPUT = "__denypeek_output__"  # stands in for $(...) and `...`: text the guard cannot know
+
+
+def _close_paren(text, i):
+    """Index of the `)` that closes a group opened just before i (quotes and nesting
+    followed), or len(text)."""
+    depth, quote, n = 1, None, len(text)
+    while i < n:
+        c = text[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+        elif c == "\\":
+            i += 2
+            continue
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n
+
+
+def extract_substitutions(text):
+    """(text with each `<(…)`, `>(…)`, `$(…)` and backquoted body replaced by a placeholder,
+    [the bodies]). The bodies run before the command that holds them, so the tree rule checks
+    them first. `$((…))` arithmetic is left as it is."""
+    out, bodies, i, n, quote = [], [], 0, len(text), None
+    while i < n:
+        c = text[i]
+        if quote == "'":
+            out.append(c)
+            if c == "'":
+                quote = None
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(text[i : i + 2])
+            i += 2
+            continue
+        if c == "'" and quote is None:
+            quote = "'"
+            out.append(c)
+            i += 1
+            continue
+        if c == '"':
+            quote = None if quote == '"' else '"'
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith("$((", i):
+            j = _close_paren(text, i + 3)
+            j = _close_paren(text, j + 1) if j < n else n
+            out.append(text[i : j + 1])
+            i = j + 1
+            continue
+        stream = quote is None and text.startswith(("<(", ">("), i)
+        if text.startswith("$(", i) or stream:
+            j = _close_paren(text, i + 2)
+            bodies.append(text[i + 2 : j])
+            out.append(f" {STREAM} " if stream else OUTPUT)
+            i = j + 1
+            continue
+        if c == "`":
+            j = i + 1
+            while j < n and text[j] != "`":
+                j += 2 if text[j] == "\\" else 1
+            bodies.append(text[i + 1 : j])
+            out.append(OUTPUT)
+            i = j + 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), bodies
+
+
 def command_parts(text):
     """The simple commands of a command line in order, as (text, operator after it), split at
     `&&`, `||`, `;`, `|`, `&`, a line break, `(` and `)`, outside quotes. The `&` and `|` of a
@@ -2789,6 +2873,7 @@ def search_targets(part, cwd, command="", folders=None):
         via_xargs
         or (prog == "ack" and ("-x" in names or _any_abbrev(names, ("--files-from",))))
         or any(c in p for p in paths for c in "$`")
+        or any(OUTPUT in p for p in paths)
     )
     if undetermined:
         return [Search(bases[0], reason=TREE_UNDETERMINED)]
@@ -2816,6 +2901,9 @@ def search_targets(part, cwd, command="", folders=None):
     out = []
     resolved = 0  # targets that are an existing folder or file
     for p in paths:
+        if p == STREAM:
+            resolved += 1  # a process substitution: the search reads that pipe, not a folder
+            continue
         found = [expand(p, b) for b in bases]
         if any(c in p for c in "*?[{"):  # grep -r foo *: search what the pattern matches
             w = Word()
@@ -3079,14 +3167,34 @@ def check_command(
                         if hidden:
                             return hidden
                     return reason_for(path, "names")
+    searches, reason = tree_searches(command, cwd, extra, after_write)
+    if reason:
+        return reason
+    if searches:
+        return search_trees(searches, rules, deadline)
+    return None
+
+
+def tree_searches(command, cwd, extra=(), after_write=False, depth=0):
+    """(the searches a command runs, or a reason to deny it). Substitution bodies run first:
+    a writer there counts as writing before every search in the command. Folders are followed
+    through `cd`, and a search after a writer in the same command is denied."""
+    if depth > MAX_NESTING:
+        return [], TREE_UNDETERMINED
+    main, bodies = extract_substitutions(command)
     searches = []
-    writer_before = after_write
+    writer_before = after_write or any(not read_only_command(b) for b in bodies)
+    for body in bodies:
+        found, reason = tree_searches(body, cwd, extra, after_write, depth + 1)
+        if reason:
+            return [], reason
+        searches += found
     # The folders a search may run in, followed through the command: after `cd X &&` the
     # search runs only if the cd worked, so only in X; after `;` or `||` in either.
     bases = list(dict.fromkeys([cwd] + list(extra)))
     chain_start = list(bases)  # where the current && chain began: a failed cd leaves it there
     bases_unknown = False
-    for part, op in command_parts(command):
+    for part, op in command_parts(main):
         if op not in ("&&", "|", "$(", ")", "("):
             # after `;`, `||`, `&` or a line break the next command runs even if a cd in this
             # chain failed, so it may run in the folder the chain started from
@@ -3096,7 +3204,9 @@ def check_command(
         words = _part_words(part)
         if words and words[0] in ("cd", "pushd", "chdir", "popd"):
             args = [w for w in words[1:] if not w.startswith("-") or w == "-"]
-            if words[0] == "popd" or (args and (args[0] == "-" or any(c in args[0] for c in "$`"))):
+            if words[0] == "popd" or (
+                args and (args[0] == "-" or OUTPUT in args[0] or any(c in args[0] for c in "$`"))
+            ):
                 bases_unknown = True
                 continue
             targets = [expand(args[0], b) if args else home_dir() for b in bases]
@@ -3108,19 +3218,27 @@ def check_command(
             if after is not None:
                 bases = chain_start = list(dict.fromkeys(after + bases))
             continue
-        found = search_targets(part, cwd, command, bases)
+        found = search_targets(part, cwd, main, bases)
         if after is not None:
             bases = chain_start = after
         if found and bases_unknown:
-            return TREE_UNDETERMINED
+            return [], TREE_UNDETERMINED
         if found and writer_before:
-            return TREE_WRITES  # the same command may write into what the search reads
+            return [], TREE_WRITES  # the same command may write into what the search reads
         searches += found
         if not found and not read_only_part(part) and not _starts_shell(part):
             writer_before = True
-    if searches:
-        return search_trees(searches, rules, deadline)
-    return None
+    return searches, None
+
+
+def read_only_command(text, depth=0):
+    """True if no part of the command, its substitutions included, can write a file."""
+    if depth > MAX_NESTING:
+        return False
+    main, bodies = extract_substitutions(text)
+    if not all(read_only_command(b, depth + 1) for b in bodies):
+        return False
+    return all(read_only_part(p) for p, _op in command_parts(main))
 
 
 def patch_paths(text):

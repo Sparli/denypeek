@@ -550,6 +550,12 @@ def _read_part(path: Path, start: int, end: Optional[int]) -> bytes:
     if start == 0 and end is None:
         return path.read_bytes()
     with open(path, "rb") as f:
+        if start:
+            # A part starts just after a line break. If that byte is not one now, the file was
+            # rewritten after it was split: say so rather than miss a key cut in two.
+            f.seek(start - 1)
+            if f.read(1) != b"\n":
+                raise OSError("the file changed during the scan; scan again")
         f.seek(start)
         return f.read() if end is None else f.read(end - start)
 

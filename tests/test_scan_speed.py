@@ -257,3 +257,17 @@ def test_an_unreadable_chunked_file_is_one_cannot_read(awkward_home, monkeypatch
     bad = [p for p in res.incomplete if p.path.name == "rollout-big.jsonl"]
     assert [(p.where, p.reason) for p in bad] == [("", "cannot read: Permission denied")]
     assert not [f for f in res.findings if f.path.name == "rollout-big.jsonl"]
+
+
+def test_a_file_rewritten_after_splitting_is_reported_not_fully_read(awkward_home, monkeypatch):
+    monkeypatch.setattr(S, "CHUNK_BYTES", 5000)
+    real = S._chunks
+
+    def shifted(path, size):  # as if the file were rewritten: parts no longer start lines
+        return [(a + 3 if a else 0, b + 3 if b else None) for a, b in real(path, size)]
+
+    monkeypatch.setattr(S, "_chunks", shifted)
+    res = S.scan(resolve_home(str(awkward_home)), workers=1)
+    bad = [p for p in res.incomplete if p.path.name == "rollout-big.jsonl"]
+    assert [p.reason for p in bad] == ["cannot read: the file changed during the scan; scan again"]
+    assert res.exit_code == 2

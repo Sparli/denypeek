@@ -24,11 +24,10 @@ project already uses that name.
 - Diagrams, design notes in `specs/`, and a terminal capture made from a real fixture run.
 
 ### Security
-- Recursive searches follow the tree rule: what the tool, run as written, can read decides,
-  not the folder's size. `rg foo` beside a `.env` is allowed; `grep -r` over a big project is
-  denied only past 100,000 entries, with a message saying how to narrow it. Installs made before
-  this change have no record of a ripgrep config, so every `rg` beside a secret file stays
-  denied until you run `denypeek guard install` again.
+- Recursive searches follow the tree rule: a search is allowed only if nothing under the
+  folders it reads matches the pattern list, whatever the tool would skip. The deny message
+  names the secret files it found and the folders that are clear to search instead. Only a walk
+  of more than 100,000 entries is denied as too big. Ignore-aware searches are planned for v0.2.
 Hardened before release through QA passes and security reviews of the guard, scan and redact:
 - The hook runs from a clean environment (`/usr/bin/env -i`, isolated Python, fixed home folder)
   and answers within about 3 seconds on any input; over-long input is denied, not skipped.

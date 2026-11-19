@@ -74,16 +74,17 @@ covers a check stuck inside C code (G2).
   escape. Elsewhere backslashes stay shell escapes.
 - **Recursive reads, the tree rule (spec 3b):** `grep -r`, `-d recurse`, `--directories=recurse`,
   `rg`, `ag`, `ack`, `git grep`, the search tools and Gemini `read_many_files` trigger a walk of
-  the folder by names. Each search has a class: E reads everything (grep, ack, unknown tools,
-  any widening flag or ripgrep config), I reads hidden names but honours ignore files (`rg
-  --hidden`, `ag`, `git grep`, the agents' search tools), D is ripgrep's default and also skips
-  hidden names. I and D skip a `node_modules` that a `.gitignore` names and a folder whose own
-  `.gitignore` is `*`, only inside a git repository. A whitelist line (`!.env`) in `.gitignore`,
-  `.ignore` or `.rgignore` puts a hidden name back for D. grep's `--include`, `--exclude` and
-  `--exclude-dir` (literal values, no `/`) narrow what it reads. A search covering denypeek's
-  folder, an agent folder or a hook config is denied without a walk. Only names that can match
-  a pattern, and symbolic links, get the full check. Limits: 100,000 entries and 1 second
-  (measurement in `specs/04-tree-walk.md`); past either, denied as too big to check.
+  every folder the search reads (found through wrappers, `cd`, abbreviated options and both
+  readings of an optional option value). The walk skips nothing, for any tool: no hidden names,
+  no ignore files, no `node_modules`. Only grep's own `--include`, `--exclude` and
+  `--exclude-dir`, as literal values without `/`, narrow it. The search is allowed only if no
+  name under it matches the patterns; `certifi/cacert.pem` (an exact path end) does not count.
+  A search whose folders or files cannot be told (`xargs`, `git grep` over a revision, the index
+  or a pattern path) is denied. A search covering denypeek's folder, an agent folder or a hook
+  config is denied without a walk. Only names that can match a pattern, and symbolic links, get
+  the full check. Limits: 100,000 entries and 1 second (measurement in `specs/04-tree-walk.md`);
+  past either, denied as too big to check. The deny message names up to two secret files and up
+  to eight clear folders directly under the start.
 - **Agent folders (R3):** words are expanded (braces, globs) before the agent-folder check;
   `find -delete/-exec` starting at the home folder or above an agent folder is denied.
 - **Variables (R4):** substitution stops and the call is denied once the text would pass

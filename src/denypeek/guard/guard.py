@@ -2514,10 +2514,138 @@ def _sets_git_place(assigned, command):
     return any(w.split("=", 1)[0] in GIT_PLACE_VARS for w in words)
 
 
+REDIRECT_OPS = ("&>>", "&>", "<<<", "<<-", "<<", "<>", ">>", ">|", ">&", "<&", ">", "<")
+
+
+def strip_redirects(text):
+    """The command text without its redirections (`2>/dev/null`, `> out`, `2>&1`, `&>>log`,
+    `<<< x`, `<<EOF`, `3>&2` ...), operator and target both, so a redirect target is never
+    read as a path. Quotes and backslashes are followed; `<(` and `>(` are left alone."""
+    out, i, n = [], 0, len(text)
+    quote = None
+    while i < n:
+        c = text[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and quote == '"' and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(text[i : i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        start = i
+        at_word_start = i == 0 or text[i - 1].isspace() or text[i - 1] in ";&|()"
+        j = i
+        if at_word_start:
+            while j < n and text[j].isdigit():
+                j += 1  # a file descriptor number: 2>, 3>&2
+        op = next((o for o in REDIRECT_OPS if text.startswith(o, j)), None)
+        if op is None or (j == i and c.isdigit()) or text.startswith(("<(", ">("), j):
+            out.append(c)
+            i += 1
+            continue
+        if j > i and not at_word_start:
+            out.append(c)
+            i += 1
+            continue
+        k = j + len(op)
+        if op in (">&", "<&") and k < n and (text[k].isdigit() or text[k] == "-"):
+            while k < n and (text[k].isdigit() or text[k] == "-"):
+                k += 1  # 2>&1, 3>&-: a descriptor, not a file
+        else:
+            while k < n and text[k] in " \t":
+                k += 1
+            q = None
+            while k < n:  # the target word, quotes followed
+                ch = text[k]
+                if q:
+                    if ch == q:
+                        q = None
+                elif ch in "'\"":
+                    q = ch
+                elif ch.isspace() or ch in ";&|()<>":
+                    break
+                k += 1
+        out.append(" ")
+        i = max(k, start + 1)
+    return "".join(out)
+
+
+def command_parts(text):
+    """The simple commands of a command line in order, as (text, operator after it), split at
+    `&&`, `||`, `;`, `|`, `&`, a line break, `(` and `)`, outside quotes. The `&` and `|` of a
+    redirection (`2>&1`, `&>`, `>|`) do not split. `$(...)` and backticks start a new part."""
+    parts, cur, quote, i, n = [], [], None, 0, len(text)
+
+    def cut(op):
+        parts.append(("".join(cur), op))
+        cur.clear()
+
+    while i < n:
+        c = text[i]
+        if quote:
+            cur.append(c)
+            if c == "\\" and quote == '"' and i + 1 < n:
+                cur.append(text[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            cur.append(text[i : i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            cur.append(c)
+            i += 1
+            continue
+        two = text[i : i + 2]
+        prev = text[i - 1] if i else ""
+        if two in ("&&", "||"):
+            cut(two)
+            i += 2
+            continue
+        if two == "$(":
+            cut("$(")
+            i += 2
+            continue
+        if c in ";\n()`":
+            cut(c)
+            i += 1
+            continue
+        if c == "|" and prev != ">":
+            cut("|")
+            i += 1
+            continue
+        if c == "&" and prev not in "<>" and text[i + 1 : i + 2] != ">":
+            cut("&")
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    cut("")
+    return [(p, op) for p, op in parts]
+
+
 def search_targets(part, cwd, command="", folders=None):
     """SPEC 3b: the searches a command segment runs, as Search objects (a folder, and what
     grep's own options narrow). Only recursive searches; a folder that does not exist is left
     out. A search whose folders or files cannot be told is a Search that denies."""
+    part = strip_redirects(part)
     try:
         words = shlex.split(part, posix=True)
     except ValueError:
@@ -2627,6 +2755,7 @@ def search_targets(part, cwd, command="", folders=None):
             if p != "." and not any(os.path.exists(expand(p, b) or "") for b in bases):
                 return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
     out = []
+    resolved = 0  # targets that are an existing folder or file
     for p in paths:
         found = [expand(p, b) for b in bases]
         if any(c in p for c in "*?[{"):  # grep -r foo *: search what the pattern matches
@@ -2635,11 +2764,17 @@ def search_targets(part, cwd, command="", folders=None):
             found += word_paths(w, bases)
         globby = any(c in p for c in "*?[{")
         for full in dict.fromkeys(found):
+            if full and (is_network(full) or os.path.exists(full)):
+                resolved += 1
             if full and not is_network(full) and os.path.isdir(full):
                 shown = os.path.relpath(full, bases[0]) if globby else p
                 out.append(
                     Search(full, includes, excludes, exclude_dirs, shown=shown, grep=grep_family)
                 )
+    if not resolved:
+        # The invariant: a search is allowed only when what it reads was found and checked.
+        # One that resolves to no folder and no file cannot be told.
+        return [Search(bases[0], reason=TREE_UNDETERMINED)]
     return out
 
 
@@ -2863,7 +2998,11 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                         if hidden:
                             return hidden
                     return reason_for(path, "names")
-    searches = [x for part in parts for x in search_targets(part, cwd, command, folders)]
+    searches = [
+        x
+        for part, _op in command_parts(command)
+        for x in search_targets(part, cwd, command, folders)
+    ]
     if searches:
         return search_trees(searches, rules, deadline)
     return None

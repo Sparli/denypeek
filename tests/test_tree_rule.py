@@ -1129,3 +1129,71 @@ def test_the_search_text_never_changes_the_decision(command, isolated, tmp_path)
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     assert not denied, (command, out)
+
+
+# --- review of the simple rule: redirections (a redirect target is never a path) -----------------
+
+
+def _ugrep():
+    return os.environ.get("DENYPEEK_TEST_UGREP") or shutil.which("ugrep")
+
+
+REDIRECTS = [
+    "rg -uu {m} 2>/dev/null",
+    "rg -uu {m} >/dev/stdout",
+    "rg -uu {m} 2>&1",
+    "rg -uu {m} 2> /dev/null",
+    "rg -uu {m} >> {log}",
+    "rg -uu {m} &> {log}",
+    "rg -uu {m} &>>{log}",
+    "rg -uu {m} > {log} 2>&1",
+    "rg -uu {m} 3>&2",
+    "rg -uu {m} < /dev/null",
+    "rg -uu {m} <<< x",
+    "rg -uu {m} 1>{log}",
+    "grep -r {m} 2>/dev/null",
+    "grep -r {m} . 2>/dev/null",
+    # as Claude Code's shell runs `grep`: ugrep with --hidden (plain ugrep skips hidden names)
+    "ugrep -r --hidden {m} 2>/dev/null",
+]
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("template", REDIRECTS)
+def test_a_redirection_is_never_a_path(template, isolated, tmp_path):
+    proj = project_p(tmp_path / "proj")
+    installed(isolated)
+    command = template.format(m=MARK, log=tmp_path / "log")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    tool = (
+        _rg() if template.startswith("rg") else _ugrep() if template.startswith("ugrep") else None
+    )
+    if tool:
+        (bindir / template.split()[0]).symlink_to(tool)
+    # The real tool's output is seen only when it stays on stdout; with `<<<` rg reads stdin,
+    # and BSD grep -r with no path reads stdin too. The hook denies every form regardless.
+    on_stdout = ("2>/dev/null", ">/dev/stdout", "2>&1", "2> /dev/null", "3>&2")
+    if (
+        (tool or template.startswith("grep -r {m} ."))
+        and template.endswith(on_stdout)
+        and "{log}" not in template
+    ):
+        assert tool_prints_marker(command, proj, bindir, isolated), (
+            "fixture: reads nothing",
+            command,
+        )
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["rg foo src 2>/dev/null", "rg foo src > {log} 2>&1", "grep -rn foo src 2>&1 | head -5"],
+)
+def test_a_redirection_after_a_clear_folder_is_allowed(command, isolated, tmp_path):
+    proj = project_p(tmp_path / "proj")
+    installed(isolated)
+    command = command.format(log=tmp_path / "log")
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert not denied, (command, out)

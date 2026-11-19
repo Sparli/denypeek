@@ -361,7 +361,8 @@ denypeek guard test
 **Hidden files, the default.** The guard counts hidden files such as `.env` for every pattern
 (the setting `always`). The cost: in a folder that holds a hidden secret file, a command with a
 bare `*`, such as `cat *`, `ls *` or `rm -rf ./*`, is denied. Name the files instead: `ls`,
-`cat *.md`, `rm -rf build/`. `denypeek guard install --hidden auto` lets a bare `*` skip hidden
+`cat *.md`, `rm -rf build/`. The agent is told the same when this rule denies a call.
+`denypeek guard install --hidden auto` lets a bare `*` skip hidden
 files, as your shell does. It is experimental in v0.1.0 and has known gaps (see
 [Limitations](#limitations-honest)).
 
@@ -494,7 +495,9 @@ apply to agent history:
   restores the original time too.
 - Untouched lines stay byte-identical. A changed line must still be valid JSON, or it is left
   alone and listed.
-- It rescans the changed files, says whether anything is left, and lists the keys to rotate.
+- It rescans the changed files, says whether anything is left, and lists every key found to
+  rotate, once each. A key it did not redact (in Cursor's database, or in a skipped file) is in
+  that list too, marked "NOT redacted".
 
 **The backups still hold the keys.** Check your history, then run `denypeek backups purge --yes`.
 

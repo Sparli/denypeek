@@ -661,3 +661,49 @@ def test_an_optional_value_never_hides_the_folder(template, isolated, tmp_path):
         assert prints, "fixture: grep reads nothing"
     denied, out, _ = hook("claude", shell_event("claude", command, clean), clean)
     assert denied, (command, out)
+
+
+def ignored_only_project(tmp_path: Path, home: Path) -> Path:
+    """A real git repository whose secret files are only in gitignored folders."""
+    proj = review_project(tmp_path)
+    (proj / ".env").unlink()
+    shutil.rmtree(proj / ".git")
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(home)}
+    subprocess.run(["git", "init", "-q", "."], cwd=proj, env=env, check=True)
+    subprocess.run(["git", "add", "src", ".gitignore"], cwd=proj, env=env, check=True)
+    return proj
+
+
+# git, ag and getopt-style greps accept any unambiguous prefix of a long option
+ABBREVIATED = [
+    "git grep --no-ind {m}",
+    "git grep --untr --no-exclude-st {m}",
+    "git grep --no-exclude-s {m}",
+    "ag --unres {m}",
+    "ag --skip-vcs {m}",
+    "ag --all-ty {m}",
+    "grep --recur {m} .",
+    "grep --rec {m} .",
+    "grep --deref {m} .",
+    "grep --dir=recurse {m} .",
+    "grep --direc recurse {m} .",
+]
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("template", ABBREVIATED)
+def test_abbreviated_long_options_count(template, isolated, tmp_path):
+    proj = ignored_only_project(tmp_path, isolated)
+    installed(isolated)
+    plain = "git grep {m}" if template.startswith("git") else "ag {m}"
+    if not template.startswith("grep"):
+        denied, out, _ = hook("claude", shell_event("claude", plain.format(m=MARK), proj), proj)
+        assert not denied, ("fixture: the plain search reads no secret", out)
+    command = template.format(m=MARK)
+    # --deref is GNU only (BSD grep has no --dereference-recursive); --no-exclude-standard
+    # widens git grep only together with --untracked. The hook denies both regardless.
+    no_check = ("grep --deref {m} .", "git grep --no-exclude-s {m}")
+    if template.startswith(("git", "grep")) and template not in no_check:
+        assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: tool reads nothing"
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)

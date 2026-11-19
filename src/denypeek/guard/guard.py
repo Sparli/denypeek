@@ -2412,7 +2412,8 @@ def _literal(value):
 def _split_options(args, value_opts, take_optional=True):
     """(options as (name, value or None) pairs, positional words). Short groups such as `-rn`
     give one pair per letter; a value-taking letter takes the rest of the group or the next
-    word. An "optional" option takes the next word only when `take_optional`."""
+    word. An "optional" option, or an abbreviation of a value-taking long option, takes the
+    next word only when `take_optional`; callers use both readings."""
     optional = value_opts.get("optional", set()) if take_optional else set()
     value_opts = {
         "short": value_opts["short"] | {o[1] for o in optional if len(o) == 2},
@@ -2428,7 +2429,10 @@ def _split_options(args, value_opts, take_optional=True):
             name, eq, val = a.partition("=")
             if eq:
                 opts.append((name, val))
-            elif name in value_opts["long"] and i + 1 < len(args):
+            elif i + 1 < len(args) and (
+                name in value_opts["long"]
+                or (take_optional and any(_abbrev(name, f) for f in value_opts["long"]))
+            ):
                 opts.append((name, args[i + 1]))
                 i += 1
             else:
@@ -2490,6 +2494,17 @@ def _rg_class(opts, command):
     return cls
 
 
+def _abbrev(name, full, least=3):
+    """True if `name` is `full` or an abbreviation of it that getopt-style parsers (GNU and
+    BSD grep, git, ag) accept: a prefix with at least `least` letters after `--`. A prefix that
+    another option shares is counted too, which can only widen the search."""
+    return name.startswith("--") and len(name) - 2 >= least and full.startswith(name)
+
+
+def _any_abbrev(names, fulls):
+    return any(_abbrev(n, f) for n in names for f in fulls)
+
+
 def search_targets(part, cwd, command=""):
     """SPEC 3b: the searches a command segment runs, as Search objects (folder, class, what
     the command narrows). Only recursive searches; a folder that does not exist is left out."""
@@ -2524,15 +2539,22 @@ def search_targets(part, cwd, command=""):
     value_opts = {"rg": RG_VALUE_OPTS, "ag": AG_VALUE_OPTS, "git-grep": GIT_GREP_VALUE_OPTS}.get(
         prog, GREP_VALUE_OPTS
     )
+    # Two readings: optional values and abbreviated value options take the next word, or do
+    # not. The options and the paths of both count, so neither reading can hide a folder.
     opts, pos = _split_options(args, value_opts)
-    readings = [pos]
-    if value_opts.get("optional"):
-        readings.append(_split_options(args, value_opts, take_optional=False)[1])
+    opts2, pos2 = _split_options(args, value_opts, take_optional=False)
+    readings = [pos, pos2]
+    opts = opts + [o for o in opts2 if o not in opts]
     names = {n for n, _ in opts}
     includes, excludes, exclude_dirs = [], [], []
     if prog in ("grep", "egrep", "fgrep", "zgrep", "ugrep"):
-        dir_recurse = any((n in ("-d", "--directories") and v == "recurse") for n, v in opts)
-        if not (dir_recurse or names & {"-r", "-R", "--recursive", "--dereference-recursive"}):
+        dir_recurse = any(
+            (n == "-d" or _abbrev(n, "--directories")) and v == "recurse" for n, v in opts
+        )
+        recursive = bool(names & {"-r", "-R"}) or _any_abbrev(
+            names, ("--recursive", "--dereference-recursive")
+        )
+        if not (dir_recurse or recursive):
             return []
         cls = CLASS_E
         if prog != "ugrep":  # T5 is checked on grep only
@@ -2548,11 +2570,11 @@ def search_targets(part, cwd, command=""):
     elif prog == "rg":
         cls = _rg_class(opts, command)
     elif prog == "ag":
-        widen = {"-u", "--unrestricted", "-U", "--skip-vcs-ignores", "-a", "--all-types"}
-        cls = CLASS_E if names & widen else CLASS_I
+        widen = ("--unrestricted", "--skip-vcs-ignores", "--all-types")
+        cls = CLASS_E if names & {"-u", "-U", "-a"} or _any_abbrev(names, widen) else CLASS_I
     elif prog == "git-grep":
-        widen = {"--no-index", "--untracked", "--no-exclude-standard"}
-        cls = CLASS_E if names & widen else CLASS_I
+        widen = ("--no-index", "--untracked", "--no-exclude-standard")
+        cls = CLASS_E if _any_abbrev(names, widen) else CLASS_I
     else:
         cls = SEARCH_CLASSES[prog]
     # With -e or -f the pattern is an option value, so every positional word is a path.

@@ -631,11 +631,15 @@ in-place `.bak` files.
     does not exist, or after a `cd` to a folder that cannot be told (`cd -`, `cd $DIR`), and
     `git grep` over a revision (`git grep foo HEAD`), the index (`--cached`), a pattern path or
     another git folder: name folders instead (`git grep foo -- src`);
-  - a search in a command that first runs anything other than `cd`, `pushd`, `popd`, `echo`,
-    `pwd`, `ls`, `true`, `export`, `set` or `unset`, or writes a file with a redirection:
-    `npm install && rg foo src`, `git status; rg foo src`. That part might put a secret file
-    where the search then reads. Run the search as a command of its own. A pipe after the
-    search (`rg foo src | head`) is fine;
+  - a search in a command that first runs something that may write files: anything but `cd`,
+    `pushd`, `popd`, `pwd`, `true`, `export`, `set`, `unset`, `echo`, `ls`, `stat`, `file`,
+    `which`, `type`, `test`, `[`, `cat`, `head`, `tail`, `wc`, `sort`, `uniq`, a plain `grep`,
+    `mkdir`, and `git status`, `log`, `diff` or `show`; a shell string that runs anything else;
+    a script (`bash x.sh`, `source x.sh`); a `$(…)`, `<(…)` or `>(…)` that runs anything
+    else; or any output redirection to a file. So `npm install && rg foo src` is denied: the
+    install might put a secret file where the search then reads. Run the search as a command
+    of its own. Piping into a search is fine (`npm test 2>&1 | rg error`): with no folder,
+    `rg`, `ag` and `ack` read the pipe. So is a pipe after the search (`rg foo src | head`);
   - a search over a folder that holds a folder the guard cannot list (no permission);
   - a recursive search over more than 100,000 entries, or that takes over a second: a tree with
     a big `node_modules` cannot be searched from its top by any tool. With grep,
@@ -678,6 +682,13 @@ in-place `.bak` files.
     into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
     `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see;
+  - a command that writes a secret file into a folder and then searches it, in ways the guard
+    cannot see. The guard is a filter on tool calls, not a sandbox. Known ways: a background
+    job started by an earlier call; a program that a read-only `git` command runs from
+    configuration the agent wrote earlier (`core.fsmonitor`, `diff.external`, a textconv
+    driver, `core.pager`); a ripgrep config with `--pre` that only the agent's environment
+    points to; and an alias or function from a shell startup file that gives a read-only name
+    to a writing command. For that kind of protection, run the agent in a sandbox;
   - recursive searches (the tree rule): a search tool not on the list above, including an alias
     or function under another name and wrappers outside the guard's list (`busybox grep -r`,
     `find . -exec grep`); a folder reached only through a symbolic link that the tool follows

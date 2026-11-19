@@ -360,7 +360,17 @@ def test_search_classes(command, cls, isolated, tmp_path):
     installed(isolated)
     g._home[0] = str(isolated)
     [s] = g.search_targets(command, str(tmp_path), command)
+    if os.name == "nt" and cls == "D":
+        cls = "I"  # T3: no class D on Windows
     assert s.cls == cls, command
+
+
+def test_rg_on_windows_is_class_i(isolated, tmp_path, monkeypatch):
+    installed(isolated)
+    g._home[0] = str(isolated)
+    monkeypatch.setattr(g, "WINDOWS", True)
+    [s] = g.search_targets("rg foo", str(tmp_path), "rg foo")
+    assert s.cls == "I"
 
 
 def test_ripgrep_config_text_anywhere_widens(isolated, tmp_path):

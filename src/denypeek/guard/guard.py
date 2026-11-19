@@ -2429,6 +2429,8 @@ def _rg_class(opts, command):
             return CLASS_E
         if name in ("--hidden", "-."):
             cls = CLASS_I
+    if WINDOWS and cls == CLASS_D:
+        cls = CLASS_I  # T3: ripgrep's hidden-name rule on Windows is unverified
     return cls
 
 

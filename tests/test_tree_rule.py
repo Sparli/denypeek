@@ -1331,3 +1331,81 @@ def test_a_failed_cd_is_allowed_for_after_the_chain(command, allowed, p_proj, is
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
     assert denied != allowed, (command, out)
+
+
+# --- the invariant, over many command shapes ----------------------------------------------------
+# A recursive search is allowed only if every target the command names was resolved to an
+# existing folder and walked to the end, and nothing secret was found. Zero targets walked, a
+# target that does not exist, or any doubt is a deny. In project P the clear targets are
+# src, tests, docs, .venv (only certifi's public file) and node_modules; the top holds .env.
+
+CLEAR_TARGETS = ["src", "tests", "docs", "./src/", ".venv", "node_modules", "src/"]
+OTHER_TARGETS = [".", "./", "nope", "src/nope", ""]
+REDIRECT_FORMS = [
+    "2>/dev/null",
+    "2> /dev/null",
+    ">/dev/null",
+    "2>&1",
+    "&>/dev/null",
+    ">out.txt",
+    "1>out.txt",
+    ">>out.txt",
+    "< /dev/null",
+    "<<< x",
+    "3>&2",
+    "2>&-",
+]
+TOOLS = {
+    "rg": ["-n", "-i", "-l", "-w", "--context=2", "-S"],
+    "grep -r": ["-n", "-i", "-l", "-w", "--context=2", "-E"],
+    "grep -rn": ["-i", "-l", "-H", "--include=*.py"],
+    "ugrep -r": ["-n", "-i", "-l"],
+    "ag": ["-i", "-l", "-w", "--context=2"],
+    "ack": ["-i", "-l", "-w"],
+    "git grep": ["-n", "-i", "-l", "-w"],
+}
+PATTERNS = ["foo", "'a b'", '"x|y"', "'>'", "'a > b'", '"2>&1"', "'<<<'"]
+
+
+def _shape(rng):
+    tool = rng.choice(sorted(TOOLS))
+    opts = rng.sample(TOOLS[tool], rng.randint(0, 2))
+    words = tool.split() + opts
+    if rng.random() < 0.2 and tool in ("rg", "grep -r", "grep -rn", "ugrep -r"):
+        words += ["-e", rng.choice(PATTERNS)]
+    else:
+        words.append(rng.choice(PATTERNS))
+    n = rng.choice([0, 0, 1, 1, 1, 2, 3])
+    targets = [rng.choice(CLEAR_TARGETS if rng.random() < 0.7 else OTHER_TARGETS) for _ in range(n)]
+    targets = [t for t in targets if t]
+    if targets and rng.random() < 0.3:
+        words.append("--")
+    words += targets
+    for _ in range(rng.choice([0, 1, 1, 2])):
+        words.insert(rng.randint(len(tool.split()) + 1, len(words)), rng.choice(REDIRECT_FORMS))
+    command = " ".join(words)
+    if rng.random() < 0.3:
+        command += rng.choice([" | head -20", " | sort | uniq -c", " | wc -l"])
+    if "--include=*.py" in opts:
+        # grep reads only .py files: the top's .env is out of reach, so any existing target,
+        # or none (the working folder), is allowed
+        allowed = all(t in CLEAR_TARGETS + [".", "./"] for t in targets)
+    else:
+        allowed = bool(targets) and all(t in CLEAR_TARGETS for t in targets)
+    return command, allowed
+
+
+def test_the_invariant_holds_over_many_command_shapes(p_proj, isolated):
+    import random
+
+    installed(isolated)
+    rng = random.Random(20261119)
+    rules = g.parse_patterns(g.DEFAULT_PATTERNS)
+    wrong = []
+    for _ in range(600):
+        command, allowed = _shape(rng)
+        event = shell_event("claude", command, p_proj)
+        denied = g.decide(event, rules) is not None
+        if denied == allowed:
+            wrong.append((command, "allowed" if not denied else "denied", "expected the other"))
+    assert not wrong, wrong[:10]

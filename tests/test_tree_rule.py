@@ -1295,3 +1295,39 @@ def test_a_folder_that_cannot_be_listed_denies_the_search(command, isolated, tmp
         os.chmod(proj / "locked", 0o755)
     assert denied and g.TREE_UNLISTABLE in reason_of(out), (command, out)
     assert "secretfiles" not in reason_of(out)
+
+
+# --- review of the simple rule: cd ... && runs the search only in the new folder -----------------
+
+
+@pytest.mark.parametrize(
+    "command,allowed",
+    [
+        ("cd src && rg text", True),
+        ("cd src && rg text .", True),
+        ("cd src && cd ../tests && grep -rn text .", True),
+        ("(cd src && rg text)", True),
+        ("cd src; rg text", False),  # if cd fails, the search runs in the first folder
+        ("cd src || rg text", False),
+        ("cd $DIR && rg text", False),
+        ("cd - && rg text", False),
+    ],
+)
+def test_cd_and_then_search_walks_the_new_folder_only(command, allowed, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied != allowed, (command, out)
+
+
+@pytest.mark.parametrize(
+    "command,allowed",
+    [
+        ("cd src && rg a; rg b src", True),
+        ("cd src && rg a; rg b", False),  # if cd failed, rg b runs at the top
+        ("cd src && rg a && rg b", True),
+    ],
+)
+def test_a_failed_cd_is_allowed_for_after_the_chain(command, allowed, p_proj, isolated):
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, p_proj), p_proj)
+    assert denied != allowed, (command, out)

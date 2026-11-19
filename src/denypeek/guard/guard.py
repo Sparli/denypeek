@@ -3081,8 +3081,38 @@ def check_command(
                     return reason_for(path, "names")
     searches = []
     writer_before = after_write
-    for part, _op in command_parts(command):
-        found = search_targets(part, cwd, command, folders)
+    # The folders a search may run in, followed through the command: after `cd X &&` the
+    # search runs only if the cd worked, so only in X; after `;` or `||` in either.
+    bases = list(dict.fromkeys([cwd] + list(extra)))
+    chain_start = list(bases)  # where the current && chain began: a failed cd leaves it there
+    bases_unknown = False
+    for part, op in command_parts(command):
+        if op not in ("&&", "|", "$(", ")", "("):
+            # after `;`, `||`, `&` or a line break the next command runs even if a cd in this
+            # chain failed, so it may run in the folder the chain started from
+            after = list(dict.fromkeys(chain_start + bases))
+        else:
+            after = None
+        words = _part_words(part)
+        if words and words[0] in ("cd", "pushd", "chdir", "popd"):
+            args = [w for w in words[1:] if not w.startswith("-") or w == "-"]
+            if words[0] == "popd" or (args and (args[0] == "-" or any(c in args[0] for c in "$`"))):
+                bases_unknown = True
+                continue
+            targets = [expand(args[0], b) if args else home_dir() for b in bases]
+            targets = [t for t in targets if t]
+            if not targets:
+                bases_unknown = True
+                continue
+            bases = list(dict.fromkeys(targets if op == "&&" else bases + targets))
+            if after is not None:
+                bases = chain_start = list(dict.fromkeys(after + bases))
+            continue
+        found = search_targets(part, cwd, command, bases)
+        if after is not None:
+            bases = chain_start = after
+        if found and bases_unknown:
+            return TREE_UNDETERMINED
         if found and writer_before:
             return TREE_WRITES  # the same command may write into what the search reads
         searches += found

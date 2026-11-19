@@ -627,9 +627,16 @@ in-place `.bak` files.
     `.env` is denied although ripgrep would skip the file, because what a tool skips depends on
     files and settings an agent can change. Other packages' certificate and test key files in a
     virtualenv or `node_modules` count too; only `certifi`'s is excepted;
-  - a recursive search fed by `xargs` or a file list, or with a path that holds a variable, and
+  - a recursive search fed by `xargs` or a file list, with a path that holds a variable or that
+    does not exist, or after a `cd` to a folder that cannot be told (`cd -`, `cd $DIR`), and
     `git grep` over a revision (`git grep foo HEAD`), the index (`--cached`), a pattern path or
     another git folder: name folders instead (`git grep foo -- src`);
+  - a search in a command that first runs anything other than `cd`, `pushd`, `popd`, `echo`,
+    `pwd`, `ls`, `true`, `export`, `set` or `unset`, or writes a file with a redirection:
+    `npm install && rg foo src`, `git status; rg foo src`. That part might put a secret file
+    where the search then reads. Run the search as a command of its own. A pipe after the
+    search (`rg foo src | head`) is fine;
+  - a search over a folder that holds a folder the guard cannot list (no permission);
   - a recursive search over more than 100,000 entries, or that takes over a second: a tree with
     a big `node_modules` cannot be searched from its top by any tool. With grep,
     `--exclude-dir=node_modules` makes the walk smaller; with `rg` and the built-in tools, name
@@ -675,8 +682,11 @@ in-place `.bak` files.
     or function under another name and wrappers outside the guard's list (`busybox grep -r`,
     `find . -exec grep`); a folder reached only through a symbolic link that the tool follows
     (`grep -R`, `rg -L`); a file made or renamed by an earlier background job between the
-    guard's walk and the search; and a real secret that you keep as `cacert.pem` in a folder
-    named `certifi` under `site-packages` or `dist-packages`;
+    guard's walk and the search; `find . | xargs grep KEY`, which is not recursive itself (the
+    same as `find -exec`); a real secret that you keep as `cacert.pem` in a folder named
+    `certifi` under `site-packages` or `dist-packages`, or a hard link to one saved there; and
+    a file or folder name that reads like an instruction, which the deny message shows (escaped,
+    and in the clear list only as plain letters, digits, `.`, `_` and `-`);
   - with the experimental `auto` setting, ways to make a bare `*` reach `.env` that the guard
     allows:
     - hidden-name matching that is on although neither the command nor a startup file names it:

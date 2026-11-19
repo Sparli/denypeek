@@ -161,6 +161,8 @@ A26_ALLOWED = [
     "rg foo src",
     "grep -rn foo src",
     "grep -rn foo . --include='*.py'",
+    "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=venv "
+    "--exclude='.env*'",
 ]
 # In SPEC A26's list, but real grep reads venv/lib/cacert.pem with it (venv is not excluded and
 # *.pem is a secret pattern), so by A27's principle the hook must deny it. Reported for the spec.

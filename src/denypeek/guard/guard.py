@@ -1553,6 +1553,34 @@ def _has_glob(chars):
 
 
 _HIDDEN_CACHE = {}
+# Set only while choosing a deny message (hidden_only_reason); never while deciding.
+_WALK_AS_AUTO = [False]
+
+# The deny message when only G8 `always` made a pattern reach a secret file (QA, readiness
+# run at a507027). Fixed wording: no text from the command or from file names.
+HIDDEN_GLOB_REASON = (
+    "a `*`, `?` or `[...]` at the start of a name also matches hidden files here, and a hidden "
+    "secret file is in reach (denypeek's hidden-files setting is `always`). "
+    "Name the files instead, for example `ls` or `cat *.md`"
+)
+
+
+def hidden_only_reason(word, folders, rules):
+    """HIDDEN_GLOB_REASON when the word reaches a blocked path only because hidden names count
+    (walked as `auto` would, it reaches none), else None. Picks the message only: the call is
+    already denied, and any error or time-out here keeps the usual message."""
+    if hidden_names() != "always":
+        return None
+    _WALK_AS_AUTO[0] = True
+    try:
+        reached = word_paths(word, folders)
+        if any(blocked_path(p, rules) for p in reached):
+            return None
+        return HIDDEN_GLOB_REASON
+    except Exception:
+        return None
+    finally:
+        _WALK_AS_AUTO[0] = False
 
 
 def hidden_names():
@@ -1801,7 +1829,7 @@ def walk_pattern(bases, parts, tree, budget):
     """Every existing path the widened pattern can reach from the base folders."""
     cur = list(dict.fromkeys(bases))
     globbed = False
-    auto = hidden_names() == "auto"
+    auto = _WALK_AS_AUTO[0] or hidden_names() == "auto"
     for n, part in enumerate(parts):
         kind = part[0]
         nxt = []
@@ -2242,6 +2270,10 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                 continue
             for path in word_paths(w, folders):
                 if blocked_path(path, rules):
+                    if not is_protected(path):
+                        hidden = hidden_only_reason(w, folders, rules)
+                        if hidden:
+                            return hidden
                     return reason_for(path, "names")
     for part in parts:
         for folder, honours_ignores in grep_targets(part, cwd):
@@ -2397,7 +2429,9 @@ def decide(event, rules):
 
 def deny_output(agent, event_name, reason):
     """(stdout, exit code) that each agent reads as a denial."""
-    msg = f"denypeek blocked this: {reason}. If this is wrong, edit ~/.denypeek/secretfiles."
+    msg = f"denypeek blocked this: {reason}."
+    if reason != HIDDEN_GLOB_REASON:
+        msg += " If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":
         return json.dumps({"permission": "deny", "user_message": msg, "agent_message": msg}), 0
     if agent == "gemini":

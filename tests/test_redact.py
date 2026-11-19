@@ -15,7 +15,7 @@ import pytest
 from denypeek.redact import redact
 from denypeek.sources import resolve_home
 
-from .conftest import fake_github, jl, run_cli, write
+from .conftest import fake_github, jl, make_cursor_db, run_cli, write
 
 MARKER = re.compile(r"\[REDACTED:[a-z0-9-]+:[0-9a-f]{8}\]")
 
@@ -201,3 +201,38 @@ def test_redact_and_undo_keep_file_times(four_store_home):
 def test_empty_scan_hints_at_the_home_folder(isolated):
     code, out, _ = run_cli("scan", "--home", str(isolated))
     assert code == 0 and "check --home" in out
+
+
+def test_rotate_list_names_every_found_key_including_cursor(four_store_home, keys):
+    """QA readiness run at a507027: four keys found, three redacted. The Cursor key is not
+    redacted (its database is never changed) but must still be listed to rotate."""
+    home = four_store_home
+    _, out, _ = run_cli("scan", "--home", str(home), "--json")
+    fps = {f["agent"]: f["fingerprint"] for f in json.loads(out)["findings"]}
+    assert len(fps) == 4
+    code, out, _ = run_cli("redact", "--home", str(home), "--yes")
+    assert code == 0, out
+    assert "will redact 3 possible secret(s) in 3 file(s)" in out
+    assert "1 more found in Cursor's database: not redacted" in out
+    assert "Redacted 3 secret(s) in 3 file(s)." in out
+    assert "Rotate these keys now (4, 1 of them NOT redacted)." in out
+    rotate = out.split("Rotate these keys now", 1)[1].split("\nBackup:", 1)[0]
+    lines = [ln for ln in rotate.splitlines() if " fp " in ln]
+    assert len(lines) == 4, rotate
+    for agent, fp in fps.items():
+        [line] = [ln for ln in lines if fp in ln]
+        assert ("NOT redacted" in line) == (agent == "cursor"), (agent, line)
+    for key in keys.values():
+        assert key not in out
+
+
+def test_only_a_cursor_key_is_still_listed_to_rotate(isolated, keys):
+    make_cursor_db(
+        isolated / "Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+        json.dumps({"text": f"slack {keys['cursor']}"}),
+    )
+    code, out, _ = run_cli("redact", "--home", str(isolated), "--yes")
+    assert code == 0, out
+    assert "Nothing to redact." in out
+    assert "Rotate these keys now (1, 1 of them NOT redacted)." in out
+    assert "NOT redacted: still in its file" in out

@@ -48,23 +48,51 @@ def _confirm(args, question: str) -> bool:
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
+def _print_rotate(findings, still: set, redacted=()) -> None:
+    """Every key found, once each (by fingerprint): redaction does not make a leaked key safe.
+    `still` holds the fingerprints a scan still finds (Cursor's database, a skipped file or
+    line); those keys are marked NOT redacted."""
+    keys: dict = {}
+    for f in [*findings, *redacted]:
+        keys.setdefault(f.fingerprint, [f.rule, f.preview, f.length, f.fingerprint in still])
+    if not keys:
+        return
+    left = sum(1 for k in keys.values() if k[3])
+    note = f", {left} of them NOT redacted" if left else ""
+    print(
+        f"\nRotate these keys now ({len(keys)}{note}). Redaction does not make a leaked key safe:"
+    )
+    for fp, (rule, prev, length, still) in keys.items():
+        tail = "  (found, NOT redacted: still in its file; rotate anyway)" if still else ""
+        print(f"  {rule}  {report.shown_key(prev, length, fp)}{tail}")
+
+
 def cmd_redact(args) -> int:
     from .redact import redact
 
     home = _home(args)
-    preview = scan(home, kinds={"jsonl", "json"})
-    files = sorted({str(f.path) for f in preview.findings})
+    # Every store, so a key in Cursor's database (never changed) is still counted and listed.
+    found = scan(home)
+    editable = {s.path for s in found.files if s.kind in ("jsonl", "json")}
+    to_redact = [f for f in found.findings if f.path in editable]
+    kept = [f for f in found.findings if f.path not in editable]
+    files = sorted({str(f.path) for f in to_redact})
     if not files:
         print("No known key shapes found in JSONL or JSON history. Nothing to redact.")
+        if kept:
+            _print_rotate(found.findings, {f.fingerprint for f in found.findings})
         print(report.NOT_PROOF)
-        return 2 if preview.incomplete else 0
-    print(
-        f"denypeek will redact {len(preview.findings)} possible secret(s) in {len(files)} file(s)."
-    )
+        return 2 if found.incomplete else 0
+    print(f"denypeek will redact {len(to_redact)} possible secret(s) in {len(files)} file(s).")
     print(
         "A backup of each file goes to ~/.denypeek/backups/ first. "
         "Cursor's database is not changed."
     )
+    if kept:
+        print(
+            f"{len(kept)} more found in Cursor's database: not redacted. "
+            "Rotate those keys too (listed at the end)."
+        )
     if not _confirm(args, "Redact now?"):
         return 2
     res = redact(home, include_active=args.include_active)
@@ -76,13 +104,8 @@ def cmd_redact(args) -> int:
         _print_problems(home, "VERIFICATION FAILED: still present after redaction", res.leftover)
     elif res.changed:
         print("\nVerified: a rescan of the changed files finds no known key shapes.")
-    if res.rotate:
-        print(
-            f"\nRotate these keys now ({len(res.rotate)}). "
-            "Redaction does not make a leaked key safe:"
-        )
-        for r in res.rotate.values():
-            print(f"  {r.rule}  {report.shown_key(r.preview, r.length, r.fingerprint)}")
+    still = {f.fingerprint for f in scan(home).findings}
+    _print_rotate(found.findings, still, res.rotate.values())
     if res.backup:
         print(f"\nBackup: {home.display(res.backup.path)}")
         print(

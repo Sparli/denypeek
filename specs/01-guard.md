@@ -81,7 +81,12 @@ covers a check stuck inside C code (G2).
   name under it matches the patterns; a regular file `cacert.pem` directly in a folder `certifi` under `site-packages` or
   `dist-packages` does not count.
   A search whose folders or files cannot be told (`xargs`, `git grep` over a revision, the index
-  a pattern path or another git folder, a path that is not a literal) is denied. A search covering denypeek's folder, an agent folder or a hook
+  a pattern path or another git folder, a path that is not a literal or does not exist, a
+  folder that cannot be listed) is denied. Redirections are removed before paths are read;
+  after `cd X &&` only `X` is walked; `rg`, `ag` or `ack` consuming a pipe with no path and no
+  input redirection reads the pipe. A search after a part of the same command that may write
+  files (anything not on a short read-only list, substitution bodies and shell strings
+  included) is denied. A search covering denypeek's folder, an agent folder or a hook
   config is denied without a walk. Only names that can match a pattern, and symbolic links, get
   the full check. Limits: 100,000 entries and 1 second (measurement in `specs/04-tree-walk.md`);
   past either, denied as too big to check (all start folders together). The deny message names

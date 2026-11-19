@@ -193,3 +193,67 @@ def test_ctrl_c_during_redact_changes_nothing(big_home, monkeypatch):
     assert code == 2 and "Stopped before redacting anything" in out, out
     assert "Traceback" not in out + err
     assert {p: p.read_bytes() for p in big_home.rglob("*.jsonl")} == before
+
+
+@pytest.fixture
+def awkward_home(big_home):
+    """A JSONL file with broken JSON, bad UTF-8, a U+2028 line, blank lines and keys on many
+    lines, so chunk edges fall between lines that matter."""
+    lines = []
+    for n in range(400):
+        if n % 50 == 7:
+            lines.append(b"{not json " + fake_github().encode() + b"}")
+        elif n % 50 == 9:
+            lines.append(b'{"text": "bad \xff\xfe utf8 ' + fake_aws().encode() + b'"}')
+        elif n % 50 == 11:
+            lines.append(json.dumps({"text": "a b " + fake_stripe()}).encode())
+        elif n % 50 == 13:
+            lines.append(b"")
+        else:
+            lines.append(json.dumps({"text": "x" * (n * 37 % 900) + " " + fake_slack()}).encode())
+    path = big_home / ".codex/sessions/2026/11/14/rollout-big.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\n".join(lines) + b"\n")
+    return big_home
+
+
+@pytest.mark.parametrize("chunk", [1, 997, 5000, 60_000])
+def test_chunked_files_give_the_same_result(awkward_home, monkeypatch, chunk):
+    home = resolve_home(str(awkward_home))
+    whole = S.scan(home, workers=1)
+    assert any(f.line == "400" or f.line == "399" for f in whole.findings)
+    monkeypatch.setattr(S, "CHUNK_BYTES", chunk)
+    assert len(S._chunks(awkward_home / ".codex/sessions/2026/11/14/rollout-big.jsonl", 10**9)) > 1
+    for workers in (1, 3):
+        parts = S.scan(home, workers=workers)
+        assert parts.findings == whole.findings, workers
+        assert parts.incomplete == whole.incomplete and parts.notes == whole.notes
+        assert parts.files == whole.files
+
+
+def test_chunks_are_line_aligned_and_cover_the_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(S, "CHUNK_BYTES", 10)
+    data = b"".join(b"%d" % n * (n % 7) + b"\n" for n in range(200)) + b"tail without newline"
+    path = tmp_path / "f.jsonl"
+    path.write_bytes(data)
+    parts = S._chunks(path, len(data))
+    assert parts[0][0] == 0 and parts[-1][1] is None
+    pieces = [S._read_part(path, a, b) for a, b in parts]
+    assert b"".join(pieces) == data
+    assert all(p.endswith(b"\n") for p in pieces[:-1])
+
+
+def test_an_unreadable_chunked_file_is_one_cannot_read(awkward_home, monkeypatch):
+    monkeypatch.setattr(S, "CHUNK_BYTES", 5000)
+    real = S._read_part
+
+    def fail_later_parts(path, start, end):
+        if path.name == "rollout-big.jsonl" and start > 0:
+            raise PermissionError(13, "Permission denied")
+        return real(path, start, end)
+
+    monkeypatch.setattr(S, "_read_part", fail_later_parts)
+    res = S.scan(resolve_home(str(awkward_home)), workers=1)
+    bad = [p for p in res.incomplete if p.path.name == "rollout-big.jsonl"]
+    assert [(p.where, p.reason) for p in bad] == [("", "cannot read: Permission denied")]
+    assert not [f for f in res.findings if f.path.name == "rollout-big.jsonl"]

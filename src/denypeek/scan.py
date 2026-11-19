@@ -508,6 +508,7 @@ def inside(path: Path, roots: list[Path]) -> bool:
 
 
 PARALLEL_MIN_BYTES = 8_000_000  # below this, one process is fast enough
+CHUNK_BYTES = 8_000_000  # JSONL files are read in line-aligned parts of about this size
 
 
 def _ignore_sigint() -> None:  # pragma: no cover - runs in worker processes
@@ -516,24 +517,64 @@ def _ignore_sigint() -> None:  # pragma: no cover - runs in worker processes
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
+def _chunks(path: Path, size: int) -> list:
+    """Line-aligned (start, end) byte ranges of a JSONL file; end None means to the end of the
+    file, so lines added while the scan runs are still read, as a whole-file read would."""
+    if size <= CHUNK_BYTES:
+        return [(0, None)]
+    out, start = [], 0
+    try:
+        with open(path, "rb") as f:
+            while True:
+                f.seek(start + CHUNK_BYTES)
+                cut = None
+                while True:
+                    block = f.read(1 << 16)
+                    if not block:
+                        break
+                    nl = block.find(b"\n")
+                    if nl != -1:
+                        cut = f.tell() - len(block) + nl + 1
+                        break
+                if cut is None:
+                    break
+                out.append((start, cut))
+                start = cut
+    except OSError:
+        return [(0, None)]  # the worker reports the error, as for any unreadable file
+    out.append((start, None))
+    return out
+
+
+def _read_part(path: Path, start: int, end: Optional[int]) -> bytes:
+    if start == 0 and end is None:
+        return path.read_bytes()
+    with open(path, "rb") as f:
+        f.seek(start)
+        return f.read() if end is None else f.read(end - start)
+
+
 def _scan_one(job):
-    """Scan one file (in a worker process, or in this one). Returns what the caller needs to
-    build Findings and Problems, in the file's own order."""
-    index, src = job
+    """Scan one file, or one line-aligned part of a JSONL file (in a worker process, or in
+    this one). Line numbers are counted from the start of the part; the caller adds the lines
+    before it. Returns what the caller needs to build Findings and Problems, in order."""
+    key, src, start, end = job
     part = ScanResult()
     hits: list = []
+    lines = 0
     if src.kind == "sqlite":
         items = scan_sqlite(src.path, part)
     else:
         try:
-            data = src.path.read_bytes()
+            data = _read_part(src.path, start, end)
         except OSError as exc:
             part.incomplete.append(Problem(src.path, "", f"cannot read: {exc.strerror or exc}"))
-            return index, hits, part.incomplete, part.notes
+            return key, hits, part.incomplete, part.notes, lines, True
+        lines = data.count(b"\n")
         items = scan_text_lines(data, src.path, src.kind, part)
     for where, hit in items:
         hits.append((where, hit.rule, hit.secret))
-    return index, hits, part.incomplete, part.notes
+    return key, hits, part.incomplete, part.notes, lines, False
 
 
 def _size(path: Path) -> int:
@@ -541,6 +582,10 @@ def _size(path: Path) -> int:
         return os.stat(path).st_size
     except OSError:
         return 0
+
+
+def _shift(where: str, offset: int) -> str:
+    return str(int(where) + offset) if offset and where.isdigit() else where
 
 
 def scan(
@@ -571,42 +616,64 @@ def scan(
         todo.append(src)
     sizes = [_size(src.path) for src in todo]
     total = sum(sizes)
+    # Large JSONL files are split at line breaks, so one big file uses every worker and no
+    # worker holds more than about CHUNK_BYTES of it.
+    parts = [
+        _chunks(src.path, sizes[i]) if src.kind == "jsonl" else [(0, None)]
+        for i, src in enumerate(todo)
+    ]
+    jobs = [
+        ((i, n), src, start, end)
+        for i, src in enumerate(todo)
+        for n, (start, end) in enumerate(parts[i])
+    ]
+
+    def job_bytes(job) -> int:
+        (i, n), _, start, end = job
+        return (end if end is not None else max(sizes[i], start)) - start
+
     if workers is None:
         workers = 1 if total < PARALLEL_MIN_BYTES else min(os.cpu_count() or 1, 16)
-    workers = max(1, min(workers, len(todo)))
+    workers = max(1, min(workers, len(jobs)))
     if progress:
         progress(0, len(todo), 0, total, 0, None)
 
-    done: dict = {}  # index -> (hits, incomplete, notes)
+    pieces: dict = {}  # (file index, part number) -> worker output
+    left = [len(p) for p in parts]  # parts still to do, per file
+    files_done = 0
     done_bytes = 0
     n_hits = 0
 
     def record(out) -> None:
-        nonlocal done_bytes, n_hits
-        index, hits, incomplete, notes = out
-        done[index] = (hits, incomplete, notes)
-        done_bytes += sizes[index]
-        n_hits += len(hits)
+        nonlocal files_done, done_bytes, n_hits
+        key = out[0]
+        pieces[key] = out[1:]
+        i = key[0]
+        left[i] -= 1
+        files_done += left[i] == 0
+        done_bytes += job_bytes(jobs_by_key[key])
+        n_hits += len(out[1])
         if progress:
-            progress(len(done), len(todo), done_bytes, total, n_hits, todo[index].agent)
+            progress(files_done, len(todo), done_bytes, total, n_hits, todo[i].agent)
 
-    # Largest files first, so one big file does not finish last on its own.
-    jobs = sorted(enumerate(todo), key=lambda j: -sizes[j[0]])
+    jobs_by_key = {job[0]: job for job in jobs}
     pool = None
     try:
         if workers == 1:
-            for job in sorted(jobs):
+            for job in jobs:
                 record(_scan_one(job))
         else:
             import multiprocessing
 
+            # Largest parts first, so one big part does not finish last on its own.
+            order = sorted(jobs, key=lambda j: -job_bytes(j))
             pool = multiprocessing.get_context("spawn").Pool(workers, _ignore_sigint)
-            for out in pool.imap_unordered(_scan_one, jobs, chunksize=1):
+            for out in pool.imap_unordered(_scan_one, order, chunksize=1):
                 record(out)
             pool.close()
     except KeyboardInterrupt:
         result.stopped = (
-            f"stopped (Ctrl-C) after {len(done)} of {len(todo)} files, "
+            f"stopped (Ctrl-C) after {files_done} of {len(todo)} files, "
             f"{done_bytes / 1e6:.0f} of {total / 1e6:.0f} MB; the rest was not scanned"
         )
     finally:
@@ -616,27 +683,35 @@ def scan(
             pool.join()
 
     key = None
-    for index, src in enumerate(todo):
-        if index not in done:
-            continue
-        hits, incomplete, notes = done[index]
+    for i, src in enumerate(todo):
+        if left[i]:
+            continue  # not finished (stopped): counted as not scanned
+        outs = [pieces[(i, n)] for n in range(len(parts[i]))]
+        failed = [o for o in outs if o[4]]
+        if failed:  # as for a whole-file read: one "cannot read", nothing else from it
+            outs = [failed[0]]
         result.files.append(src)
-        result.incomplete += incomplete
-        result.notes += notes
-        for where, rule, secret in hits:
-            if key is None:
-                key = salt(home)
-            result.findings.append(
-                Finding(
-                    agent=src.agent,
-                    path=src.path,
-                    line=where,
-                    rule=rule,
-                    preview=preview(rule, secret),
-                    length=len(secret),
-                    fingerprint=fingerprint(secret, key),
+        offset = 0
+        for hits, incomplete, notes, lines, _ in outs:
+            result.incomplete += [
+                Problem(p.path, _shift(p.where, offset), p.reason) for p in incomplete
+            ]
+            result.notes += [Problem(p.path, _shift(p.where, offset), p.reason) for p in notes]
+            for where, rule, secret in hits:
+                if key is None:
+                    key = salt(home)
+                result.findings.append(
+                    Finding(
+                        agent=src.agent,
+                        path=src.path,
+                        line=_shift(where, offset),
+                        rule=rule,
+                        preview=preview(rule, secret),
+                        length=len(secret),
+                        fingerprint=fingerprint(secret, key),
+                    )
                 )
-            )
+            offset += lines
     if result.stopped:
         result.incomplete.append(Problem(home.root, "", f"scan {result.stopped}"))
     return result

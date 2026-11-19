@@ -346,7 +346,10 @@ denypeek scan
 ```
 
 That is a read-only scan of your agent history. Exit code 0 means nothing found, 1 means
-findings, 2 means something could not be read.
+findings, 2 means something could not be read or the scan was stopped. It first says how many
+files and how much data it will read, then shows a progress line (store, file count, data read,
+findings so far). A large history (several GB) takes a few minutes; it uses every CPU core. Ctrl-C
+stops it cleanly and still lists what it found so far, marked incomplete.
 
 Block secret-file reads in your agents, then prove the hook works:
 
@@ -571,6 +574,7 @@ in-place `.bak` files.
 | `~/.denypeek/secretfiles` is missing | The guard uses its built-in defaults. |
 | A history line is broken JSON or bad UTF-8 | Scanned as text where possible, listed as not fully checked, exit code 2. |
 | A history file cannot be read | Listed, exit code 2. Never silently skipped. |
+| You press Ctrl-C during `scan` | It stops, says how far it got, lists what it found so far, and exits with code 2. `redact` stops before changing any file. |
 | An agent writes to a file during `redact` | The change is detected before the rename; that file is left alone and listed. |
 | The machine crashes mid-redact | The original stays intact: changes go to a temp file that is renamed over it. |
 | A redacted line would stop being valid JSON | That line is left as is and listed. |

@@ -104,6 +104,9 @@ def do_install(home: Home, agents=None, python: Optional[str] = None, hidden=Non
         state["hidden_names_choice"] = choice
     else:
         state.pop("hidden_names_choice", None)
+    # SPEC 3b T3: the hook cannot see the environment, so install records whether a ripgrep
+    # config is in force. Only install writes this key; `guard status` only compares.
+    state["ripgrep_config"] = "set" if os.environ.get("RIPGREP_CONFIG_PATH") else "unset"
     save_state(home, state)
     return changes, warning
 
@@ -189,6 +192,11 @@ def do_status(home: Home, agents=None) -> tuple[list[Status], dict]:
     info["hidden_names_choice"] = choice
     info["hidden_names_changed"] = choice == "auto" and stored is not None and detected != stored
     info["hidden_names_detected_reason"] = why
+    stored_rg = state.get("ripgrep_config")
+    now_rg = "set" if os.environ.get("RIPGREP_CONFIG_PATH") else "unset"
+    info["ripgrep_config"] = stored_rg if stored_rg in ("set", "unset") else "unknown"
+    info["ripgrep_config_changed"] = info["ripgrep_config"] != now_rg
+    info["ripgrep_config_now"] = now_rg
     return rows, info
 
 

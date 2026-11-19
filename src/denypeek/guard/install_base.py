@@ -161,7 +161,13 @@ SYSTEM_STARTUP_FILES = (
 )
 SYSTEM_STARTUP_DIRS = ("/etc/profile.d",)
 HIDDEN_SWITCHES = ("dotglob", "globdots", "globignore")
-HIDDEN_KEYS = ("hidden_names", "hidden_names_reason", "hidden_names_forced", "hidden_names_choice")
+HIDDEN_KEYS = (
+    "hidden_names",
+    "hidden_names_reason",
+    "hidden_names_forced",
+    "hidden_names_choice",
+    "ripgrep_config",
+)
 # The known gaps of the experimental `auto` setting in v0.1.0 (the review, 2026-11-19), named in the
 # install warning; the README lists them under Known misses.
 AUTO_GAPS = (

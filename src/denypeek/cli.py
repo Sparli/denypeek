@@ -273,6 +273,20 @@ def _guard_errors(changes) -> int:
     return 2 if bad else 0
 
 
+def ripgrep_line(value: str) -> str:
+    """SPEC 3b T3, one line: how the guard counts `rg` searches."""
+    if value == "unset":
+        return (
+            "ripgrep: no RIPGREP_CONFIG_PATH when installed, so `rg` is judged by its defaults "
+            "(it skips hidden and gitignored files)."
+        )
+    why = "RIPGREP_CONFIG_PATH was set" if value == "set" else "no ripgrep setting recorded"
+    return (
+        f"ripgrep: {why}, so every `rg` search counts as reading every file, hidden and "
+        "ignored ones too. Run denypeek guard install from a terminal without it to change this."
+    )
+
+
 def hidden_line(value: str, reason: str) -> str:
     """One plain line: the hidden-names setting, why, and what it means for the user."""
     if value == "auto":
@@ -318,6 +332,7 @@ def cmd_guard_install(args) -> int:
             "read a hidden secret file: " + "; ".join(AUTO_GAPS) + ". See the README's Known "
             "misses. For no such gap: denypeek guard install --hidden always"
         )
+    print(ripgrep_line(state.get("ripgrep_config", "unknown")))
     if warning:
         print(f"WARNING: {warning}")
     print("Restart open agent sessions, then check it works: denypeek guard test")
@@ -409,6 +424,13 @@ def cmd_guard_status(args) -> int:
             print(
                 f"  CHANGED: your startup files now say {info['hidden_names_detected']} "
                 f"({info['hidden_names_detected_reason']}). Run: denypeek guard install"
+            )
+        print("  " + ripgrep_line(info["ripgrep_config"]))
+        if info["ripgrep_config_changed"]:
+            print(
+                "  CHANGED: RIPGREP_CONFIG_PATH is now "
+                f"{'set' if info['ripgrep_config_now'] == 'set' else 'not set'} in this terminal. "
+                "The recorded value stays in force until you run: denypeek guard install"
             )
     all_ok = (
         all(r.installed and r.health is None for r in rows)

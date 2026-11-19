@@ -54,8 +54,11 @@ def tick():
 
 
 MAX_INPUT = 4_000_000  # bytes; bigger hook inputs are blocked, not parsed
-WALK_LIMIT = 20_000  # entries checked when a grep targets a folder
-WALK_SECONDS = 0.4
+# SPEC 3b T7: a recursive search walks the folder by names only. Set from a measurement (see
+# specs/04-tree-walk.md, tools/measure_walk.py). Past either limit the search is denied
+# (T8).
+WALK_LIMIT = 100_000  # entries visited when a search covers a folder
+WALK_SECONDS = 1.0
 UNINSTALL = "denypeek guard uninstall"
 
 DEFAULT_PATTERNS = """\
@@ -923,23 +926,275 @@ def _brace_sequence(m, limit):
     return [fmt(v) for _, v in zip(range(limit), rng)]
 
 
-def folder_holds_secret(folder, rules, deadline, honours_ignores=True):
-    """True if the folder (recursively) holds a secret file. Raises TimeoutError if too big.
+# --- the tree rule: SPEC 3b, recursive search ---------------------------------------------
+# What a search tool can read under a folder decides, not the folder's size. Class E reads
+# everything; class I reads hidden names but honours ignore files; class D (ripgrep's
+# default) also skips every hidden name. Ignore files count only as evidence the tool is
+# known to use (T2), and the walk looks at names only, with the full check for a name that
+# can match a pattern (T7).
 
-    `honours_ignores`: the search tool skips gitignored folders such as node_modules (ripgrep,
-    ag, git grep and the agents' search tools do; grep -r does not), so the walk may skip them.
-    """
-    skip = {".git", "__pycache__"} | ({"node_modules"} if honours_ignores else set())
-    seen = 0
-    for dirpath, dirnames, filenames in os.walk(folder):
-        dirnames[:] = [d for d in dirnames if d not in skip]
-        for name in filenames + dirnames:
-            seen += 1
-            if seen > WALK_LIMIT or time.monotonic() > deadline:
-                raise TimeoutError
-            if blocked_path(os.path.join(dirpath, name), rules):
-                return True
+CLASS_E, CLASS_I, CLASS_D = "E", "I", "D"
+IGNORE_FILE_MAX = 64 * 1024  # a larger ignore file is not read: no skip from it
+IGNORE_FILES_MAX = 2_000  # more ignore files than this in one walk: class D becomes I (T4)
+
+TIMEOUT_ADVICE = "try a shorter command, or search a narrower folder"
+TREE_TOO_BIG = (
+    "too many files to check in time; search a narrower folder, or skip dependency folders "
+    "(with grep add `--exclude-dir=node_modules --exclude-dir=.venv`)"
+)
+
+
+class Search:
+    """One folder a search reads, how (its class), and what the command narrows (T5)."""
+
+    def __init__(self, folder, cls, includes=(), excludes=(), exclude_dirs=()):
+        self.folder, self.cls = folder, cls
+        self.includes, self.excludes, self.exclude_dirs = includes, excludes, exclude_dirs
+
+
+class _WalkLimit(Exception):
+    pass
+
+
+class _Downgrade(Exception):
+    pass
+
+
+def tree_secret_reason(path):
+    name = os.path.basename(path.rstrip("/")) or path
+    return (
+        f"the search would read a secret file ({name}); search a narrower folder, or leave it "
+        "out: `rg` skips hidden files; with grep add `--include` or `--exclude-dir`"
+    )
+
+
+def tree_protected_reason(path):
+    name = os.path.basename(path.rstrip("/")) or path
+    return (
+        f"the search covers {name}, which denypeek protects so an agent cannot switch the guard "
+        "off; search a folder that does not hold it"
+    )
+
+
+def _protected_targets():
+    dirs, files = protected_paths()
+    home = _norm(os.path.normpath(home_dir())).rstrip("/")
+    out = set(dirs) | set(files) | agent_dirs() | {home + "/.local/lib"}
+    return {t.rstrip("/") for t in out}
+
+
+def protected_under(folder):
+    """T6: a protected path that is the folder, lies under it, or holds it; else None."""
+    cands = {_norm(os.path.normpath(folder)).rstrip("/")}
+    try:
+        cands.add(_norm(os.path.realpath(folder)).rstrip("/"))
+    except (OSError, ValueError):
+        pass
+    for t in sorted(_protected_targets()):
+        for c in cands:
+            if t == c or t.startswith(c + "/") or c.startswith(t + "/") or c == "":
+                return t
+    return None
+
+
+def _last_part_regex(rules):
+    """T7: one regex for the last path part any pattern's match needs, or None when a pattern
+    has no such part (then every name gets the full check)."""
+    out = []
+    for _neg, pat, _m in rules:
+        p = _norm(pat).rstrip("/")
+        parts = [x for x in p.split("/") if x not in ("", "~")]
+        while parts and parts[-1] == "**":
+            parts.pop()
+        if not parts or "**" in parts[-1]:
+            return None
+        out.append(_glob_to_re(parts[-1]))
+    if not out:
+        return re.compile("(?!)")
+    return re.compile("^(?:" + "|".join(out) + ")$")
+
+
+def _ignore_lines(folder, name, strict=False):
+    """The pattern lines of an ignore file, or None. A file too large to read gives no
+    evidence; with `strict` (class D, whose skip it could undo) it raises _Downgrade."""
+    path = os.path.join(folder, name)
+    try:
+        if os.path.getsize(path) > IGNORE_FILE_MAX:
+            if strict:
+                raise _Downgrade
+            return None
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read(IGNORE_FILE_MAX + 1)
+    except (OSError, ValueError):
+        return None
+    return [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+
+
+def _in_repo(folder):
+    d = os.path.realpath(folder)
+    for _ in range(64):
+        if os.path.lexists(os.path.join(d, ".git")):
+            return True
+        up = os.path.dirname(d)
+        if up == d:
+            return False
+        d = up
     return False
+
+
+def _above(folder):
+    """The folders above `folder`, nearest first."""
+    out, d = [], os.path.realpath(folder)
+    for _ in range(64):
+        up = os.path.dirname(d)
+        if up == d:
+            break
+        out.append(up)
+        d = up
+    return out
+
+
+def _whitelists(lines):
+    """Re-include lines (`!name`) of an ignore file, as patterns. True means "any name"."""
+    out = []
+    for ln in lines or ():
+        if ln.startswith("!"):
+            pat = ln[1:].strip().strip("/")
+            out.append(True if "/" in pat or not pat else pat.lower())
+    return out
+
+
+def _whitelisted(name, wl):
+    low = name.lower()
+    return any(w is True or fnmatch_case(low, w) for w in wl)
+
+
+def fnmatch_case(name, pat):
+    import fnmatch
+
+    return fnmatch.fnmatchcase(name, pat)
+
+
+def _skips_node_modules(chain, parent_lines):
+    """T2: a .gitignore between the folder and the repository top names node_modules in a
+    plain line (`node_modules`, `node_modules/`, or `/node_modules` beside it)."""
+    named, unnamed = False, False
+    for lines in chain:
+        for ln in lines or ():
+            if ln.startswith("!") and "node_modules" in ln:
+                unnamed = True
+            elif ln in ("node_modules", "node_modules/"):
+                named = True
+    if any(ln == "/node_modules" for ln in parent_lines or ()):
+        named = True
+    return named and not unnamed
+
+
+def _ignores_all(folder):
+    lines = _ignore_lines(folder, ".gitignore")
+    return lines == ["*"]
+
+
+def search_tree(search, rules, deadline):
+    """The reason to deny this search, or None. T6 first, then the walk (T2, T4, T5, T7, T8)."""
+    folder = search.folder
+    t = protected_under(folder)
+    if t:
+        return tree_protected_reason(t)
+    if is_protected(folder):
+        return tree_protected_reason(folder)
+    try:
+        try:
+            hit = _walk(folder, search.cls, search, rules, deadline)
+        except _Downgrade:  # too many or too large ignore files to read: class I (T4)
+            hit = _walk(folder, CLASS_I, search, rules, deadline)
+    except _WalkLimit:
+        return TREE_TOO_BIG
+    return tree_secret_reason(hit) if hit else None
+
+
+def _walk(folder, cls, search, rules, deadline):
+    """The first file the search can read that is blocked, or None. Raises _WalkLimit."""
+    last_part = _last_part_regex(rules)
+    root_full = last_part is None
+    if not root_full:
+        roots = {_norm(os.path.normpath(folder))}
+        try:
+            roots.add(_norm(os.path.realpath(folder)))
+        except (OSError, ValueError):
+            pass
+        root_full = any(last_part.match(c) for r in roots for c in r.split("/") if c)
+    repo = cls != CLASS_E and _in_repo(folder)
+    chain0, wl0 = [], []
+    if cls != CLASS_E:
+        for d in _above(folder):
+            for name in (".gitignore", ".ignore", ".rgignore") if cls == CLASS_D else ():
+                wl0 += _whitelists(_ignore_lines(d, name, strict=True))
+            if repo:
+                chain0.append(_ignore_lines(d, ".gitignore"))
+                if os.path.lexists(os.path.join(d, ".git")):
+                    break
+    includes, excludes, exclude_dirs = search.includes, search.excludes, search.exclude_dirs
+    seen = 0
+    ignore_files = 0
+    # (folder, full check for every name below?, .gitignore chain, re-include lines)
+    stack = [(folder, root_full, chain0, wl0)]
+    while stack:
+        d, full, chain, wl = stack.pop()
+        here = None
+        if cls != CLASS_E:
+            here = _ignore_lines(d, ".gitignore", strict=cls == CLASS_D)
+            ignore_files += 1
+            if cls == CLASS_D:
+                wl = wl + _whitelists(here)
+                for name in (".ignore", ".rgignore"):
+                    wl = wl + _whitelists(_ignore_lines(d, name, strict=True))
+                ignore_files += 2
+            if ignore_files > IGNORE_FILES_MAX:
+                raise _Downgrade
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            continue
+        for e in entries:
+            seen += 1
+            if seen > WALK_LIMIT or (seen & 255 == 0 and time.monotonic() > deadline):
+                raise _WalkLimit
+            name = e.name
+            try:
+                is_link = e.is_symlink()
+                is_dir = not is_link and e.is_dir(follow_symlinks=False)
+            except OSError:
+                is_link, is_dir = True, False  # cannot tell: give it the full check
+            if cls == CLASS_D and name.startswith(".") and not _whitelisted(name, wl):
+                continue  # T2: ripgrep's default skips hidden names
+            if is_dir:
+                if name in (".git", "__pycache__"):
+                    continue
+                if any(fnmatch_case(name, x) for x in exclude_dirs):
+                    continue  # T5
+                if repo:
+                    if name == "node_modules" and _skips_node_modules(chain + [here], here):
+                        continue
+                    if _ignores_all(e.path):
+                        continue
+                need = full or bool(last_part.match(_norm(name)))
+                stack.append((e.path, need, chain + [here] if repo else chain, wl))
+                continue
+            if includes and not any(fnmatch_case(name, x) for x in includes):
+                continue  # T5: not included
+            if (
+                excludes
+                and any(fnmatch_case(name, x) for x in excludes)
+                and not any(fnmatch_case(name, x) for x in includes)
+            ):
+                continue  # T5: excluded and not included
+            need = is_link or full or bool(last_part.match(_norm(name)))
+            if need and blocked_path(e.path, rules):
+                return e.path
+        if time.monotonic() > deadline:
+            raise _WalkLimit
+    return None
 
 
 WINDOWS = sys.platform == "win32"
@@ -1995,8 +2250,191 @@ def substitute_variables(command):
     return text
 
 
-def grep_targets(part, cwd):
-    """If this command segment is a recursive grep, return the folders it searches."""
+# Options that take a value in the next word (or after `=`). A value is never a path, so a
+# wrong entry here could hide a folder; only options known to take a value are listed.
+GREP_VALUE_OPTS = {
+    "short": set("efmABCdD"),
+    "long": {
+        "--regexp",
+        "--file",
+        "--max-count",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--directories",
+        "--devices",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--exclude-from",
+        "--label",
+        "--binary-files",
+        "--group-separator",
+    },
+}
+RG_VALUE_OPTS = {
+    "short": set("efgtTmABCMjEdr"),
+    "long": {
+        "--regexp",
+        "--file",
+        "--glob",
+        "--iglob",
+        "--type",
+        "--type-not",
+        "--type-add",
+        "--type-clear",
+        "--max-count",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-columns",
+        "--threads",
+        "--encoding",
+        "--max-depth",
+        "--replace",
+        "--pre",
+        "--pre-glob",
+        "--ignore-file",
+        "--max-filesize",
+        "--path-separator",
+        "--sort",
+        "--sortr",
+        "--color",
+        "--colors",
+        "--context-separator",
+        "--field-context-separator",
+        "--field-match-separator",
+        "--engine",
+        "--dfa-size-limit",
+        "--regex-size-limit",
+        "--hostname-bin",
+        "--hyperlink-format",
+        "--generate",
+    },
+}
+AG_VALUE_OPTS = {
+    "short": set("GgABCmp"),
+    "long": {
+        "--file-search-regex",
+        "--ignore",
+        "--ignore-dir",
+        "--depth",
+        "--pager",
+        "--path-to-ignore",
+        "--max-count",
+        "--after",
+        "--before",
+        "--context",
+    },
+}
+GIT_GREP_VALUE_OPTS = {
+    "short": set("efmABCO"),
+    "long": {
+        "--max-depth",
+        "--threads",
+        "--max-count",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--open-files-in-pager",
+    },
+}
+GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+SEARCH_CLASSES = {
+    "grep": CLASS_E,
+    "egrep": CLASS_E,
+    "fgrep": CLASS_E,
+    "zgrep": CLASS_E,
+    "ugrep": CLASS_E,
+    "ack": CLASS_E,
+    "ag": CLASS_I,
+    "git-grep": CLASS_I,
+    "rg": CLASS_D,
+}
+
+
+def _literal(value):
+    """A flag value the guard can read as written: no expansion left in it."""
+    return not any(c in value for c in "$`\\") and "\n" not in value
+
+
+def _split_options(args, value_opts):
+    """(options as (name, value or None) pairs, positional words). Short groups such as `-rn`
+    give one pair per letter; a value-taking letter takes the rest of the group or the next
+    word."""
+    opts, pos, i = [], [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            pos += args[i + 1 :]
+            break
+        if a.startswith("--"):
+            name, eq, val = a.partition("=")
+            if eq:
+                opts.append((name, val))
+            elif name in value_opts["long"] and i + 1 < len(args):
+                opts.append((name, args[i + 1]))
+                i += 1
+            else:
+                opts.append((name, None))
+        elif a.startswith("-") and len(a) > 1:
+            j = 1
+            while j < len(a):
+                c = a[j]
+                if c in value_opts["short"]:
+                    rest = a[j + 1 :]
+                    if rest:
+                        opts.append(("-" + c, rest))
+                    elif i + 1 < len(args):
+                        opts.append(("-" + c, args[i + 1]))
+                        i += 1
+                    else:
+                        opts.append(("-" + c, None))
+                    break
+                opts.append(("-" + c, None))
+                j += 1
+        else:
+            pos.append(a)
+        i += 1
+    return opts, pos
+
+
+def ripgrep_config_unset():
+    """T3: True only when `guard install` recorded that RIPGREP_CONFIG_PATH was not set."""
+    path = os.path.join(home_dir(), ".denypeek", "guard-state.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.loads(f.read(1_000_000))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("ripgrep_config") == "unset"
+
+
+def _rg_class(opts, command):
+    """T1 and T3 for ripgrep: D by default, I with --hidden, E when anything widens it."""
+    if "RIPGREP_CONFIG_PATH" in command or not ripgrep_config_unset():
+        return CLASS_E
+    cls = CLASS_D
+    for name, val in opts:
+        if val is not None and not _literal(val):
+            return CLASS_E
+        if name.startswith("--no-ignore") or name in (
+            "-u",
+            "--unrestricted",
+            "--pre",
+            "--ignore-file",
+        ):
+            return CLASS_E
+        if name in ("-g", "--glob", "--iglob") and not (val or "").startswith("!"):
+            return CLASS_E
+        if name in ("--hidden", "-."):
+            cls = CLASS_I
+    return cls
+
+
+def search_targets(part, cwd, command=""):
+    """SPEC 3b: the searches a command segment runs, as Search objects (folder, class, what
+    the command narrows). Only recursive searches; a folder that does not exist is left out."""
     try:
         words = shlex.split(part, posix=True)
     except ValueError:
@@ -2007,51 +2445,70 @@ def grep_targets(part, cwd):
         return []
     prog = os.path.basename(words[0]).lower()
     args = words[1:]
+    base = cwd
     if prog == "git":
-        if not args or args[0] != "grep":
+        i = 0
+        while i < len(args) and args[i].startswith("-"):
+            name, eq, val = args[i].partition("=")
+            if name in GIT_VALUE_OPTS and not eq and i + 1 < len(args):
+                if name == "-C":
+                    base = expand(args[i + 1], base) or base
+                i += 2
+                continue
+            if name == "-C" and eq:
+                base = expand(val, base) or base
+            i += 1
+        if i >= len(args) or args[i] != "grep":
             return []
-        prog, args = "git-grep", args[1:]
-    if prog not in GREP_NAMES and prog != "git-grep":
+        prog, args = "git-grep", args[i + 1 :]
+    if prog not in SEARCH_CLASSES:
         return []
-    # grep -d recurse / --directories=recurse read the whole tree too (G6)
-    dir_recurse = any(a in ("--directories=recurse", "-drecurse") for a in args) or any(
-        a == "-d" and i + 1 < len(args) and args[i + 1] == "recurse" for i, a in enumerate(args)
+    value_opts = {"rg": RG_VALUE_OPTS, "ag": AG_VALUE_OPTS, "git-grep": GIT_GREP_VALUE_OPTS}.get(
+        prog, GREP_VALUE_OPTS
     )
-    recursive = (
-        dir_recurse
-        or prog in ("rg", "ag", "ack", "git-grep")
-        or any(
-            a in ("-r", "-R", "--recursive", "--dereference-recursive")
-            or (a.startswith("-") and not a.startswith("--") and ("r" in a[1:] or "R" in a[1:]))
-            for a in args
-        )
-    )
-    if not recursive:
-        return []
-    cleaned, skip_next = [], False
-    for a in args:
-        if skip_next:
-            skip_next = False
-            continue
-        if a in ("-d", "-e", "-f", "--regexp", "--file", "--include", "--exclude", "-g", "-t"):
-            skip_next = True  # the next word is this option's value
-            continue
-        cleaned.append(a)
-    positional = [a for a in cleaned if not a.startswith("-")]
-    paths = positional[1:] if prog not in ("git-grep",) else positional[1:]
+    opts, pos = _split_options(args, value_opts)
+    names = {n for n, _ in opts}
+    includes, excludes, exclude_dirs = [], [], []
+    if prog in ("grep", "egrep", "fgrep", "zgrep", "ugrep"):
+        dir_recurse = any((n in ("-d", "--directories") and v == "recurse") for n, v in opts)
+        if not (dir_recurse or names & {"-r", "-R", "--recursive", "--dereference-recursive"}):
+            return []
+        cls = CLASS_E
+        if prog != "ugrep":  # T5 is checked on grep only
+            for n, v in opts:
+                if v is None or not _literal(v) or "/" in v:
+                    continue
+                if n == "--include":
+                    includes.append(v)
+                elif n == "--exclude":
+                    excludes.append(v)
+                elif n == "--exclude-dir":
+                    exclude_dirs.append(v)
+    elif prog == "rg":
+        cls = _rg_class(opts, command)
+    elif prog == "ag":
+        widen = {"-u", "--unrestricted", "-U", "--skip-vcs-ignores", "-a", "--all-types"}
+        cls = CLASS_E if names & widen else CLASS_I
+    elif prog == "git-grep":
+        widen = {"--no-index", "--untracked", "--no-exclude-standard"}
+        cls = CLASS_E if names & widen else CLASS_I
+    else:
+        cls = SEARCH_CLASSES[prog]
+    # With -e or -f the pattern is an option value, so every positional word is a path.
+    pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
+    paths = pos if pattern_in_opts else pos[1:]
     if not paths:
         paths = ["."]
-    honours_ignores = prog in ("rg", "ag", "git-grep")
     out = []
     for p in paths:
-        found = [expand(p, cwd)]
+        found = [expand(p, base)]
         if any(c in p for c in "*?["):  # grep -r foo *: search what the pattern matches
             w = Word()
             w.chars = [(c, U if c in "*?[]" else Q) for c in p]
-            found += word_paths(w, [cwd])
+            found += word_paths(w, [base])
         for full in found:
             if full and not is_network(full) and os.path.isdir(full):
-                out.append((full, honours_ignores))
+                out.append(Search(full, cls, includes, excludes, exclude_dirs))
     return out
 
 
@@ -2276,12 +2733,10 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                             return hidden
                     return reason_for(path, "names")
     for part in parts:
-        for folder, honours_ignores in grep_targets(part, cwd):
-            try:
-                if folder_holds_secret(folder, rules, deadline, honours_ignores):
-                    return f"recursive search over {folder}, which holds a secret file"
-            except TimeoutError:
-                return f"recursive search over {folder}: too many files to check; narrow the path"
+        for search in search_targets(part, cwd, command):
+            reason = search_tree(search, rules, deadline)
+            if reason:
+                return reason
     return None
 
 
@@ -2398,29 +2853,24 @@ def decide(event, rules):
             base = s.split("**", 1)[0] if "**" in s else s
             folder = expand(base or ".", cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
-                try:
-                    if folder_holds_secret(folder, rules, deadline):
-                        return f"reading many files under {folder}, which holds a secret file"
-                except TimeoutError:
-                    return f"reading many files under {folder}: too many to check; narrow it"
+                reason = search_tree(Search(folder, CLASS_I), rules, deadline)
+                if reason:
+                    return reason
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
-                try:
-                    if folder_holds_secret(folder, rules, deadline):
-                        return f"search over {folder}, which holds a secret file; narrow the path"
-                except TimeoutError:
-                    return f"search over {folder}: too many files to check; narrow the path"
+                # T1: the agents' own search tools are class I until their defaults are known
+                reason = search_tree(Search(folder, CLASS_I), rules, deadline)
+                if reason:
+                    return reason
     if (
         tool in GREP_TOOLS
         and isinstance(tool_input, dict)
         and not (tool_input.get("path") or tool_input.get("dir_path"))
     ):
-        try:
-            if folder_holds_secret(cwd, rules, deadline):
-                return f"search over {cwd}, which holds a secret file; narrow the path"
-        except TimeoutError:
-            return f"search over {cwd}: too many files to check; narrow the path"
+        reason = search_tree(Search(cwd, CLASS_I), rules, deadline)
+        if reason:
+            return reason
     return None
 
 
@@ -2430,7 +2880,11 @@ def decide(event, rules):
 def deny_output(agent, event_name, reason):
     """(stdout, exit code) that each agent reads as a denial."""
     msg = f"denypeek blocked this: {reason}."
-    if reason != HIDDEN_GLOB_REASON:
+    if (
+        reason not in (HIDDEN_GLOB_REASON, TREE_TOO_BIG)
+        and "denypeek protects" not in reason
+        and not reason.endswith(TIMEOUT_ADVICE)
+    ):
         msg += " If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":
         return json.dumps({"permission": "deny", "user_message": msg, "agent_message": msg}), 0
@@ -2495,7 +2949,12 @@ def run(argv, stdin_bytes):
     try:
         reason = decide(event, rules)
     except HookTimeout as exc:
-        return fail_closed(agent, str(exc))
+        # A decision that ran out of time is a normal denial, sent the way each agent shows a
+        # block (Claude Code labels exit 2 as a "hook error"). Crashes and bad input still exit
+        # 2: there the output itself may not be trusted, and exit 2 blocks on its own.
+        reason = f"{exc}, so the guard could not decide in time; {TIMEOUT_ADVICE}"
+        out, code = deny_output(agent, event.get("hook_event_name"), reason)
+        return out, code, reason
     if reason:
         out, code = deny_output(agent, event.get("hook_event_name"), reason)
         return out, code, reason

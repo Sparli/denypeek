@@ -964,12 +964,37 @@ TREE_TOO_BIG = (
 )
 
 
-class Search:
-    """One folder a search reads, how (its class), and what the command narrows (T5)."""
+XARGS_SEARCH = (
+    "a recursive search that gets its folders from xargs cannot be checked; name the folders "
+    "in the command instead (for example `grep -rn foo src`)"
+)
+# Commands that run another command, which the hook looks through to find a search.
+WRAPPERS = {
+    "env",
+    "command",
+    "builtin",
+    "nice",
+    "nohup",
+    "timeout",
+    "time",
+    "stdbuf",
+    "exec",
+    "xargs",
+    "sudo",
+    "doas",
+    "caffeinate",
+    "ionice",
+}
 
-    def __init__(self, folder, cls, includes=(), excludes=(), exclude_dirs=()):
+
+class Search:
+    """One folder a search reads, how (its class), and what the command narrows (T5).
+    `reason`: deny at once with this text (a search the hook cannot check)."""
+
+    def __init__(self, folder, cls, includes=(), excludes=(), exclude_dirs=(), reason=None):
         self.folder, self.cls = folder, cls
         self.includes, self.excludes, self.exclude_dirs = includes, excludes, exclude_dirs
+        self.reason = reason
 
 
 class _WalkLimit(Exception):
@@ -1137,6 +1162,8 @@ def fnmatch_case(name, pat):
 
 def search_tree(search, rules, deadline):
     """The reason to deny this search, or None. T6 first, then the walk (T2, T4, T5, T7, T8)."""
+    if search.reason:
+        return search.reason
     folder = search.folder
     t = protected_under(folder)
     if t:
@@ -2505,7 +2532,41 @@ def _any_abbrev(names, fulls):
     return any(_abbrev(n, f) for n in names for f in fulls)
 
 
-def search_targets(part, cwd, command=""):
+def _unwrap(words, bases):
+    """Look through wrapper commands (`env`, `nice`, `timeout`, `xargs`, `sudo` ...) to the
+    command they run. Returns (words, bases, through xargs?). The run command is the first
+    later word that names a search tool; `env -C DIR` and `sudo -D DIR` change the folder."""
+    via_xargs = False
+    for _ in range(8):
+        if not words or os.path.basename(words[0]).lower() not in WRAPPERS:
+            break
+        wrapper = os.path.basename(words[0]).lower()
+        via_xargs = via_xargs or wrapper == "xargs"
+        for i, w in enumerate(words[1:], 1):
+            name, eq, val = w.partition("=")
+            if (
+                wrapper in ("env", "sudo")
+                and name in ("-C", "--chdir", "-D")
+                and i + 1 < len(words)
+            ):
+                bases = [expand(val if eq else words[i + 1], b) or b for b in bases]
+        nxt = next(
+            (
+                i
+                for i, w in enumerate(words[1:], 1)
+                if os.path.basename(w).lower() in SEARCH_CLASSES
+                or w == "git"
+                or os.path.basename(w).lower() in WRAPPERS
+            ),
+            None,
+        )
+        if nxt is None:
+            return [], bases, via_xargs
+        words = words[nxt:]
+    return words, bases, via_xargs
+
+
+def search_targets(part, cwd, command="", folders=None):
     """SPEC 3b: the searches a command segment runs, as Search objects (folder, class, what
     the command narrows). Only recursive searches; a folder that does not exist is left out."""
     try:
@@ -2514,22 +2575,25 @@ def search_targets(part, cwd, command=""):
         words = part.split()
     while words and ("=" in words[0] and not words[0].startswith("-")):
         words = words[1:]  # leading VAR=value
+    # Relative paths count from every folder the command may be in: the session's folder and
+    # each one it changes into with `cd` or `pushd`.
+    bases = list(dict.fromkeys(folders or [cwd]))
+    words, bases, via_xargs = _unwrap(words, bases)
     if not words:
         return []
     prog = os.path.basename(words[0]).lower()
     args = words[1:]
-    base = cwd
     if prog == "git":
         i = 0
         while i < len(args) and args[i].startswith("-"):
             name, eq, val = args[i].partition("=")
             if name in GIT_VALUE_OPTS and not eq and i + 1 < len(args):
                 if name == "-C":
-                    base = expand(args[i + 1], base) or base
+                    bases = [expand(args[i + 1], b) or b for b in bases]
                 i += 2
                 continue
             if name == "-C" and eq:
-                base = expand(val, base) or base
+                bases = [expand(val, b) or b for b in bases]
             i += 1
         if i >= len(args) or args[i] != "grep":
             return []
@@ -2586,13 +2650,15 @@ def search_targets(part, cwd, command=""):
         for p in (words if pattern_in_opts else words[1:]) or ["."]:
             if p not in paths:
                 paths.append(p)
+    if via_xargs:  # its folders come from input the hook cannot see
+        return [Search(bases[0], CLASS_E, reason=XARGS_SEARCH)]
     out = []
     for p in paths:
-        found = [expand(p, base)]
+        found = [expand(p, b) for b in bases]
         if any(c in p for c in "*?["):  # grep -r foo *: search what the pattern matches
             w = Word()
             w.chars = [(c, U if c in "*?[]" else Q) for c in p]
-            found += word_paths(w, [base])
+            found += word_paths(w, bases)
         for full in found:
             if full and not is_network(full) and os.path.isdir(full):
                 out.append(Search(full, cls, includes, excludes, exclude_dirs))
@@ -2820,7 +2886,7 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                             return hidden
                     return reason_for(path, "names")
     for part in parts:
-        for search in search_targets(part, cwd, command):
+        for search in search_targets(part, cwd, command, folders):
             reason = search_tree(search, rules, deadline)
             if reason:
                 return reason

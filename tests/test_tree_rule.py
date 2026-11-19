@@ -707,3 +707,61 @@ def test_abbreviated_long_options_count(template, isolated, tmp_path):
         assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: tool reads nothing"
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     assert denied, (command, out)
+
+
+# A search behind a wrapper command, or after `cd`, reads what it reads without one.
+WRAPPED = [
+    ("env grep -r {m} .", "proj"),
+    ("env FOO=1 grep -r {m} .", "proj"),
+    ("command grep -r {m} .", "proj"),
+    ("nice grep -r {m} .", "proj"),
+    ("nice -n 5 grep -r {m} .", "proj"),
+    ("nohup grep -r {m} .", "proj"),
+    ("timeout 5 grep -r {m} .", "proj"),
+    ("timeout -s KILL 5 grep -r {m} .", "proj"),
+    ("time grep -r {m} .", "proj"),
+    ("stdbuf -oL grep -r {m} .", "proj"),
+    ("exec grep -r {m} .", "proj"),
+    ("sudo grep -r {m} .", "proj"),
+    ("echo . | xargs grep -r {m}", "proj"),
+    ("xargs -n1 grep -r {m} < list", "proj"),
+    ("cd {proj} && grep -r {m} .", "clean"),
+    ("cd {proj}; rg --hidden {m}", "clean"),
+    ("(cd {proj} && grep -r {m} .)", "clean"),
+    ("env -C {proj} grep -r {m} .", "clean"),
+]
+REAL_RUN = {
+    "env grep -r {m} .",
+    "command grep -r {m} .",
+    "nice grep -r {m} .",
+    "timeout 5 grep -r {m} .",
+    "echo . | xargs grep -r {m}",
+    "cd {proj} && grep -r {m} .",
+}
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("template,where", WRAPPED)
+def test_wrappers_and_cd_do_not_hide_a_search(template, where, isolated, tmp_path):
+    proj = review_project(tmp_path)
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    installed(isolated)
+    cwd = proj if where == "proj" else clean
+    command = template.format(m=MARK, proj=proj)
+    if template in REAL_RUN:
+        assert tool_prints_marker(command, cwd, tmp_path, isolated), "fixture: reads nothing"
+    denied, out, _ = hook("claude", shell_event("claude", command, cwd), cwd)
+    assert denied, (command, out)
+
+
+@POSIX_ONLY
+def test_xargs_message_suggests_an_allowed_rewrite(isolated, tmp_path):
+    proj = review_project(tmp_path)
+    installed(isolated)
+    denied, out, _ = hook(
+        "claude", shell_event("claude", "echo src | xargs grep -rn foo", proj), proj
+    )
+    assert denied and "xargs" in reason_of(out), out
+    denied, out, _ = hook("claude", shell_event("claude", "grep -rn foo src", proj), proj)
+    assert not denied, out

@@ -288,7 +288,14 @@ How a blocked `.env` read works:
      search. A search whose folders cannot be told from the command is denied: one fed by
      `xargs` or a file list, or with a path that holds a variable or command substitution. So is
      `git grep` over a revision, the index (`--cached`), a pattern path or another git folder
-     (`--git-dir`, `GIT_DIR=`): only files on disk can be checked.
+     (`--git-dir`, `GIT_DIR=`): only files on disk can be checked. So is a search with a path
+     that does not exist, or over a folder that holds a folder the guard cannot list.
+   - Redirections are never read as paths (`rg foo 2>/dev/null` searches the working folder).
+     After `cd X &&` the search is walked in `X` only. `rg`, `ag` or `ack` after a `|`, with no
+     path and no input redirection of its own, reads the pipe and is not walked.
+   - A search is denied when the same command first runs something that may write files
+     (anything but a short list of read-only commands, including inside `$(…)`, `<(…)` or a
+     `bash -c` string), since that could put a secret file where the search then reads.
    - A search that covers your home folder, or a folder above denypeek's or an agent's folder, is
      denied at once. A walk of more than 100,000 entries or a second, for all its folders
      together, is denied as too big to check. `rg --files` and other forms that read no file

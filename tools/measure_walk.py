@@ -3,7 +3,7 @@
     uv run python tools/measure_walk.py [--entries 50000] [--runs 5]
 
 Builds a project in a temp folder (nested folders of small files, like node_modules), then
-times the guard's own walk over it as `grep -r` would (class E, every entry visited) with the
+times the guard's own walk over it as any recursive search is walked (every entry visited), with the
 default pattern list. The first run after building is closer to a cold cache than the rest,
 but not cold: the files were just written. A truly cold cache needs the OS cache dropped
 (`sudo purge` on macOS, `echo 3 > /proc/sys/vm/drop_caches` on Linux), which this script
@@ -57,7 +57,7 @@ def main() -> int:
         g.WALK_LIMIT = 10**9
         times = []
         for _ in range(args.runs):
-            search = g.Search(str(proj), g.CLASS_E)
+            search = g.Search(str(proj))
             t = time.perf_counter()
             reason = g.search_tree(search, rules, time.monotonic() + 600)
             times.append(time.perf_counter() - t)

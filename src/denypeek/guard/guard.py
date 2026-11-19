@@ -927,51 +927,22 @@ def _brace_sequence(m, limit):
 
 
 # --- the tree rule: SPEC 3b, recursive search ---------------------------------------------
-# What a search tool can read under a folder decides, not the folder's size. Class E reads
-# everything; class I reads hidden names but honours ignore files; class D (ripgrep's
-# default) also skips every hidden name. Ignore files count only as evidence the tool is
-# known to use (T2), and the walk looks at names only, with the full check for a name that
-# can match a pattern (T7).
-
-CLASS_E, CLASS_I, CLASS_D = "E", "I", "D"
-IGNORE_FILE_MAX = 64 * 1024  # a larger ignore file cannot be read with certainty
-IGNORE_FILES_MAX = 5_000  # ignore files read in one walk; past this, too big to check
-IGNORE_NAMES = (".gitignore", ".ignore", ".rgignore")
-# The only lines that let the walk skip node_modules: exact, with no glob to interpret.
-NODE_MODULES_ANYWHERE = {"node_modules", "node_modules/"}
-NODE_MODULES_HERE = {"/node_modules", "/node_modules/"}
-# git configuration that can add an ignore file or pull in other configuration
-GIT_CONFIG_UNCERTAIN = re.compile(r"excludesfile|^\s*\[\s*include", re.I | re.M)
-SYSTEM_GIT_CONFIGS = (
-    "/etc/gitconfig",
-    "/usr/local/etc/gitconfig",
-    "/opt/homebrew/etc/gitconfig",
-    "/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig",
-    "/Applications/Xcode.app/Contents/Developer/usr/share/git-core/gitconfig",
-)
-# A command that names an ignore source or git's configuration may change what a search in the
-# same command skips: such a search counts as reading everything.
-IGNORE_SOURCE_WORDS = re.compile(
-    r"\.gitignore|\.ignore|\.rgignore|(?:^|[^\w-])exclude(?:$|[^\w-])|excludesfile|"
-    r"\.gitconfig|git/ignore|git/config|XDG_CONFIG_HOME|GIT_CONFIG|GIT_DIR|GIT_WORK_TREE",
-    re.I,
-)
+# A recursive search is allowed only if nothing under the folders it reads matches the secret
+# patterns. The walk skips nothing: no hidden names, no ignore files, no node_modules, for any
+# tool, because what a tool skips depends on files and settings an agent can change. Only
+# grep's own --include, --exclude and --exclude-dir narrow it, when written as literals. The
+# walk looks at names only, and a name gets the full check only when it can match a pattern.
 
 TIMEOUT_ADVICE = "try a shorter command, or search a narrower folder"
 TREE_TOO_BIG = (
     "too many files to check in time; search a narrower folder, or skip dependency folders "
     "(with grep add `--exclude-dir=node_modules --exclude-dir=.venv`)"
 )
-
-
+TREE_SECRET = "a search from here would read a secret file"
 GIT_GREP_UNCHECKED = (
-    "git grep with a revision or a pattern path reads files the guard cannot list; search the "
-    "working tree and name folders instead (for example `git grep foo -- src`)"
-)
-# A command that defines a function or an alias may give a search tool's name to another
-# command, so every search in it counts as reading everything.
-DEFINES_COMMAND = re.compile(
-    r"(?:^|[;&|(){}\s])(?:function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\))|(?:^|[;&|(\s])alias\s"
+    "git grep with a revision, the index (--cached) or a pattern path reads files the guard "
+    "cannot list; search the working tree and name folders instead (for example "
+    "`git grep foo -- src`)"
 )
 XARGS_SEARCH = (
     "a recursive search that gets its folders from xargs cannot be checked; name the folders "
@@ -994,14 +965,48 @@ WRAPPERS = {
     "caffeinate",
     "ionice",
 }
+SEARCH_TOOLS = {"grep", "egrep", "fgrep", "zgrep", "ugrep", "ack", "ag", "git-grep", "rg"}
+# Public files that match a secret pattern by name but hold nothing secret. Exact path ends
+# only: `certifi/cacert.pem` is the public Mozilla list of certificate authorities, in almost
+# every Python virtualenv. It does not count for the tree rule (it still counts when named).
+PUBLIC_FILES = (("certifi", "cacert.pem"),)
+SHOW_PATHS = 2  # secret files named in the deny message
+SHOW_FOLDERS = 8  # clear folders listed in it
+SHOW_CHARS = 60  # longest name shown
+
+_UNSAFE_CHARS = (
+    set(range(0x20))
+    | {0x7F}
+    | set(range(0x80, 0xA0))
+    | {0x061C, 0x200E, 0x200F, 0x2028}
+    | {0x2029, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069, 0xFEFF}
+)
+
+
+def shown_name(text):
+    """A name from disk, safe to show: control, bidi and other unsafe characters escaped as
+    \\xNN or \\uNNNN (as the CLI does), and cut to SHOW_CHARS characters."""
+    out = []
+    for ch in text:
+        o = ord(ch)
+        if ch == "\n":
+            out.append("\\n")
+        elif o in _UNSAFE_CHARS:
+            out.append(f"\\x{o:02x}" if o < 0x100 else f"\\u{o:04x}")
+        elif ch == "\\" and os.sep == "/":
+            out.append("\\\\")
+        else:
+            out.append(ch)
+    text = "".join(out)
+    return text if len(text) <= SHOW_CHARS else text[: SHOW_CHARS - 1] + "…"
 
 
 class Search:
-    """One folder a search reads, how (its class), and what the command narrows (T5).
-    `reason`: deny at once with this text (a search the hook cannot check)."""
+    """One folder a search reads and what grep's own options narrow (T5). `reason`: deny at
+    once with this text (a search whose folders or files the hook cannot tell)."""
 
-    def __init__(self, folder, cls, includes=(), excludes=(), exclude_dirs=(), reason=None):
-        self.folder, self.cls = folder, cls
+    def __init__(self, folder, includes=(), excludes=(), exclude_dirs=(), reason=None):
+        self.folder = folder
         self.includes, self.excludes, self.exclude_dirs = includes, excludes, exclude_dirs
         self.reason = reason
 
@@ -1010,16 +1015,23 @@ class _WalkLimit(Exception):
     pass
 
 
-def tree_secret_reason(path):
-    name = os.path.basename(path.rstrip("/")) or path
-    return (
-        f"the search would read a secret file ({name}); search a narrower folder, or leave it "
-        "out: `rg` skips hidden files; with grep add `--include` or `--exclude-dir`"
-    )
+def tree_secret_reason(found, clear, more):
+    """Message (a): why, the first secret files (relative to the folder), and the folders
+    directly under it that the same walk found clear."""
+    names = ", ".join(shown_name(f) for f in found[:SHOW_PATHS])
+    msg = f"{TREE_SECRET} ({names}); search a narrower folder"
+    if clear:
+        listed = ", ".join(shown_name(c) for c in clear[:SHOW_FOLDERS])
+        extra = len(clear) - SHOW_FOLDERS + more
+        msg += f". Clear to search: {listed}" + (f" and {extra} more" if extra > 0 else "")
+    else:
+        msg += " (no folder directly under this one is clear), or leave the files out with "
+        msg += "grep's `--exclude` or `--exclude-dir`"
+    return msg
 
 
 def tree_protected_reason(path):
-    name = os.path.basename(path.rstrip("/")) or path
+    name = shown_name(os.path.basename(path.rstrip("/")) or path)
     return (
         f"the search covers {name}, which denypeek protects so an agent cannot switch the guard "
         "off; search a folder that does not hold it"
@@ -1064,113 +1076,19 @@ def _last_part_regex(rules):
     return re.compile("^(?:" + "|".join(out) + ")$")
 
 
-def _read_ignore(path):
-    """(lines, certain). (None, True) when there is no such file. A file that cannot be read
-    in full as UTF-8 is not certain."""
-    try:
-        size = os.path.getsize(path)
-    except (FileNotFoundError, NotADirectoryError):
-        return None, True
-    except (OSError, ValueError):
-        return None, False
-    if size > IGNORE_FILE_MAX:
-        return None, False
-    try:
-        with open(path, "rb") as fh:
-            text = fh.read(IGNORE_FILE_MAX + 1).decode("utf-8")
-    except (OSError, ValueError):
-        return None, False
-    return [ln.rstrip() for ln in text.splitlines()], True
-
-
-def _negates(lines):
-    """Any line that may re-include a file. No attempt is made to follow gitignore matching:
-    a `!` anywhere in a line counts."""
-    return any("!" in ln for ln in lines or ())
-
-
-def _patterns(lines):
-    return [ln for ln in lines or () if ln and not ln.startswith("#")]
-
-
-def _repo_top(folder):
-    """The folder holding `.git` at or above `folder`, or None."""
-    d = os.path.realpath(folder)
-    for _ in range(64):
-        if os.path.lexists(os.path.join(d, ".git")):
-            return d
-        up = os.path.dirname(d)
-        if up == d:
-            return None
-        d = up
-    return None
-
-
-def _git_dir(top):
-    """The repository's git folder (following a worktree's `gitdir:` file and its
-    `commondir`), or None when it cannot be told for certain."""
-    dot = os.path.join(top, ".git")
-    if os.path.isdir(dot):
-        return dot
-    lines, ok = _read_ignore(dot)
-    if not ok or not lines or not lines[0].startswith("gitdir:"):
-        return None
-    gd = os.path.normpath(os.path.join(top, lines[0][len("gitdir:") :].strip()))
-    common, ok = _read_ignore(os.path.join(gd, "commondir"))
-    if not ok:
-        return None
-    if common:
-        gd = os.path.normpath(os.path.join(gd, common[0].strip()))
-    return gd if os.path.isdir(gd) else None
-
-
-def _above(folder):
-    """The folders above `folder`, nearest first."""
-    out, d = [], os.path.realpath(folder)
-    for _ in range(64):
-        up = os.path.dirname(d)
-        if up == d:
-            break
-        out.append(up)
-        d = up
-    return out
-
-
-def ignores_uncertain(folder, repo_top):
-    """True when an ignore source outside the walked folders may re-include a file, or
-    cannot be read with certainty. Then the walk skips nothing."""
-    home = home_dir()
-    configs = [os.path.join(home, ".gitconfig"), os.path.join(home, ".config", "git", "config")]
-    configs += list(SYSTEM_GIT_CONFIGS)
-    gd = None
-    if repo_top:
-        gd = _git_dir(repo_top)
-        if gd is None:
-            return True
-        configs.append(os.path.join(gd, "config"))
-    for cfg in configs:
-        lines, ok = _read_ignore(cfg)
-        if not ok or (lines and GIT_CONFIG_UNCERTAIN.search("\n".join(lines))):
-            return True
-    sources = [os.path.join(home, ".config", "git", "ignore")]
-    if gd:
-        sources.append(os.path.join(gd, "info", "exclude"))
-    sources += [os.path.join(d, n) for d in _above(folder) for n in IGNORE_NAMES]
-    for src in sources:
-        lines, ok = _read_ignore(src)
-        if not ok or _negates(lines):
-            return True
-    return False
-
-
 def fnmatch_case(name, pat):
     import fnmatch
 
     return fnmatch.fnmatchcase(name, pat)
 
 
+def _public(path):
+    parts = path.replace("\\", "/").split("/")
+    return any(tuple(parts[-len(end) :]) == end for end in PUBLIC_FILES)
+
+
 def search_tree(search, rules, deadline):
-    """The reason to deny this search, or None. T6 first, then the walk (T2, T4, T5, T7, T8)."""
+    """The reason to deny this search, or None: T6 first, then the walk (T5, T7, T8)."""
     if search.reason:
         return search.reason
     folder = search.folder
@@ -1180,19 +1098,16 @@ def search_tree(search, rules, deadline):
     if is_protected(folder):
         return tree_protected_reason(folder)
     try:
-        hit = _walk(folder, search.cls, search, rules, deadline)
+        result = _walk(folder, search, rules, deadline)
     except _WalkLimit:
         return TREE_TOO_BIG
-    return tree_secret_reason(hit) if hit else None
+    return tree_secret_reason(*result) if result else None
 
 
-def _walk(folder, cls, search, rules, deadline):
-    """The first file the search can read that is blocked, or None. Raises _WalkLimit.
-
-    Skips on the strength of an ignore file only when certain: inside a repository,
-    with no `!` line and no unreadable file in any ignore source that applies, and only for
-    an exact `node_modules` line or a folder whose own `.gitignore` is exactly `*`. Hidden
-    names are skipped for class D only under the same condition."""
+def _walk(folder, search, rules, deadline):
+    """None if no file the search can read under `folder` is blocked. Otherwise (the first
+    secret files, relative to `folder`; the folders directly under it the walk found clear;
+    how many more there are). Raises _WalkLimit past the entry cap or the time limit."""
     last_part = _last_part_regex(rules)
     root_full = last_part is None
     if not root_full:
@@ -1202,66 +1117,54 @@ def _walk(folder, cls, search, rules, deadline):
         except (OSError, ValueError):
             pass
         root_full = any(last_part.match(c) for r in roots for c in r.split("/") if c)
-    repo_top = _repo_top(folder) if cls != CLASS_E else None
-    if cls != CLASS_E and ignores_uncertain(folder, repo_top):
-        cls = CLASS_E
-    nm_above = False
-    if repo_top:
-        for d in _above(folder):
-            if not d.startswith(repo_top):
-                break
-            lines, _ok = _read_ignore(os.path.join(d, ".gitignore"))
-            nm_above = nm_above or bool(set(_patterns(lines)) & NODE_MODULES_ANYWHERE)
+    found = []  # secret files, relative to the folder
+    dirty = set()  # folders directly under it that hold one
+    walked = set()  # folders directly under it that were walked
+    # (folder, path relative to the start, the top folder it lies in, full check below?)
+    stack = [(folder, "", None, root_full)]
+    try:
+        _walk_stack(stack, search, rules, deadline, last_part, found, dirty, walked)
+    except _WalkLimit:
+        if not found:
+            raise
+        return found, [], 0  # a secret file is certain; which folders are clear is not
+    if not found:
+        return None
+    clear = sorted(
+        (w for w in walked if w not in dirty and w != ".git"), key=lambda n: (n.startswith("."), n)
+    )
+    return found, clear, 0
+
+
+def _walk_stack(stack, search, rules, deadline, last_part, found, dirty, walked):
     includes, excludes, exclude_dirs = search.includes, search.excludes, search.exclude_dirs
     seen = 0
-    ignore_reads = 0
-    # (folder, full check below?, node_modules named above?, a `!` or doubt above?, root?)
-    stack = [(folder, root_full, nm_above, False, True)]
     while stack:
-        d, full, nm_seen, doubt, is_root = stack.pop()
+        d, rel, top, full = stack.pop()
+        if top in dirty:
+            continue  # already known to hold a secret file: no need to look further
         try:
-            entries = list(os.scandir(d))
+            entries = sorted(os.scandir(d), key=lambda e: e.name)
         except OSError:
             continue
-        nm_here = False
-        if cls != CLASS_E:
-            names = {e.name for e in entries}
-            own = {}
-            for n in IGNORE_NAMES:
-                if n in names:
-                    ignore_reads += 1
-                    if ignore_reads > IGNORE_FILES_MAX:
-                        raise _WalkLimit
-                    lines, ok = _read_ignore(os.path.join(d, n))
-                    own[n] = lines
-                    doubt = doubt or not ok or _negates(lines)
-            gitignore = set(_patterns(own.get(".gitignore")))
-            if repo_top and not doubt and not is_root and gitignore == {"*"}:
-                continue  # T2: the folder's own .gitignore ignores everything in it
-            nm_seen = nm_seen or bool(gitignore & NODE_MODULES_ANYWHERE)
-            nm_here = nm_seen or bool(gitignore & NODE_MODULES_HERE)
-        skipping = cls != CLASS_E and repo_top is not None and not doubt
         for e in entries:
             seen += 1
             if seen > WALK_LIMIT or (seen & 255 == 0 and time.monotonic() > deadline):
                 raise _WalkLimit
             name = e.name
+            path = f"{rel}/{name}" if rel else name
             try:
                 is_link = e.is_symlink()
                 is_dir = not is_link and e.is_dir(follow_symlinks=False)
             except OSError:
                 is_link, is_dir = True, False  # cannot tell: give it the full check
-            if cls == CLASS_D and not doubt and name.startswith("."):
-                continue  # T2: ripgrep's default skips hidden names
             if is_dir:
-                if name in (".git", "__pycache__"):
-                    continue
                 if any(fnmatch_case(name, x) for x in exclude_dirs):
                     continue  # T5
-                if skipping and name == "node_modules" and nm_here:
-                    continue  # T2: an exact .gitignore line names it, and nothing re-includes
                 need = full or bool(last_part.match(_norm(name)))
-                stack.append((e.path, need, nm_seen, doubt, False))
+                if top is None:
+                    walked.add(name)
+                stack.append((e.path, path, top if top is not None else name, need))
                 continue
             if includes and not any(fnmatch_case(name, x) for x in includes):
                 continue  # T5: not included
@@ -1272,11 +1175,16 @@ def _walk(folder, cls, search, rules, deadline):
             ):
                 continue  # T5: excluded and not included
             need = is_link or full or bool(last_part.match(_norm(name)))
-            if need and blocked_path(e.path, rules):
-                return e.path
+            if need and not _public(path) and blocked_path(e.path, rules):
+                if len(found) < SHOW_PATHS:
+                    found.append(path)
+                if top is None:
+                    dirty.add(None)
+                else:
+                    dirty.add(top)
+                    break
         if time.monotonic() > deadline:
             raise _WalkLimit
-    return None
 
 
 WINDOWS = sys.platform == "win32"
@@ -2427,17 +2335,6 @@ GIT_GREP_VALUE_OPTS = {
     },
 }
 GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
-SEARCH_CLASSES = {
-    "grep": CLASS_E,
-    "egrep": CLASS_E,
-    "fgrep": CLASS_E,
-    "zgrep": CLASS_E,
-    "ugrep": CLASS_E,
-    "ack": CLASS_E,
-    "ag": CLASS_I,
-    "git-grep": CLASS_I,
-    "rg": CLASS_D,
-}
 
 
 def _literal(value):
@@ -2495,41 +2392,6 @@ def _split_options(args, value_opts, take_optional=True):
     return opts, pos
 
 
-def ripgrep_config_unset():
-    """T3: True only when `guard install` recorded that RIPGREP_CONFIG_PATH was not set."""
-    path = os.path.join(home_dir(), ".denypeek", "guard-state.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.loads(f.read(1_000_000))
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and data.get("ripgrep_config") == "unset"
-
-
-def _rg_class(opts, command):
-    """T1 and T3 for ripgrep: D by default, I with --hidden, E when anything widens it."""
-    if "RIPGREP_CONFIG_PATH" in command or not ripgrep_config_unset():
-        return CLASS_E
-    cls = CLASS_D
-    for name, val in opts:
-        if val is not None and not _literal(val):
-            return CLASS_E
-        if name.startswith("--no-ignore") or name in (
-            "-u",
-            "--unrestricted",
-            "--pre",
-            "--ignore-file",
-        ):
-            return CLASS_E
-        if name in ("-g", "--glob", "--iglob") and not (val or "").startswith("!"):
-            return CLASS_E
-        if name in ("--hidden", "-."):
-            cls = CLASS_I
-    if WINDOWS and cls == CLASS_D:
-        cls = CLASS_I  # T3: ripgrep's hidden-name rule on Windows is unverified
-    return cls
-
-
 def _abbrev(name, full, least=3):
     """True if `name` is `full` or an abbreviation of it that getopt-style parsers (GNU and
     BSD grep, git, ag) accept: a prefix with at least `least` letters after `--`. A prefix that
@@ -2563,7 +2425,7 @@ def _unwrap(words, bases):
             (
                 i
                 for i, w in enumerate(words[1:], 1)
-                if os.path.basename(w).lower() in SEARCH_CLASSES
+                if os.path.basename(w).lower() in SEARCH_TOOLS
                 or w == "git"
                 or os.path.basename(w).lower() in WRAPPERS
             ),
@@ -2576,8 +2438,9 @@ def _unwrap(words, bases):
 
 
 def search_targets(part, cwd, command="", folders=None):
-    """SPEC 3b: the searches a command segment runs, as Search objects (folder, class, what
-    the command narrows). Only recursive searches; a folder that does not exist is left out."""
+    """SPEC 3b: the searches a command segment runs, as Search objects (a folder, and what
+    grep's own options narrow). Only recursive searches; a folder that does not exist is left
+    out. A search whose folders or files cannot be told is a Search that denies."""
     try:
         words = shlex.split(part, posix=True)
     except ValueError:
@@ -2607,7 +2470,7 @@ def search_targets(part, cwd, command="", folders=None):
         if i >= len(args) or args[i] != "grep":
             return []
         prog, args = "git-grep", args[i + 1 :]
-    if prog not in SEARCH_CLASSES:
+    if prog not in SEARCH_TOOLS:
         return []
     value_opts = {"rg": RG_VALUE_OPTS, "ag": AG_VALUE_OPTS, "git-grep": GIT_GREP_VALUE_OPTS}.get(
         prog, GREP_VALUE_OPTS
@@ -2629,8 +2492,7 @@ def search_targets(part, cwd, command="", folders=None):
         )
         if not (dir_recurse or recursive):
             return []
-        cls = CLASS_E
-        if prog != "ugrep":  # T5 is checked on grep only
+        if prog != "ugrep":  # T5: grep's own narrowing, when written as a literal
             for n, v in opts:
                 if v is None or not _literal(v) or "/" in v:
                     continue
@@ -2640,21 +2502,7 @@ def search_targets(part, cwd, command="", folders=None):
                     excludes.append(v)
                 elif n == "--exclude-dir":
                     exclude_dirs.append(v)
-    elif prog == "rg":
-        cls = _rg_class(opts, command)
-    elif prog == "ag":
-        widen = ("--unrestricted", "--skip-vcs-ignores", "--all-types")
-        cls = CLASS_E if names & {"-u", "-U", "-a"} or _any_abbrev(names, widen) else CLASS_I
-    elif prog == "git-grep":
-        widen = ("--no-index", "--untracked", "--no-exclude-standard")
-        cls = CLASS_E if _any_abbrev(names, widen) else CLASS_I
-    else:
-        cls = SEARCH_CLASSES[prog]
     # With -e or -f the pattern is an option value, so every positional word is a path.
-    if cls != CLASS_E and IGNORE_SOURCE_WORDS.search(command or part):
-        cls = CLASS_E  # the command may change what the search skips
-    if cls != CLASS_E and DEFINES_COMMAND.search(command or part):
-        cls = CLASS_E  # the search tool's name may now run another command
     pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
     paths = []
     for words in readings:  # every reading of an optional value: walk the paths of each
@@ -2662,13 +2510,20 @@ def search_targets(part, cwd, command="", folders=None):
             if p not in paths:
                 paths.append(p)
     if via_xargs:  # its folders come from input the hook cannot see
-        return [Search(bases[0], CLASS_E, reason=XARGS_SEARCH)]
+        return [Search(bases[0], reason=XARGS_SEARCH)]
     if prog == "git-grep":
-        # A word that is neither a folder nor a file is a revision or a pathspec: git reads
-        # committed or tracked files there that the walk cannot list.
+        # git reads committed files for a revision and the index for --cached, which the walk
+        # cannot list. Words before `--` (after the pattern) are revisions; a word that is
+        # neither a folder nor a file is a revision or a pattern path.
+        if _any_abbrev(names, ("--cached",)):
+            return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
+        if "--" in args:
+            before = _split_options(args[: args.index("--")], value_opts)[1]
+            if before if pattern_in_opts else before[1:]:
+                return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
         for p in paths:
             if p != "." and not any(os.path.exists(expand(p, b) or "") for b in bases):
-                return [Search(bases[0], CLASS_E, reason=GIT_GREP_UNCHECKED)]
+                return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
     out = []
     for p in paths:
         found = [expand(p, b) for b in bases]
@@ -2678,7 +2533,7 @@ def search_targets(part, cwd, command="", folders=None):
             found += word_paths(w, bases)
         for full in found:
             if full and not is_network(full) and os.path.isdir(full):
-                out.append(Search(full, cls, includes, excludes, exclude_dirs))
+                out.append(Search(full, includes, excludes, exclude_dirs))
     return out
 
 
@@ -3023,14 +2878,14 @@ def decide(event, rules):
             base = s.split("**", 1)[0] if "**" in s else s
             folder = expand(base or ".", cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
-                reason = search_tree(Search(folder, CLASS_I), rules, deadline)
+                reason = search_tree(Search(folder), rules, deadline)
                 if reason:
                     return reason
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
                 # T1: the agents' own search tools are class I until their defaults are known
-                reason = search_tree(Search(folder, CLASS_I), rules, deadline)
+                reason = search_tree(Search(folder), rules, deadline)
                 if reason:
                     return reason
     if (
@@ -3038,7 +2893,7 @@ def decide(event, rules):
         and isinstance(tool_input, dict)
         and not (tool_input.get("path") or tool_input.get("dir_path"))
     ):
-        reason = search_tree(Search(cwd, CLASS_I), rules, deadline)
+        reason = search_tree(Search(cwd), rules, deadline)
         if reason:
             return reason
     return None
@@ -3054,6 +2909,7 @@ def deny_output(agent, event_name, reason):
         reason not in (HIDDEN_GLOB_REASON, TREE_TOO_BIG)
         and "denypeek protects" not in reason
         and not reason.endswith(TIMEOUT_ADVICE)
+        and not reason.startswith(TREE_SECRET)
     ):
         msg += " If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":

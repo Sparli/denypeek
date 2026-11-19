@@ -1,8 +1,11 @@
-"""SPEC 3b, the tree rule: what a recursive search can read decides, not the folder's size.
+"""SPEC 3b, the tree rule: a recursive search is allowed only if nothing under the folders it
+reads matches the secret patterns. The walk skips nothing (no hidden names, ignore files or
+node_modules); only grep's own literal --include, --exclude and --exclude-dir narrow it.
 
 A26: the project fixture through the real hook, per agent format. A27: the tool tier, where
-the real search tool runs first and the hook must deny whenever it prints a marker. A28:
-protected paths, the ripgrep key, and every rewrite a deny message suggests.
+the real search tool runs first, and the hook must deny whenever it prints a marker. A28:
+protected paths, the deny messages, and every rewrite a message suggests. Then every
+reproduction from the security reviews, each of which must be denied.
 
 The large fixtures (50,000 and over 100,000 entries) are built once per module. Windows is
 skipped for them: A26 names macOS and Linux, and creating that many files there takes minutes.
@@ -83,11 +86,10 @@ def past_cap(tmp_path_factory):
     )
 
 
-def installed(home: Path, ripgrep="unset") -> None:
-    """The state `guard install` writes; ripgrep None leaves the key out (an older install)."""
+def installed(home: Path) -> None:
+    """The state `guard install` writes, as far as the tree rule is concerned: nothing."""
     (home / ".denypeek").mkdir(exist_ok=True)
-    state = {} if ripgrep is None else {"ripgrep_config": ripgrep}
-    (home / ".denypeek" / "guard-state.json").write_text(json.dumps(state))
+    (home / ".denypeek" / "guard-state.json").write_text("{}")
 
 
 # --- running the hook -----------------------------------------------------------------------
@@ -155,20 +157,25 @@ def reason_of(out: str) -> str:
 
 # --- A26 ------------------------------------------------------------------------------------
 
+# Searches that read no secret file in the A26 project: a clear subfolder, grep with literal
+# excludes that leave every secret file out.
 A26_ALLOWED = [
-    "rg foo",
-    "rg -n foo .",
     "rg foo src",
+    "rg -n foo src",
     "grep -rn foo src",
-    "grep -rn foo . --include='*.py'",
+    "git grep -n foo -- src",
     "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=venv "
     "--exclude='.env*'",
 ]
-# In SPEC A26's list, but real grep reads venv/lib/cacert.pem with it (venv is not excluded and
-# *.pem is a secret pattern), so by A27's principle the hook must deny it. Reported for the spec.
-A26_READS_A_SECRET = (
-    "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude='.env*'"
-)
+# Searches from the project root: each reads a secret file (.env, a virtualenv's cacert.pem
+# outside certifi, files in node_modules), so each is denied with message (a).
+A26_DENIED = [
+    "rg foo",
+    "rg -n foo .",
+    "grep -rn foo .",
+    "grep -rn foo . --exclude-dir=node_modules",
+    "grep -rn foo . --exclude-dir=node_modules --exclude-dir=.venv --exclude='.env*'",
+]
 
 
 @POSIX_ONLY
@@ -182,21 +189,26 @@ def test_a26_searches_that_read_no_secret_are_allowed(agent, command, big, isola
 
 
 @POSIX_ONLY
-@pytest.mark.parametrize("agent", ["claude", "gemini"])
-def test_a26_an_agents_own_search_tool_on_src_is_allowed(agent, big, isolated):
+@pytest.mark.parametrize("agent", AGENTS)
+@pytest.mark.parametrize("command", A26_DENIED)
+def test_a26_searches_from_the_root_are_denied_with_message_a(agent, command, big, isolated):
     installed(isolated)
-    denied, out, secs = hook(agent, search_tool_event(agent, "src", big), big)
-    assert not denied, out
+    denied, out, secs = hook(agent, shell_event(agent, command, big), big)
+    assert denied, (command, out)
+    reason = reason_of(out)
+    assert g.TREE_SECRET in reason and "Clear to search: src" in reason, reason
+    assert "secretfiles" not in reason
     assert secs < LIMIT, secs
 
 
 @POSIX_ONLY
-@pytest.mark.parametrize("agent", AGENTS)
-def test_a26_grep_that_still_reaches_venv_cacert_is_denied(agent, big, isolated):
+@pytest.mark.parametrize("agent", ["claude", "gemini"])
+def test_a26_an_agents_own_search_tool_on_src_is_allowed_and_on_root_denied(agent, big, isolated):
     installed(isolated)
-    denied, out, _ = hook(agent, shell_event(agent, A26_READS_A_SECRET, big), big)
+    denied, out, _ = hook(agent, search_tool_event(agent, "src", big), big)
+    assert not denied, out
+    denied, out, _ = hook(agent, search_tool_event(agent, ".", big), big)
     assert denied, out
-    assert "the search would read a secret file (cacert.pem)" in reason_of(out)
 
 
 @POSIX_ONLY
@@ -214,7 +226,7 @@ def test_a26_too_big_to_check_is_denied_with_message_b(past_cap, isolated):
 @pytest.mark.parametrize(
     "command",
     [
-        "rg foo",
+        "rg foo src",
         "grep -rn foo src",
         "grep -rn foo . --exclude-dir=node_modules",
         # the rewrite message (b) suggests
@@ -226,6 +238,14 @@ def test_a26_past_the_cap_narrower_searches_are_allowed(command, past_cap, isola
     denied, out, secs = hook("claude", shell_event("claude", command, past_cap), past_cap)
     assert not denied, (command, out)
     assert secs < LIMIT, secs
+
+
+def test_a26_a_project_with_no_secret_file_is_searched_from_the_root(isolated, tmp_path):
+    proj = a26_project(tmp_path / "proj", entries=500, secrets=False)
+    installed(isolated)
+    for command in ("rg foo", "rg --hidden foo .", "grep -rn foo .", "git grep foo", "ag foo"):
+        denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+        assert not denied, (command, out)
 
 
 # --- A28 ------------------------------------------------------------------------------------
@@ -252,134 +272,119 @@ def small_project(tmp_path: Path) -> Path:
     return a26_project(tmp_path / "proj", entries=200)
 
 
-@pytest.mark.parametrize("ripgrep", [None, "set", "garbage"])
-def test_a28_rg_beside_env_is_denied_unless_install_recorded_no_config(ripgrep, isolated, tmp_path):
-    proj = small_project(tmp_path)
-    installed(isolated, ripgrep)
-    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert denied, out
-    installed(isolated, "unset")
-    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert not denied, out
-
-
-def test_a28_a_ripgrep_config_in_the_command_widens_rg(isolated, tmp_path):
-    proj = small_project(tmp_path)
+def test_a28_message_a_names_the_files_and_the_clear_folders(isolated, tmp_path):
+    proj = tmp_path / "proj"
+    for d in ("src", "tests", "docs", "secrets", ".venv"):
+        (proj / d).mkdir(parents=True)
+    (proj / "secrets" / "id_rsa").write_text("x\n")
+    (proj / ".env").write_text("x\n")
     installed(isolated)
-    command = "RIPGREP_CONFIG_PATH=rc rg foo"
-    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
-    assert denied, out
+    denied, out, _ = hook("claude", shell_event("claude", "grep -rn foo .", proj), proj)
+    assert denied
+    reason = reason_of(out)
+    assert reason == (
+        "denypeek blocked this: a search from here would read a secret file "
+        "(.env, secrets/id_rsa); search a narrower folder. Clear to search: docs, src, tests, "
+        ".venv."
+    ), reason
 
 
-def test_a28_guard_status_never_changes_the_ripgrep_key(isolated, monkeypatch):
-    from .conftest import run_cli
-
-    monkeypatch.delenv("RIPGREP_CONFIG_PATH", raising=False)
-    code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
-    assert code == 0, out
-    state = json.loads((isolated / ".denypeek" / "guard-state.json").read_text())
-    assert state["ripgrep_config"] == "unset"
-    _, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")
-    assert "CHANGED: RIPGREP_CONFIG_PATH" not in out
-    monkeypatch.setenv("RIPGREP_CONFIG_PATH", str(isolated / "rc"))
-    _, out, _ = run_cli("guard", "status", "--home", str(isolated), "--agent", "claude")
-    assert "CHANGED: RIPGREP_CONFIG_PATH is now set" in out
-    state = json.loads((isolated / ".denypeek" / "guard-state.json").read_text())
-    assert state["ripgrep_config"] == "unset"
-    code, out, _ = run_cli("guard", "install", "--home", str(isolated), "--agent", "claude")
-    assert "RIPGREP_CONFIG_PATH was set" in out
-    state = json.loads((isolated / ".denypeek" / "guard-state.json").read_text())
-    assert state["ripgrep_config"] == "set"
+def test_a28_message_a_caps_the_folders_and_escapes_names(isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "sub").mkdir(parents=True)
+    bad = ".env.\x1b[31mred" + "y" * 100
+    (proj / "sub" / bad).write_text("x\n")
+    for i in range(12):
+        (proj / f"d{i:02}").mkdir()
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    assert denied and "\x1b" not in out
+    reason = reason_of(out)
+    assert "sub/.env.\\x1b[31mred" in reason and "…" in reason, reason
+    assert "Clear to search: d00, d01, d02, d03, d04, d05, d06, d07 and 4 more." in reason
+    assert "secretfiles" not in reason
 
 
-@pytest.mark.parametrize(
-    "denied_command,rewrites",
-    [
-        # (a): "search a narrower folder, or leave it out: `rg` skips hidden files"
-        ("grep -rn foo .", ["grep -rn foo src", "rg foo"]),
-        (A26_READS_A_SECRET, ["grep -rn foo src", "rg foo"]),
-        # (a): "with grep add `--include` or `--exclude-dir`"
-        ("grep -rn foo .", ["grep -rn foo . --include='*.py'"]),
-    ],
-)
-def test_a28_every_rewrite_a_message_suggests_is_allowed(
-    denied_command, rewrites, isolated, tmp_path
-):
+def test_a28_message_a_when_no_folder_is_clear(isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "a").mkdir(parents=True)
+    (proj / "a" / ".env").write_text("x\n")
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    assert denied
+    assert "no folder directly under this one is clear" in reason_of(out)
+
+
+@pytest.mark.parametrize("denied_command", ["grep -rn foo .", "rg foo", "git grep foo"])
+def test_a28_every_folder_message_a_lists_is_allowed(denied_command, isolated, tmp_path):
     proj = small_project(tmp_path)
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", denied_command, proj), proj)
     assert denied, out
-    assert "search a narrower folder" in reason_of(out)
-    for rewrite in rewrites:
+    reason = reason_of(out)
+    listed = reason.split("Clear to search: ", 1)[1].rstrip(".").split(", ")
+    assert listed == ["src"], reason
+    for folder in listed:
+        rewrite = denied_command.replace(" .", "") + f" {folder}"
+        if rewrite.startswith("git grep"):
+            rewrite = f"git grep foo -- {folder}"
         denied, out, _ = hook("claude", shell_event("claude", rewrite, proj), proj)
         assert not denied, (rewrite, out)
 
 
-def test_a28_secret_message_names_the_file_escaped_and_keeps_the_pattern_hint(isolated, tmp_path):
-    proj = tmp_path / "proj"
-    (proj / "sub").mkdir(parents=True)
-    (proj / "sub" / ".env.\x1b[31mred").write_text("x\n")
-    installed(isolated)
-    denied, out, _ = hook("claude", shell_event("claude", "grep -r foo .", proj), proj)
-    assert denied
-    assert "\x1b" not in out  # JSON escapes it
-    reason = reason_of(out)
-    assert reason.startswith("denypeek blocked this: the search would read a secret file (.env.")
-    assert reason.endswith("If this is wrong, edit ~/.denypeek/secretfiles.")
-
-
-# --- parsing: classes (T1, T3) and grep narrowing (T5) ---------------------------------------
+# --- certificate bundles -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "command,cls",
+    "path,counts",
     [
-        ("rg foo", "D"),
-        ("rg -n foo .", "D"),
-        ("rg --hidden foo", "I"),
-        ("rg -. foo", "I"),
-        ("rg -uu foo", "E"),
-        ("rg -nu foo", "E"),
-        ("rg --no-ignore-vcs foo", "E"),
-        ("rg -g '*' foo", "E"),
-        ("rg -g '!x' foo", "D"),
-        ("rg --glob=*.py foo", "E"),
-        ("rg --pre cat foo", "E"),
-        ("rg --ignore-file x foo", "E"),
-        ("rg -t $T foo", "E"),
-        ("git grep foo", "I"),
-        ("git -C . grep foo", "I"),
-        ("git grep --untracked foo", "E"),
-        ("git grep --no-index foo", "E"),
-        ("ag foo", "I"),
-        ("ag -u foo", "E"),
-        ("ack foo", "E"),
-        ("grep -rn foo .", "E"),
-        ("ugrep -r foo .", "E"),
+        ("venv/lib/python3.12/site-packages/certifi/cacert.pem", False),
+        ("venv/lib/python3.12/site-packages/pip/_vendor/certifi/cacert.pem", False),
+        ("venv/lib/cacert.pem", True),
+        ("certifi/sub/cacert.pem", True),
+        ("notcertifi/cacert.pem", True),
+        ("Certifi/cacert.pem", True),  # the exception matches names exactly
+        ("certifi/server.pem", True),
     ],
 )
-def test_search_classes(command, cls, isolated, tmp_path):
+def test_only_certifis_cacert_pem_is_exempt(path, counts, isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / path).parent.mkdir(parents=True)
+    (proj / path).write_text("x\n")
     installed(isolated)
-    g._home[0] = str(isolated)
-    [s] = g.search_targets(command, str(tmp_path), command)
-    if os.name == "nt" and cls == "D":
-        cls = "I"  # T3: no class D on Windows
-    assert s.cls == cls, command
+    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
+    assert denied == counts, (path, out)
 
 
-def test_rg_on_windows_is_class_i(isolated, tmp_path, monkeypatch):
+def test_certifis_cacert_pem_still_counts_when_named(isolated, tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "certifi").mkdir(parents=True)
+    (proj / "certifi" / "cacert.pem").write_text("x\n")
     installed(isolated)
-    g._home[0] = str(isolated)
-    monkeypatch.setattr(g, "WINDOWS", True)
-    [s] = g.search_targets("rg foo", str(tmp_path), "rg foo")
-    assert s.cls == "I"
+    denied, out, _ = hook("claude", shell_event("claude", "cat certifi/cacert.pem", proj), proj)
+    assert denied, out
 
 
-def test_ripgrep_config_text_anywhere_widens(isolated, tmp_path):
-    installed(isolated)
-    g._home[0] = str(isolated)
-    [s] = g.search_targets("rg foo", str(tmp_path), "export RIPGREP_CONFIG_PATH=x; rg foo")
-    assert s.cls == "E"
+# --- finding the folders a search reads --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command,found",
+    [
+        ("rg foo", True),
+        ("rg -l foo", True),
+        ("ag foo", True),
+        ("ack foo", True),
+        ("git grep foo", True),
+        ("git -C . grep foo", True),
+        ("grep -rn foo .", True),
+        ("ugrep -r foo .", True),
+        ("grep -n foo file", False),
+    ],
+)
+def test_each_search_tool_is_seen(command, found, tmp_path):
+    (tmp_path / "file").write_text("x\n")
+    assert bool(g.search_targets(command, str(tmp_path), command)) == found, command
 
 
 def test_grep_narrowing_reads_literal_values_without_a_slash(tmp_path):
@@ -517,7 +522,7 @@ TIER = [
     ("ag M", None),
     ("ag -u M", None),
     ("ag --hidden M", None),
-] + [(c.replace("foo", "M"), None) for c in A26_ALLOWED + [A26_READS_A_SECRET]]
+] + [(c.replace("foo", "M"), None) for c in A26_ALLOWED + A26_DENIED]
 
 
 @POSIX_ONLY
@@ -535,7 +540,8 @@ def test_a27_when_the_real_tool_prints_a_marker_the_hook_denies(
     if prints:
         assert denied, (command, "the real tool read a secret file, the hook allowed it")
     if change is None and command in [c.replace("foo", MARK) for c in A26_ALLOWED]:
-        assert not prints, (command, "an A26 command printed a marker")
+        assert not prints, (command, "a must-allow command printed a marker")
+        assert not denied, (command, "a must-allow command was denied", out)
 
 
 # --- security review of the tree rule: reproductions -----------------------------------------
@@ -593,7 +599,7 @@ IGNORE_CASES = [
 @pytest.mark.parametrize(
     "gitignore,change,command", IGNORE_CASES, ids=[f"ignore-{i}" for i in range(len(IGNORE_CASES))]
 )
-def test_ignore_files_are_trusted_only_when_certain(gitignore, change, command, isolated, tmp_path):
+def test_ignore_file_reproductions_are_denied(gitignore, change, command, isolated, tmp_path):
     proj = review_project(tmp_path, gitignore)
     installed(isolated)
     if change:
@@ -609,37 +615,6 @@ def test_ignore_files_are_trusted_only_when_certain(gitignore, change, command, 
     assert denied, (command, out)
 
 
-@pytest.mark.parametrize("folders", [700, 2_100])
-def test_many_folders_do_not_deny_plain_rg_or_error(folders, isolated, tmp_path):
-    """Only ignore files that exist are read and counted; no internal error past a limit."""
-    proj = review_project(tmp_path)
-    for i in range(folders):
-        (proj / "src" / f"d{i}").mkdir()
-    installed(isolated)
-    for command in ("rg foo", "rg --hidden foo"):
-        denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
-        assert "guard error" not in out, out
-    denied, out, _ = hook("claude", shell_event("claude", "rg foo", proj), proj)
-    assert not denied, out
-
-
-def test_too_many_ignore_files_is_message_b(isolated, tmp_path, monkeypatch):
-    proj = review_project(tmp_path)
-    for i in range(30):
-        (proj / "src" / f"d{i}").mkdir()
-        (proj / "src" / f"d{i}" / ".ignore").write_text("x\n")
-    installed(isolated)
-    g._home[0] = str(isolated)
-    monkeypatch.setattr(g, "IGNORE_FILES_MAX", 10)
-    reason = g.search_tree(
-        g.Search(str(proj), "D"), g.parse_patterns(g.DEFAULT_PATTERNS), time.monotonic() + 9
-    )
-    assert reason == g.TREE_TOO_BIG
-
-
-# Options whose value is optional in one grep and required in another: the hook walks the
-# paths of both readings (BSD grep takes `--context`'s value only after `=`; GNU takes the
-# next word). git takes an optional value only when attached (`-O`).
 OPTION_CASES = [
     "grep -r --context {m} {proj}",
     "grep -r --context=2 {m} {proj}",
@@ -694,13 +669,9 @@ ABBREVIATED = [
 
 @POSIX_ONLY
 @pytest.mark.parametrize("template", ABBREVIATED)
-def test_abbreviated_long_options_count(template, isolated, tmp_path):
+def test_abbreviated_long_options_are_seen(template, isolated, tmp_path):
     proj = ignored_only_project(tmp_path, isolated)
     installed(isolated)
-    plain = "git grep {m}" if template.startswith("git") else "ag {m}"
-    if not template.startswith("grep"):
-        denied, out, _ = hook("claude", shell_event("claude", plain.format(m=MARK), proj), proj)
-        assert not denied, ("fixture: the plain search reads no secret", out)
     command = template.format(m=MARK)
     # --deref is GNU only (BSD grep has no --dereference-recursive); --no-exclude-standard
     # widens git grep only together with --untracked. The hook denies both regardless.
@@ -785,24 +756,112 @@ def test_git_grep_with_a_revision_or_pathspec_is_denied(command, isolated, tmp_p
     assert not denied, out  # the rewrite the message suggests
 
 
+# --- second security review: reproductions, each must be denied ------------------------------
+
+
+def _nested_repo(proj, home):
+    (proj / "sub" / ".git").mkdir(parents=True)
+    (proj / "sub" / ".env").write_text(f"{MARK}\n")
+    (proj / "sub" / "node_modules" / "pkg").mkdir(parents=True)
+    (proj / "sub" / "node_modules" / "pkg" / "t.pem").write_text(f"{MARK}\n")
+    (proj / "sub" / ".git" / "info").mkdir()
+    (proj / "sub" / ".git" / "info" / "exclude").write_text("!.env\n")
+
+
+def _fake_home_ignore(proj, home):
+    (home / "fake" / ".config" / "git").mkdir(parents=True)
+    (home / "fake" / ".config" / "git" / "ignore").write_text("!.env\n")
+
+
+def _template_ignore(proj, home):
+    (proj / "tmpl").mkdir()
+    (proj / "tmpl" / ".ignore").write_text("!.env\n")
+
+
+SECOND_REVIEW = [
+    (_nested_repo, "rg M"),
+    (_nested_repo, "rg M sub"),
+    (_fake_home_ignore, "HOME={home}/fake rg M"),
+    (_fake_home_ignore, "env HOME={home}/fake rg M"),
+    (None, "printf '!.e?v\\n' > .ign\"\"ore; rg M"),
+    (_template_ignore, "cp -r tmpl/. . ; rg M"),
+    (None, "git checkout -q b2 && rg M"),
+]
+
+
 @POSIX_ONLY
+@pytest.mark.parametrize("change,command", SECOND_REVIEW)
+def test_second_review_reproductions_are_denied(change, command, isolated, tmp_path):
+    proj = review_project(tmp_path, "node_modules/\n")
+    installed(isolated)
+    if change:
+        change(proj, isolated)
+    command = command.replace(" M", f" {MARK}").replace("{home}", str(isolated))
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+
+
+def _deleted_env_repo(tmp_path, home):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(home),
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    (proj / ".env").write_text(f"{MARK}\n")
+    (proj / "src").mkdir()
+    (proj / "src" / "a.py").write_text("x\n")
+    for args in (["init", "-q", "."], ["add", "-f", ".env", "src"], ["commit", "-qm", "c"]):
+        subprocess.run(["git", *args], cwd=proj, env=env, check=True)
+    (proj / ".env").unlink()
+    return proj, env
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command", ["git grep {m} HEAD --", "git grep --cached {m}", "git grep --cach {m}"]
+)
+def test_git_grep_reading_a_revision_or_the_index_is_denied(command, isolated, tmp_path):
+    proj, env = _deleted_env_repo(tmp_path, isolated)
+    (proj / "HEAD").mkdir()  # a folder named like the revision
+    installed(isolated)
+    command = command.format(m=MARK)
+    proc = subprocess.run(["/bin/sh", "-c", command], cwd=proj, env=env, capture_output=True)
+    assert MARK in proc.stdout.decode(), "fixture: git reads nothing"
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("glob", ["*", "**/*", "*.pem"])
+def test_an_agents_search_tool_with_a_glob_is_walked_in_full(glob, isolated, tmp_path):
+    proj = ignored_only_project(tmp_path, isolated)
+    installed(isolated)
+    event = search_tool_event("claude", ".", proj)
+    event["tool_input"]["glob"] = glob
+    denied, out, _ = hook("claude", event, proj)
+    assert denied, out
+
+
 @pytest.mark.parametrize(
     "command",
     [
-        'rg(){ grep -r "$@"; }; rg {m} .',
-        'function rg { grep -r "$@"; }; rg {m} .',
-        "alias rg='grep -r'; rg {m} .",
+        'rg "export function load"',
+        'rg "type alias "',
+        "rg exclude",
+        "rg -n 'GIT_DIR'",
+        "rg -n '.gitignore'",
+        "grep -rn 'HOME=' .",
+        'rg "f(){ x; }"',
     ],
 )
-def test_a_command_that_defines_a_function_or_alias_counts_as_reading_everything(
-    command, isolated, tmp_path
-):
-    proj = review_project(tmp_path)
-    (proj / ".env").unlink()
-    (proj / "sub").mkdir()
-    (proj / "sub" / ".env").write_text("x\n")
+def test_the_search_text_never_changes_the_decision(command, isolated, tmp_path):
+    proj = a26_project(tmp_path / "proj", entries=50, secrets=False)
+    (proj / ".gitignore").write_text("node_modules/\n!.env.example\n# keep it!\n")
     installed(isolated)
-    plain = hook("claude", shell_event("claude", f"rg {MARK} .", proj), proj)
-    assert not plain[0], ("fixture: plain rg skips the hidden file", plain[1])
-    denied, out, _ = hook("claude", shell_event("claude", command.replace("{m}", MARK), proj), proj)
-    assert denied, out
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert not denied, (command, out)

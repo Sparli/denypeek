@@ -208,29 +208,22 @@ def test_g6_recursive_grep_forms_see_node_modules(command, tmp_path):
     assert blocked("claude", proc.stdout.decode(), proc.returncode), command
 
 
-@pytest.mark.parametrize("command", ["rg KEY .", "git grep KEY", "grep -r KEY src"])
-def test_g6_tools_that_skip_node_modules_are_allowed(command, tmp_path, isolated):
-    """SPEC 3b T2: ripgrep and git grep skip node_modules only on evidence: a repository
-    whose .gitignore names it (ripgrep honours .gitignore only inside one)."""
+@pytest.mark.parametrize("command", ["rg KEY .", "git grep KEY", "ag KEY", "rg --hidden KEY"])
+def test_g6_every_tool_reads_node_modules(command, tmp_path, isolated):
+    """SPEC 3b, the simple tree rule: the walk skips nothing, so a secret file in
+    node_modules counts for every search tool, in a repository or not."""
     proj = g6_project(tmp_path)
     (proj / ".git").mkdir()
     (proj / ".gitignore").write_text("node_modules/\n")
-    (isolated / ".denypeek").mkdir(exist_ok=True)
-    (isolated / ".denypeek" / "guard-state.json").write_text('{"ripgrep_config": "unset"}')
-    proc, _ = run("claude", bash(command, proj), proj)
-    assert not blocked("claude", proc.stdout.decode(), proc.returncode), command
-
-
-@pytest.mark.parametrize("command", ["rg KEY .", "git grep KEY"])
-def test_g6_without_evidence_node_modules_counts(command, tmp_path, isolated):
-    """No repository and no .gitignore: ripgrep reads node_modules (checked with ripgrep
-    14.1.1), so the .env there counts."""
-    proj = g6_project(tmp_path)
-    (proj / "node_modules" / "pkg" / "test.pem").write_text("x\n")
-    (isolated / ".denypeek").mkdir(exist_ok=True)
-    (isolated / ".denypeek" / "guard-state.json").write_text('{"ripgrep_config": "unset"}')
     proc, _ = run("claude", bash(command, proj), proj)
     assert blocked("claude", proc.stdout.decode(), proc.returncode), command
+
+
+@pytest.mark.parametrize("command", ["rg KEY src", "git grep KEY -- src", "grep -r KEY src"])
+def test_g6_a_folder_without_the_secret_is_allowed(command, tmp_path, isolated):
+    proj = g6_project(tmp_path)
+    proc, _ = run("claude", bash(command, proj), proj)
+    assert not blocked("claude", proc.stdout.decode(), proc.returncode), command
 
 
 # --- G7: line continuation ---------------------------------------------------------------

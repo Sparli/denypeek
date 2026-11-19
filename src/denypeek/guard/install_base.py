@@ -166,7 +166,7 @@ HIDDEN_KEYS = (
     "hidden_names_reason",
     "hidden_names_forced",
     "hidden_names_choice",
-    "ripgrep_config",
+    "ripgrep_config",  # written by earlier builds; removed on uninstall
 )
 # The known gaps of the experimental `auto` setting in v0.1.0 (the review, 2026-11-19), named in the
 # install warning; the README lists them under Known misses.

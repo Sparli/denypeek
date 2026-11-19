@@ -78,13 +78,15 @@ covers a check stuck inside C code (G2).
   readings of an optional option value). The walk skips nothing, for any tool: no hidden names,
   no ignore files, no `node_modules`. Only grep's own `--include`, `--exclude` and
   `--exclude-dir`, as literal values without `/`, narrow it. The search is allowed only if no
-  name under it matches the patterns; `certifi/cacert.pem` (an exact path end) does not count.
+  name under it matches the patterns; a regular file `cacert.pem` directly in a folder `certifi` under `site-packages` or
+  `dist-packages` does not count.
   A search whose folders or files cannot be told (`xargs`, `git grep` over a revision, the index
-  or a pattern path) is denied. A search covering denypeek's folder, an agent folder or a hook
+  a pattern path or another git folder, a path that is not a literal) is denied. A search covering denypeek's folder, an agent folder or a hook
   config is denied without a walk. Only names that can match a pattern, and symbolic links, get
   the full check. Limits: 100,000 entries and 1 second (measurement in `specs/04-tree-walk.md`);
-  past either, denied as too big to check. The deny message names up to two secret files and up
-  to eight clear folders directly under the start.
+  past either, denied as too big to check (all start folders together). The deny message names
+  up to two secret files and up to eight clear folders directly under the start, plain names
+  only.
 - **Agent folders (R3):** words are expanded (braces, globs) before the agent-folder check;
   `find -delete/-exec` starting at the home folder or above an agent folder is denied.
 - **Variables (R4):** substitution stops and the call is denied once the text would pass

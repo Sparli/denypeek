@@ -944,6 +944,10 @@ GIT_GREP_UNCHECKED = (  # (e)
     "git grep reads the index, a revision or another git folder here, and only files on disk "
     "can be checked; drop the revision, `--cached` or the git folder option"
 )
+TREE_UNLISTABLE = (
+    "a folder this search reads cannot be listed, so the search cannot be checked; search a "
+    "narrower folder"
+)
 GREP_NARROWING = "with grep, `--exclude` and `--exclude-dir` leave files and folders out"
 # Commands that run another command, which the hook looks through to find a search.
 WRAPPERS = {
@@ -1026,6 +1030,10 @@ class _WalkLimit(Exception):
     def __init__(self, found=(), more=False, clear=()):
         super().__init__("walk limit")
         self.found, self.more, self.clear = list(found), more, list(clear)
+
+
+class _Unlistable(Exception):
+    """A folder under the start could not be listed: what the search reads cannot be told."""
 
 
 class _TreeBudget:
@@ -1150,6 +1158,8 @@ def search_trees(searches, rules, deadline):
         lister = n == 0
         try:
             found, more, clear = _walk(search, rules, deadline, budget)
+        except _Unlistable:
+            return TREE_UNLISTABLE
         except _WalkLimit as stop:
             clear = stop.clear if lister else []
             if stop.found:  # a secret file is certain even though the walk did not finish
@@ -1189,7 +1199,7 @@ def _walk(search, rules, deadline, budget):
         try:
             entries = sorted(os.scandir(d), key=lambda e: e.name)
         except OSError:
-            return []
+            raise _Unlistable(d) from None  # never left out silently
         subdirs = []
         for e in entries:
             budget.seen += 1
@@ -3228,7 +3238,7 @@ def deny_output(agent, event_name, reason):
         and "denypeek protects" not in reason
         and not reason.endswith(TIMEOUT_ADVICE)
         and not reason.startswith(
-            (TREE_TOO_BIG, TREE_UNDETERMINED, GIT_GREP_UNCHECKED, TREE_WRITES)
+            (TREE_TOO_BIG, TREE_UNDETERMINED, GIT_GREP_UNCHECKED, TREE_WRITES, TREE_UNLISTABLE)
         )
     ):
         msg += " If this is wrong, edit ~/.denypeek/secretfiles."

@@ -1276,3 +1276,22 @@ def test_read_only_parts_before_a_search_are_allowed(command, isolated, tmp_path
     installed(isolated)
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     assert not denied, (command, out)
+
+
+# --- review of the simple rule: a folder the walk cannot list ----------------------------------
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs POSIX permissions")
+@pytest.mark.parametrize("command", ["grep -r {m} .", "rg {m}", "rg {m} locked"])
+def test_a_folder_that_cannot_be_listed_denies_the_search(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    (proj / "locked").mkdir()
+    (proj / "locked" / ".env").write_text(f"{MARK}\n")
+    os.chmod(proj / "locked", 0)
+    try:
+        installed(isolated)
+        denied, out, _ = hook("claude", shell_event("claude", command.format(m=MARK), proj), proj)
+    finally:
+        os.chmod(proj / "locked", 0o755)
+    assert denied and g.TREE_UNLISTABLE in reason_of(out), (command, out)
+    assert "secretfiles" not in reason_of(out)

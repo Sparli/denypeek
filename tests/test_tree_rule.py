@@ -633,3 +633,31 @@ def test_too_many_ignore_files_is_message_b(isolated, tmp_path, monkeypatch):
         g.Search(str(proj), "D"), g.parse_patterns(g.DEFAULT_PATTERNS), time.monotonic() + 9
     )
     assert reason == g.TREE_TOO_BIG
+
+
+# Options whose value is optional in one grep and required in another: the hook walks the
+# paths of both readings (BSD grep takes `--context`'s value only after `=`; GNU takes the
+# next word). git takes an optional value only when attached (`-O`).
+OPTION_CASES = [
+    "grep -r --context {m} {proj}",
+    "grep -r --context=2 {m} {proj}",
+    "git grep -O {m} {proj}",
+    "git grep --open-files-in-pager {m} {proj}",
+    "ag -C {m} {proj}",
+    "ag --context {m} {proj}",
+]
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("template", OPTION_CASES)
+def test_an_optional_value_never_hides_the_folder(template, isolated, tmp_path):
+    proj = review_project(tmp_path)
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    installed(isolated)
+    command = template.format(m=MARK, proj=proj)
+    if command.startswith("grep "):
+        prints = tool_prints_marker(command, clean, tmp_path, isolated)
+        assert prints, "fixture: grep reads nothing"
+    denied, out, _ = hook("claude", shell_event("claude", command, clean), clean)
+    assert denied, (command, out)

@@ -2298,6 +2298,10 @@ def substitute_variables(command):
 
 # Options that take a value in the next word (or after `=`). A value is never a path, so a
 # wrong entry here could hide a folder; only options known to take a value are listed.
+# "optional": the next word may or may not be the value (it differs between BSD and GNU grep,
+# or is unverified); the hook walks the paths of both readings. Checked against BSD grep 2.6.0
+# by running it; GNU grep from its manual: both take the next word for every "long" option
+# below that each has (BSD lacks --exclude-from and --group-separator).
 GREP_VALUE_OPTS = {
     "short": set("efmABCdD"),
     "long": {
@@ -2306,7 +2310,6 @@ GREP_VALUE_OPTS = {
         "--max-count",
         "--after-context",
         "--before-context",
-        "--context",
         "--directories",
         "--devices",
         "--include",
@@ -2317,6 +2320,8 @@ GREP_VALUE_OPTS = {
         "--binary-files",
         "--group-separator",
     },
+    # BSD grep takes `--context`'s value only after `=`; GNU grep takes the next word
+    "optional": {"--context"},
 }
 RG_VALUE_OPTS = {
     "short": set("efgtTmABCMjEdr"),
@@ -2359,7 +2364,7 @@ RG_VALUE_OPTS = {
     },
 }
 AG_VALUE_OPTS = {
-    "short": set("GgABCmp"),
+    "short": set("Ggmp"),
     "long": {
         "--file-search-regex",
         "--ignore",
@@ -2368,13 +2373,14 @@ AG_VALUE_OPTS = {
         "--pager",
         "--path-to-ignore",
         "--max-count",
-        "--after",
-        "--before",
-        "--context",
     },
+    # ag's context options take an optional count [unverified: ag is not installed here]
+    "optional": {"-A", "-B", "-C", "--after", "--before", "--context"},
 }
+# git takes an optional value only when attached (`-Ox`, `--open-files-in-pager=x`), so `-O`
+# and `--open-files-in-pager` never take the next word.
 GIT_GREP_VALUE_OPTS = {
-    "short": set("efmABCO"),
+    "short": set("efmABC"),
     "long": {
         "--max-depth",
         "--threads",
@@ -2382,7 +2388,6 @@ GIT_GREP_VALUE_OPTS = {
         "--after-context",
         "--before-context",
         "--context",
-        "--open-files-in-pager",
     },
 }
 GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
@@ -2404,10 +2409,15 @@ def _literal(value):
     return not any(c in value for c in "$`\\") and "\n" not in value
 
 
-def _split_options(args, value_opts):
+def _split_options(args, value_opts, take_optional=True):
     """(options as (name, value or None) pairs, positional words). Short groups such as `-rn`
     give one pair per letter; a value-taking letter takes the rest of the group or the next
-    word."""
+    word. An "optional" option takes the next word only when `take_optional`."""
+    optional = value_opts.get("optional", set()) if take_optional else set()
+    value_opts = {
+        "short": value_opts["short"] | {o[1] for o in optional if len(o) == 2},
+        "long": value_opts["long"] | {o for o in optional if o.startswith("--")},
+    }
     opts, pos, i = [], [], 0
     while i < len(args):
         a = args[i]
@@ -2515,6 +2525,9 @@ def search_targets(part, cwd, command=""):
         prog, GREP_VALUE_OPTS
     )
     opts, pos = _split_options(args, value_opts)
+    readings = [pos]
+    if value_opts.get("optional"):
+        readings.append(_split_options(args, value_opts, take_optional=False)[1])
     names = {n for n, _ in opts}
     includes, excludes, exclude_dirs = [], [], []
     if prog in ("grep", "egrep", "fgrep", "zgrep", "ugrep"):
@@ -2546,9 +2559,11 @@ def search_targets(part, cwd, command=""):
     if cls != CLASS_E and IGNORE_SOURCE_WORDS.search(command or part):
         cls = CLASS_E  # the command may change what the search skips
     pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
-    paths = pos if pattern_in_opts else pos[1:]
-    if not paths:
-        paths = ["."]
+    paths = []
+    for words in readings:  # every reading of an optional value: walk the paths of each
+        for p in (words if pattern_in_opts else words[1:]) or ["."]:
+            if p not in paths:
+                paths.append(p)
     out = []
     for p in paths:
         found = [expand(p, base)]

@@ -1439,11 +1439,36 @@ def test_a_substitution_runs_before_the_search(command, isolated, tmp_path):
         ), "fixture: reads nothing"
 
 
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -c 'cp -r ../other/. src/'; grep -r {m} src",
+        "sh -c 'cp -r ../other/. src/' && rg -uu {m} src",
+        "zsh -c 'cp -r ../other/. src/'; rg -uu {m} src",
+        "bash -lc 'cp -r ../other/. src/'; rg -uu {m} src",
+        "bash x.sh; rg -uu {m} src",
+        "source x.sh; rg -uu {m} src",
+        ". x.sh; rg -uu {m} src",
+        "eval 'cp -r ../other/. src/'; rg -uu {m} src",
+    ],
+)
+def test_a_shell_string_or_script_counts_as_a_writer(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    (proj / "x.sh").write_text("cp -r ../other/. src/\n")
+    installed(isolated)
+    command = command.format(m=MARK)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+    if command.startswith("bash -c"):
+        assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: reads nothing"
+
+
 @pytest.mark.parametrize(
     "command",
     [
         "bash -c 'echo hi'; rg foo src",
-        "bash -c 'ls src && cat README.md'; rg foo src",
+        "bash -c 'ls src && echo done'; rg foo src",
         "echo $(pwd); rg foo src",
         "rg foo $(echo src)",
     ],

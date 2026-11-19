@@ -2620,8 +2620,11 @@ def read_only_part(part):
     """A part that cannot write files: empty, or on the short read-only list with no output
     redirection to anything but /dev/null, a terminal or another descriptor."""
     words = _part_words(part)
-    if words and os.path.basename(words[0]) not in READ_ONLY_COMMANDS:
-        return False
+    if words and os.path.basename(words[0]) in SHELLS:
+        if not _read_only_shell(words):
+            return False
+    elif words and os.path.basename(words[0]) not in READ_ONLY_COMMANDS:
+        return False  # anything not known to be read-only counts as writing
     for op, target in _redirects(part)[1]:
         if ">" not in op:
             continue
@@ -2632,9 +2635,30 @@ def read_only_part(part):
     return True
 
 
-def _starts_shell(part):
-    words = _part_words(part)
-    return bool(words) and os.path.basename(words[0]) in SHELLS
+def _read_only_shell(words):
+    """A shell part is read-only only when it runs a command string (`bash -c '...'`, `eval
+    '...'`) whose every part is read-only. A script file, `source` and `.` count as writing:
+    the hook cannot see what they do."""
+    name = os.path.basename(words[0])
+    if name == "eval":
+        return read_only_command(" ".join(words[1:]), 1)
+    if name in ("source", "."):
+        return False
+    has_c, i = False, 1
+    while i < len(words):
+        w = words[i]
+        if w in ("--rcfile", "--init-file"):
+            i += 2
+            continue
+        if w.startswith("--"):
+            i += 1
+            continue
+        if w[:1] in "-+" and len(w) > 1:
+            has_c = has_c or "c" in w[1:]
+            i += 2 if w[1:].endswith("o") else 1  # -o OPTION takes the next word
+            continue
+        return has_c and read_only_command(w, 1)  # the command string, or a script file
+    return False
 
 
 STREAM = "__denypeek_stream__"  # stands in for <(...) and >(...): a pipe, not a folder
@@ -3140,8 +3164,8 @@ def check_command(
         # 2. what the shell can expand each word to (G1 to G6)
         # a search inside a nested script runs after anything the outer command writes
         outer_writes = after_write or any(
-            not read_only_part(p) and not _starts_shell(p) and not search_targets(p, cwd)
-            for p, _op in command_parts(command)
+            not read_only_part(p) and not search_targets(p, cwd)
+            for p, _op in command_parts(extract_substitutions(command)[0])
         )
         for script, script_env in shell_scripts(sw, depth):
             reason = check_command(
@@ -3226,8 +3250,8 @@ def tree_searches(command, cwd, extra=(), after_write=False, depth=0):
         if found and writer_before:
             return [], TREE_WRITES  # the same command may write into what the search reads
         searches += found
-        if not found and not read_only_part(part) and not _starts_shell(part):
-            writer_before = True
+        if not found and not read_only_part(part):
+            writer_before = True  # anything not known to be read-only counts as writing
     return searches, None
 
 

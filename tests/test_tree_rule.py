@@ -1197,3 +1197,36 @@ def test_a_redirection_after_a_clear_folder_is_allowed(command, isolated, tmp_pa
     command = command.format(log=tmp_path / "log")
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
     assert not denied, (command, out)
+
+
+# --- review of the simple rule: a path that does not exist is not left out ------------------------
+
+
+def _clean_with_sibling(tmp_path):
+    proj = tmp_path / "proj"
+    (proj / "src").mkdir(parents=True)
+    (proj / "src" / "a.py").write_text("x\n")
+    (tmp_path / "other").mkdir()
+    (tmp_path / "other" / ".env").write_text(f"{MARK}\n")
+    return proj
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command",
+    [
+        "mv ../other nn && grep -r {m} nn",
+        "ln -s ../other nn && grep -r {m} nn/",
+        "grep -r {m} nn",
+        "rg {m} src nn",
+        "grep -r {m} src/nope*",
+    ],
+)
+def test_a_search_path_that_does_not_exist_is_denied(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    installed(isolated)
+    command = command.format(m=MARK)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied and g.TREE_UNDETERMINED in reason_of(out), (command, out)
+    if command.startswith(("mv", "ln")):
+        assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: reads nothing"

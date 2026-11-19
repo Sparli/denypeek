@@ -2720,10 +2720,14 @@ def search_targets(part, cwd, command="", folders=None):
     # With -e or -f the pattern is an option value, so every positional word is a path.
     pattern_in_opts = names & {"-e", "-f", "--regexp", "--file"}
     paths = []
+    per_reading = []
     for words in readings:  # every reading of an optional value: walk the paths of each
-        for p in (words if pattern_in_opts else words[1:]) or ["."]:
+        these = (words if pattern_in_opts else words[1:]) or ["."]
+        per_reading.append(set(these))
+        for p in these:
             if p not in paths:
                 paths.append(p)
+    surely_paths = set.intersection(*per_reading)  # a path in every reading
     # S2: deny when the folders cannot be told: names from xargs or a file, or a path that is
     # not a readable literal
     undetermined = (
@@ -2763,6 +2767,12 @@ def search_targets(part, cwd, command="", folders=None):
             w.chars = [(c, U if c in "*?[]{}," else Q) for c in p]
             found += word_paths(w, bases)
         globby = any(c in p for c in "*?[{")
+        if p in surely_paths and not any(
+            f and (is_network(f) or os.path.lexists(f)) for f in found
+        ):
+            # a named path that does not exist: the same command, or another process, may
+            # make it before the search runs, so what it reads cannot be told
+            return [Search(bases[0], reason=TREE_UNDETERMINED)]
         for full in dict.fromkeys(found):
             if full and (is_network(full) or os.path.exists(full)):
                 resolved += 1

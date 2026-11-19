@@ -1227,6 +1227,52 @@ def test_a_search_path_that_does_not_exist_is_denied(command, isolated, tmp_path
     installed(isolated)
     command = command.format(m=MARK)
     denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
-    assert denied and g.TREE_UNDETERMINED in reason_of(out), (command, out)
+    # the mv and ln forms are also denied for writing before the search, which comes first
+    expected = g.TREE_WRITES if command.startswith(("mv", "ln")) else g.TREE_UNDETERMINED
+    assert denied and expected in reason_of(out), (command, out)
     if command.startswith(("mv", "ln")):
         assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: reads nothing"
+
+
+# --- review of the simple rule: the same command writes before it searches ---------------------
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cp -r ../other/. src/ && grep -r {m} src",
+        "cp -r ../other/. src/; rg -uu {m} src",
+        "echo KEY=1 > src/.env && grep -r KEY src",
+        "tar xf x.tar && rg {m} src",
+        "git checkout -q b2 && rg {m} src",
+        "rsync -a ../other/ src/ && rg -uu {m} src",
+        "cp -r ../other/. src/ && bash -c 'grep -r {m} src'",
+    ],
+)
+def test_a_command_that_writes_before_it_searches_is_denied(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    installed(isolated)
+    command = command.format(m=MARK)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert denied, (command, out)
+    if command.startswith("cp -r ../other/. src/ && grep"):
+        assert tool_prints_marker(command, proj, tmp_path, isolated), "fixture: reads nothing"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd src && rg foo .",
+        "pwd; ls; rg foo src",
+        "echo start; grep -rn foo src | head -20",
+        "rg foo src | sort | uniq -c",
+        "true && rg foo src 2>/dev/null",
+        "echo x > /dev/null && rg foo src",
+    ],
+)
+def test_read_only_parts_before_a_search_are_allowed(command, isolated, tmp_path):
+    proj = _clean_with_sibling(tmp_path)
+    installed(isolated)
+    denied, out, _ = hook("claude", shell_event("claude", command, proj), proj)
+    assert not denied, (command, out)

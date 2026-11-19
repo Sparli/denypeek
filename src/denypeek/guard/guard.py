@@ -2521,7 +2521,13 @@ def strip_redirects(text):
     """The command text without its redirections (`2>/dev/null`, `> out`, `2>&1`, `&>>log`,
     `<<< x`, `<<EOF`, `3>&2` ...), operator and target both, so a redirect target is never
     read as a path. Quotes and backslashes are followed; `<(` and `>(` are left alone."""
+    return _redirects(text)[0]
+
+
+def _redirects(text):
+    """(text without redirections, [(operator, target)] of each one)."""
     out, i, n = [], 0, len(text)
+    found = []
     quote = None
     while i < n:
         c = text[i]
@@ -2577,9 +2583,48 @@ def strip_redirects(text):
                 elif ch.isspace() or ch in ";&|()<>":
                     break
                 k += 1
+        target = text[j + len(op) : k].strip()
+        found.append((op, target))
         out.append(" ")
         i = max(k, start + 1)
-    return "".join(out)
+    return "".join(out), found
+
+
+READ_ONLY_COMMANDS = {"cd", "pushd", "popd", "echo", "pwd", "ls", "true", "export", "set", "unset"}
+HARMLESS_TARGETS = {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "eval", "source", "."}
+TREE_WRITES = (
+    "the command changes files before it searches, so what the search reads cannot be "
+    "checked; run the search as a command of its own"
+)
+
+
+def _part_words(part):
+    try:
+        return shlex.split(strip_redirects(part), posix=True)
+    except ValueError:
+        return strip_redirects(part).split()
+
+
+def read_only_part(part):
+    """A part that cannot write files: empty, or on the short read-only list with no output
+    redirection to anything but /dev/null, a terminal or another descriptor."""
+    words = _part_words(part)
+    if words and os.path.basename(words[0]) not in READ_ONLY_COMMANDS:
+        return False
+    for op, target in _redirects(part)[1]:
+        if ">" not in op:
+            continue
+        if op == ">&" and (target.isdigit() or target == "-"):
+            continue
+        if target.strip("'\"") not in HARMLESS_TARGETS:
+            return False
+    return True
+
+
+def _starts_shell(part):
+    words = _part_words(part)
+    return bool(words) and os.path.basename(words[0]) in SHELLS
 
 
 def command_parts(text):
@@ -2959,7 +3004,9 @@ def _literal_hits(token, folder, rules):
     return found
 
 
-def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, env=None):
+def check_command(
+    command, cwd, rules, deadline, depth=0, extra=(), globs=True, env=None, after_write=False
+):
     """`globs`: read the command as the shell would (SPEC 3a). False for text that is only
     data to its program, such as python3 -c '...': there only names written out count."""
     tokens, parts = split_tokens(command)
@@ -2993,8 +3040,22 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                 return reason_for(hits[0], "names")
     if globs:
         # 2. what the shell can expand each word to (G1 to G6)
+        # a search inside a nested script runs after anything the outer command writes
+        outer_writes = after_write or any(
+            not read_only_part(p) and not _starts_shell(p) and not search_targets(p, cwd)
+            for p, _op in command_parts(command)
+        )
         for script, script_env in shell_scripts(sw, depth):
-            reason = check_command(script, cwd, rules, deadline, depth + 1, extra, env=script_env)
+            reason = check_command(
+                script,
+                cwd,
+                rules,
+                deadline,
+                depth + 1,
+                extra,
+                env=script_env,
+                after_write=outer_writes,
+            )
             if reason:
                 return reason
         for w in words:
@@ -3008,11 +3069,15 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                         if hidden:
                             return hidden
                     return reason_for(path, "names")
-    searches = [
-        x
-        for part, _op in command_parts(command)
-        for x in search_targets(part, cwd, command, folders)
-    ]
+    searches = []
+    writer_before = after_write
+    for part, _op in command_parts(command):
+        found = search_targets(part, cwd, command, folders)
+        if found and writer_before:
+            return TREE_WRITES  # the same command may write into what the search reads
+        searches += found
+        if not found and not read_only_part(part) and not _starts_shell(part):
+            writer_before = True
     if searches:
         return search_trees(searches, rules, deadline)
     return None
@@ -3162,7 +3227,9 @@ def deny_output(agent, event_name, reason):
         reason != HIDDEN_GLOB_REASON
         and "denypeek protects" not in reason
         and not reason.endswith(TIMEOUT_ADVICE)
-        and not reason.startswith((TREE_TOO_BIG, TREE_UNDETERMINED, GIT_GREP_UNCHECKED))
+        and not reason.startswith(
+            (TREE_TOO_BIG, TREE_UNDETERMINED, GIT_GREP_UNCHECKED, TREE_WRITES)
+        )
     ):
         msg += " If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":

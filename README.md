@@ -272,10 +272,23 @@ How a blocked `.env` read works:
    `.gemini` or `.cursor` folder itself as the source or target of a copy, move, link or
    extraction. Text containing `disableAllHooks` or `hooks = false` (also JSON-escaped) is denied
    anywhere as a second line. You change all of this in your own terminal, where no hook runs.
-8. **Recursive reads are checked as a whole.** For `grep -r` and `-d recurse`, `rg`, `ag`, `ack`,
-   `git grep`, the agents' own search tools and Gemini's `read_many_files`, the guard walks the
-   target folder (including `node_modules` for `grep -r`, which reads it). If the folder holds a
-   secret file, or is too big to walk in 0.4 seconds, the call is denied.
+8. **Recursive searches are judged by what they can read: the tree rule.** For `grep -r` and
+   `-d recurse`, `rg`, `ag`, `ack`, `git grep`, the agents' own search tools and Gemini's
+   `read_many_files`, the guard walks the target folder by names and asks whether the tool, run
+   as written, would read a secret file there:
+   - `grep -r`, `ack` and any tool not on this list read everything (only `.git` and
+     `__pycache__` are left out). grep's own `--include`, `--exclude` and `--exclude-dir` count.
+   - `rg` with no widening flag skips every hidden name, so `rg foo` beside `.env` is allowed.
+     `rg --hidden`, `ag`, `git grep` and the agents' own search tools read hidden names.
+   - Inside a git repository, those tools also skip a `node_modules` folder that a `.gitignore`
+     names, and a folder whose own `.gitignore` is `*` (virtualenvs write one). Outside a
+     repository, ripgrep does not read `.gitignore`, so nothing is skipped.
+   - A flag that widens the tool (`rg -uu`, `--no-ignore`, `-g '*'`, `git grep --no-index`) or a
+     ripgrep config file counts as reading everything. `guard install` records whether
+     `RIPGREP_CONFIG_PATH` is set; if it was, or if nothing is recorded, every `rg` counts so.
+   - A search that covers your home folder or a folder above denypeek's or an agent's folder is
+     denied at once. A walk of more than 100,000 entries, or longer than a second, is denied as
+     too big to check.
 9. **The answer goes back in the agent's own format.** A deny carries a reason the agent shows.
    An allow is an empty JSON object with no decision (Cursor gets an explicit `allow`, because it
    blocks empty output), so the
@@ -602,7 +615,16 @@ in-place `.bak` files.
   - a `#` after a one-character name: `echo C#`, `echo a#b`;
   - a pattern inside `[[ … ]]`;
   - a pattern part starting with `.` when the parent folder holds a secret file: `ls .*`;
-  - as before, `ls .e*` and a recursive search over the folder;
+  - as before, `ls .e*`;
+  - a recursive search that would read a secret file: `grep -rn foo .` beside `.env`, or in a
+    project with a virtualenv that holds `cacert.pem` (`*.pem` is on the list) unless you add
+    `--exclude-dir` for it; `rg --hidden foo` beside `.env`, even when `.gitignore` names it;
+    every `rg` search beside a secret file if a ripgrep config was set when you installed, or if
+    you installed before v0.1.0's tree rule (run `denypeek guard install` again); an agent's own
+    search tool over a project with a `.env`, until its defaults are checked;
+  - a recursive search over more than 100,000 entries, such as `grep -r` over a project with a
+    big `node_modules`: add `--exclude-dir=node_modules`, or use `rg`, which skips it in a git
+    repository;
   - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree;
   - anywhere, a command that holds one of the delete, move or lock verbs above and names your
     home folder or a folder above it: `chmod 700 ~`, `grep -r rm ~`.
@@ -639,6 +661,11 @@ in-place `.bak` files.
     into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
     `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see;
+  - recursive searches (the tree rule): a ripgrep config set after `guard install`, or present
+    in the agent's environment but not in your terminal when you installed; an ignore file named
+    in git's own config (`core.excludesFile`); a folder reached only through a symbolic link that
+    `grep -R` or `rg -L` follows; a file `git grep` reads because it is tracked inside a folder
+    that `.gitignore` names; and search tools not on the list above;
   - with the experimental `auto` setting, ways to make a bare `*` reach `.env` that the guard
     allows:
     - hidden-name matching that is on although neither the command nor a startup file names it:
@@ -680,8 +707,13 @@ in-place `.bak` files.
 - **Gemini's `read_many_files`:** its current docs do not describe its parameters or default
   ignore list, so denypeek walks any folder or `**` glob it is given, whether or not Gemini would
   skip `.env` on its own.
-- **Grep:** the guard blocks a search over any folder that holds a secret file, including the
-  agent's own search tool over your whole project. Narrow the path (for example `src/`) to search.
+- **Search:** the guard blocks a search that would read a secret file, including the agent's
+  own search tool over a project with a `.env`. The deny message says what to do: search a
+  narrower folder (for example `src/`), use `rg`, which skips hidden files, or add grep's
+  `--include` or `--exclude-dir`.
+- **Commands you type yourself are not checked.** A command you run with the `!` prefix in the
+  agent's prompt is your own: it does not go through the agent's tool hooks, so the guard does
+  not see it.
 - **Over-limit input is denied, not checked:** hook inputs over 4 MB, commands over 100,000
   characters (also after expanding variables), paths over 4,096, and a pattern that has to look
   at more than 20,000 entries, such as `ls **/*` in a big tree. A line break in

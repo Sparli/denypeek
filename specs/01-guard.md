@@ -40,8 +40,8 @@ is denied. A watchdog at 3 s (interval timer and CPU limit on POSIX, timer threa
 covers a check stuck inside C code (G2).
 
 ## Rules
-- **Deny:** reads, edits and writes of a listed path; shell commands that name one; recursive
-  search over a folder that holds one.
+- **Deny:** reads, edits and writes of a listed path; shell commands that name one; a recursive
+  search that, run as written, would read one (the tree rule, below).
 - **Allow without approving:** no decision on harmless calls, so the agent's own prompts still run.
   Cursor needs an explicit `allow` because it blocks empty output.
 - **Fail closed:** on its own error the hook denies and names `denypeek guard uninstall`.
@@ -72,9 +72,18 @@ covers a check stuck inside C code (G2).
   (drive letters, UNC shares, `%USERPROFILE%` and `$env:USERPROFILE` paths) get `/` separators
   before splitting; on Windows every backslash does, since cmd and PowerShell never use it as an
   escape. Elsewhere backslashes stay shell escapes.
-- **Recursive reads (G6, G8):** `grep -r`, `-d recurse`, `--directories=recurse`, `rg`, `ag`,
-  `ack`, `git grep`, the search tools and Gemini `read_many_files` folders or `**` globs trigger a
-  folder walk; `node_modules` is walked for `grep -r` and skipped for tools that honour ignores.
+- **Recursive reads, the tree rule (spec 3b):** `grep -r`, `-d recurse`, `--directories=recurse`,
+  `rg`, `ag`, `ack`, `git grep`, the search tools and Gemini `read_many_files` trigger a walk of
+  the folder by names. Each search has a class: E reads everything (grep, ack, unknown tools,
+  any widening flag or ripgrep config), I reads hidden names but honours ignore files (`rg
+  --hidden`, `ag`, `git grep`, the agents' search tools), D is ripgrep's default and also skips
+  hidden names. I and D skip a `node_modules` that a `.gitignore` names and a folder whose own
+  `.gitignore` is `*`, only inside a git repository. A whitelist line (`!.env`) in `.gitignore`,
+  `.ignore` or `.rgignore` puts a hidden name back for D. grep's `--include`, `--exclude` and
+  `--exclude-dir` (literal values, no `/`) narrow what it reads. A search covering denypeek's
+  folder, an agent folder or a hook config is denied without a walk. Only names that can match
+  a pattern, and symbolic links, get the full check. Limits: 100,000 entries and 1 second
+  (measurement in `specs/04-tree-walk.md`); past either, denied as too big to check.
 - **Agent folders (R3):** words are expanded (braces, globs) before the agent-folder check;
   `find -delete/-exec` starting at the home folder or above an agent folder is denied.
 - **Variables (R4):** substitution stops and the call is denied once the text would pass

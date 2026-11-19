@@ -934,20 +934,17 @@ def _brace_sequence(m, limit):
 # walk looks at names only, and a name gets the full check only when it can match a pattern.
 
 TIMEOUT_ADVICE = "try a shorter command, or search a narrower folder"
-TREE_TOO_BIG = (
-    "too many files to check in time; search a narrower folder, or skip dependency folders "
-    "(with grep add `--exclude-dir=node_modules --exclude-dir=.venv`)"
+# SPEC 3b S8: the messages. Fixed text apart from escaped paths and names.
+TREE_SECRET = "a search from here would read"  # (a)
+TREE_TOO_BIG = "too many files to check in time; search a narrower folder"  # (b)
+TREE_UNDETERMINED = (  # (d)
+    "the folders this search reads cannot be told from the command; name the folder to search"
 )
-TREE_SECRET = "a search from here would read a secret file"
-GIT_GREP_UNCHECKED = (
-    "git grep with a revision, the index (--cached) or a pattern path reads files the guard "
-    "cannot list; search the working tree and name folders instead (for example "
-    "`git grep foo -- src`)"
+GIT_GREP_UNCHECKED = (  # (e)
+    "git grep reads the index, a revision or another git folder here, and only files on disk "
+    "can be checked; drop the revision, `--cached` or the git folder option"
 )
-XARGS_SEARCH = (
-    "a recursive search that gets its folders from xargs cannot be checked; name the folders "
-    "in the command instead (for example `grep -rn foo src`)"
-)
+GREP_NARROWING = "with grep, `--exclude` and `--exclude-dir` leave files and folders out"
 # Commands that run another command, which the hook looks through to find a search.
 WRAPPERS = {
     "env",
@@ -969,9 +966,12 @@ SEARCH_TOOLS = {"grep", "egrep", "fgrep", "zgrep", "ugrep", "ack", "ag", "git-gr
 # Public files that match a secret pattern by name but hold nothing secret. Exact path ends
 # only: `certifi/cacert.pem` is the public Mozilla list of certificate authorities, in almost
 # every Python virtualenv. It does not count for the tree rule (it still counts when named).
-PUBLIC_FILES = (("certifi", "cacert.pem"),)
 SHOW_PATHS = 2  # secret files named in the deny message
 SHOW_FOLDERS = 8  # clear folders listed in it
+# S8: a folder name is listed only in this plain form, so a hostile name cannot carry text
+CLEAR_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,39}$")
+# S5: immediate subfolders walked last, so the clear list stays useful when a limit is hit
+WALK_LAST = ("node_modules", ".venv", "venv", ".git")
 SHOW_CHARS = 60  # longest name shown
 
 _UNSAFE_CHARS = (
@@ -1002,32 +1002,65 @@ def shown_name(text):
 
 
 class Search:
-    """One folder a search reads and what grep's own options narrow (T5). `reason`: deny at
-    once with this text (a search whose folders or files the hook cannot tell)."""
+    """One folder a search reads, as found (`folder`) and as written (`shown`), and what grep's
+    own options narrow (S4). `reason`: deny at once with this text (S2)."""
 
-    def __init__(self, folder, includes=(), excludes=(), exclude_dirs=(), reason=None):
-        self.folder = folder
+    def __init__(
+        self,
+        folder,
+        includes=(),
+        excludes=(),
+        exclude_dirs=(),
+        reason=None,
+        shown=".",
+        grep=False,
+    ):
+        self.folder, self.shown, self.grep = folder, shown, grep
         self.includes, self.excludes, self.exclude_dirs = includes, excludes, exclude_dirs
         self.reason = reason
 
 
 class _WalkLimit(Exception):
-    pass
+    """The entry cap or the time limit was hit; carries what the walk knew by then."""
+
+    def __init__(self, found=(), more=False, clear=()):
+        super().__init__("walk limit")
+        self.found, self.more, self.clear = list(found), more, list(clear)
 
 
-def tree_secret_reason(found, clear, more):
-    """Message (a): why, the first secret files (relative to the folder), and the folders
-    directly under it that the same walk found clear."""
-    names = ", ".join(shown_name(f) for f in found[:SHOW_PATHS])
-    msg = f"{TREE_SECRET} ({names}); search a narrower folder"
-    if clear:
-        listed = ", ".join(shown_name(c) for c in clear[:SHOW_FOLDERS])
-        extra = len(clear) - SHOW_FOLDERS + more
-        msg += f". Clear to search: {listed}" + (f" and {extra} more" if extra > 0 else "")
-    else:
-        msg += " (no folder directly under this one is clear), or leave the files out with "
-        msg += "grep's `--exclude` or `--exclude-dir`"
+class _TreeBudget:
+    """S5: the entry cap counts all start folders of one decision together."""
+
+    def __init__(self):
+        self.seen = 0
+
+
+def _joined(shown, name):
+    if shown in ("", ".", "./"):
+        return name
+    return shown.rstrip("/") + "/" + name
+
+
+def _clear_text(search, clear):
+    names = [_joined(search.shown, c) for c in clear[:SHOW_FOLDERS]]
+    return f". Clear to search: {', '.join(shown_name(n) for n in names)}" if names else ""
+
+
+def tree_secret_reason(search, found, more, clear):
+    """Message (a): the secret files (at most two, then "and more"), "search a narrower
+    folder", the clear folders, and for grep what its options leave out."""
+    paths = ", ".join(shown_name(_joined(search.shown, f)) for f in found[:SHOW_PATHS])
+    what = "secret files" if len(found) > 1 else "a secret file"
+    msg = f"{TREE_SECRET} {what} ({paths}{', and more' if more else ''}); search a narrower folder"
+    msg += _clear_text(search, clear)
+    if search.grep:
+        msg += f"; {GREP_NARROWING}"
     return msg
+
+
+def tree_too_big_reason(search, clear):
+    """Message (b), with the folders the walk finished and found clear before the limit."""
+    return TREE_TOO_BIG + _clear_text(search, clear)
 
 
 def tree_protected_reason(path):
@@ -1046,7 +1079,7 @@ def _protected_targets():
 
 
 def protected_under(folder):
-    """T6: a protected path that is the folder, lies under it, or holds it; else None."""
+    """S6: a protected path that is the folder, lies under it, or holds it; else None."""
     cands = {_norm(os.path.normpath(folder)).rstrip("/")}
     try:
         cands.add(_norm(os.path.realpath(folder)).rstrip("/"))
@@ -1060,7 +1093,7 @@ def protected_under(folder):
 
 
 def _last_part_regex(rules):
-    """T7: one regex for the last path part any pattern's match needs, or None when a pattern
+    """S5: one regex for the last path part any pattern's match needs, or None when a pattern
     has no such part (then every name gets the full check)."""
     out = []
     for _neg, pat, _m in rules:
@@ -1082,32 +1115,60 @@ def fnmatch_case(name, pat):
     return fnmatch.fnmatchcase(name, pat)
 
 
-def _public(path):
-    parts = path.replace("\\", "/").split("/")
-    return any(tuple(parts[-len(end) :]) == end for end in PUBLIC_FILES)
+def certifi_bundle(entry):
+    """The one exception (spec 3b): `cacert.pem`, exactly as stored, directly in a folder named
+    exactly `certifi`, with `site-packages` or `dist-packages` above it in the resolved path,
+    and a regular file by lstat. The public certificate list of Python virtualenvs."""
+    if entry.name != "cacert.pem":
+        return False
+    parent = os.path.dirname(entry.path)
+    if os.path.basename(parent) != "certifi":
+        return False
+    try:
+        if not entry.is_file(follow_symlinks=False):
+            return False
+        parts = os.path.realpath(parent).replace("\\", "/").split("/")
+    except (OSError, ValueError):
+        return False
+    return "site-packages" in parts or "dist-packages" in parts
+
+
+def search_trees(searches, rules, deadline):
+    """The reason to deny these searches (one decision), or None. S6 for each start folder
+    first, then the walks, sharing one entry cap (S5). Messages list clear folders for the
+    first start folder only (S8)."""
+    budget = _TreeBudget()
+    for search in searches:
+        if search.reason:
+            return search.reason
+        t = protected_under(search.folder) or (
+            search.folder if is_protected(search.folder) else None
+        )
+        if t:
+            return tree_protected_reason(t)
+    for n, search in enumerate(searches):
+        lister = n == 0
+        try:
+            found, more, clear = _walk(search, rules, deadline, budget)
+        except _WalkLimit as stop:
+            clear = stop.clear if lister else []
+            if stop.found:  # a secret file is certain even though the walk did not finish
+                return tree_secret_reason(search, stop.found, stop.more, clear)
+            return tree_too_big_reason(search, clear)
+        if found:
+            return tree_secret_reason(search, found, more, clear if lister else [])
+    return None
 
 
 def search_tree(search, rules, deadline):
-    """The reason to deny this search, or None: T6 first, then the walk (T5, T7, T8)."""
-    if search.reason:
-        return search.reason
+    return search_trees([search], rules, deadline)
+
+
+def _walk(search, rules, deadline, budget):
+    """(secret files found, at most two, relative to the start; whether there are more; the
+    immediate subfolders the walk finished and found clear, in name order, listable names
+    only). Raises _WalkLimit past the entry cap or the time limit."""
     folder = search.folder
-    t = protected_under(folder)
-    if t:
-        return tree_protected_reason(t)
-    if is_protected(folder):
-        return tree_protected_reason(folder)
-    try:
-        result = _walk(folder, search, rules, deadline)
-    except _WalkLimit:
-        return TREE_TOO_BIG
-    return tree_secret_reason(*result) if result else None
-
-
-def _walk(folder, search, rules, deadline):
-    """None if no file the search can read under `folder` is blocked. Otherwise (the first
-    secret files, relative to `folder`; the folders directly under it the walk found clear;
-    how many more there are). Raises _WalkLimit past the entry cap or the time limit."""
     last_part = _last_part_regex(rules)
     root_full = last_part is None
     if not root_full:
@@ -1117,40 +1178,23 @@ def _walk(folder, search, rules, deadline):
         except (OSError, ValueError):
             pass
         root_full = any(last_part.match(c) for r in roots for c in r.split("/") if c)
-    found = []  # secret files, relative to the folder
-    dirty = set()  # folders directly under it that hold one
-    walked = set()  # folders directly under it that were walked
-    # (folder, path relative to the start, the top folder it lies in, full check below?)
-    stack = [(folder, "", None, root_full)]
-    try:
-        _walk_stack(stack, search, rules, deadline, last_part, found, dirty, walked)
-    except _WalkLimit:
-        if not found:
-            raise
-        return found, [], 0  # a secret file is certain; which folders are clear is not
-    if not found:
-        return None
-    clear = sorted(
-        (w for w in walked if w not in dirty and w != ".git"), key=lambda n: (n.startswith("."), n)
-    )
-    return found, clear, 0
+    state = {"found": [], "count": 0}
+    clear = []
 
+    def stop():
+        return _WalkLimit(state["found"], state["count"] > SHOW_PATHS, clear)
 
-def _walk_stack(stack, search, rules, deadline, last_part, found, dirty, walked):
-    includes, excludes, exclude_dirs = search.includes, search.excludes, search.exclude_dirs
-    seen = 0
-    while stack:
-        d, rel, top, full = stack.pop()
-        if top in dirty:
-            continue  # already known to hold a secret file: no need to look further
+    def scan(d, rel, full):
+        """Check the entries of folder d; return its subfolders to walk."""
         try:
             entries = sorted(os.scandir(d), key=lambda e: e.name)
         except OSError:
-            continue
+            return []
+        subdirs = []
         for e in entries:
-            seen += 1
-            if seen > WALK_LIMIT or (seen & 255 == 0 and time.monotonic() > deadline):
-                raise _WalkLimit
+            budget.seen += 1
+            if budget.seen > WALK_LIMIT or (budget.seen & 255 == 0 and time.monotonic() > deadline):
+                raise stop()
             name = e.name
             path = f"{rel}/{name}" if rel else name
             try:
@@ -1159,32 +1203,41 @@ def _walk_stack(stack, search, rules, deadline, last_part, found, dirty, walked)
             except OSError:
                 is_link, is_dir = True, False  # cannot tell: give it the full check
             if is_dir:
-                if any(fnmatch_case(name, x) for x in exclude_dirs):
-                    continue  # T5
-                need = full or bool(last_part.match(_norm(name)))
-                if top is None:
-                    walked.add(name)
-                stack.append((e.path, path, top if top is not None else name, need))
+                if any(fnmatch_case(name, x) for x in search.exclude_dirs):
+                    continue  # S4
+                subdirs.append((e.path, path, full or bool(last_part.match(_norm(name)))))
                 continue
-            if includes and not any(fnmatch_case(name, x) for x in includes):
-                continue  # T5: not included
+            if search.includes and not any(fnmatch_case(name, x) for x in search.includes):
+                continue  # S4: not included
             if (
-                excludes
-                and any(fnmatch_case(name, x) for x in excludes)
-                and not any(fnmatch_case(name, x) for x in includes)
+                search.excludes
+                and any(fnmatch_case(name, x) for x in search.excludes)
+                and not any(fnmatch_case(name, x) for x in search.includes)
             ):
-                continue  # T5: excluded and not included
+                continue  # S4: excluded and not included
             need = is_link or full or bool(last_part.match(_norm(name)))
-            if need and not _public(path) and blocked_path(e.path, rules):
-                if len(found) < SHOW_PATHS:
-                    found.append(path)
-                if top is None:
-                    dirty.add(None)
-                else:
-                    dirty.add(top)
-                    break
+            if need and not certifi_bundle(e) and blocked_path(e.path, rules):
+                state["count"] += 1
+                if len(state["found"]) < SHOW_PATHS:
+                    state["found"].append(path)
         if time.monotonic() > deadline:
-            raise _WalkLimit
+            raise stop()
+        return subdirs
+
+    tops = scan(folder, "", root_full)
+    # S5: the walk's order never changes the decision; these are walked last so the clear
+    # list is as long as it can be when a limit is hit
+    tops.sort(key=lambda t: (t[1] in WALK_LAST, WALK_LAST.index(t[1]) if t[1] in WALK_LAST else 0))
+    for top_path, top_rel, top_full in tops:
+        before = state["count"]
+        stack = [(top_path, top_rel, top_full)]
+        while stack:
+            d, rel, full = stack.pop()
+            stack.extend(reversed(scan(d, rel, full)))
+        if state["count"] == before and CLEAR_NAME.match(top_rel):
+            clear.append(top_rel)
+    clear.sort()
+    return state["found"], state["count"] > SHOW_PATHS, clear
 
 
 WINDOWS = sys.platform == "win32"
@@ -2405,9 +2458,11 @@ def _any_abbrev(names, fulls):
 
 def _unwrap(words, bases):
     """Look through wrapper commands (`env`, `nice`, `timeout`, `xargs`, `sudo` ...) to the
-    command they run. Returns (words, bases, through xargs?). The run command is the first
-    later word that names a search tool; `env -C DIR` and `sudo -D DIR` change the folder."""
+    command they run. Returns (words, bases, through xargs?, NAME=value words given to the
+    wrappers). The run command is the first later word that names a search tool; `env -C DIR`
+    and `sudo -D DIR` change the folder."""
     via_xargs = False
+    assigned = []
     for _ in range(8):
         if not words or os.path.basename(words[0]).lower() not in WRAPPERS:
             break
@@ -2415,6 +2470,8 @@ def _unwrap(words, bases):
         via_xargs = via_xargs or wrapper == "xargs"
         for i, w in enumerate(words[1:], 1):
             name, eq, val = w.partition("=")
+            if eq and not w.startswith("-"):
+                assigned.append(w)
             if (
                 wrapper in ("env", "sudo")
                 and name in ("-C", "--chdir", "-D")
@@ -2432,9 +2489,29 @@ def _unwrap(words, bases):
             None,
         )
         if nxt is None:
-            return [], bases, via_xargs
+            return [], bases, via_xargs, assigned
         words = words[nxt:]
-    return words, bases, via_xargs
+    return words, bases, via_xargs, assigned
+
+
+GIT_PLACE_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+SET_VAR_COMMANDS = {"export", "declare", "typeset", "readonly", "local"}
+
+
+def _sets_git_place(assigned, command):
+    """S2: GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE given to the search (an assignment in
+    front of it or through `env`) or exported anywhere in the command."""
+    words = list(assigned)
+    for seg in SHELL_OPERATORS.split(command or ""):
+        try:
+            sw = shlex.split(seg, posix=True)
+        except ValueError:
+            sw = seg.split()
+        if sw and sw[0] in SET_VAR_COMMANDS:
+            words += sw[1:]
+        while sw and "=" in sw[0] and not sw[0].startswith("-"):
+            words.append(sw.pop(0))
+    return any(w.split("=", 1)[0] in GIT_PLACE_VARS for w in words)
 
 
 def search_targets(part, cwd, command="", folders=None):
@@ -2445,20 +2522,24 @@ def search_targets(part, cwd, command="", folders=None):
         words = shlex.split(part, posix=True)
     except ValueError:
         words = part.split()
+    assigned = []
     while words and ("=" in words[0] and not words[0].startswith("-")):
-        words = words[1:]  # leading VAR=value
+        assigned.append(words.pop(0))  # leading VAR=value
     # Relative paths count from every folder the command may be in: the session's folder and
     # each one it changes into with `cd` or `pushd`.
     bases = list(dict.fromkeys(folders or [cwd]))
-    words, bases, via_xargs = _unwrap(words, bases)
+    words, bases, via_xargs, more_assigned = _unwrap(words, bases)
+    assigned += more_assigned
     if not words:
         return []
     prog = os.path.basename(words[0]).lower()
     args = words[1:]
+    git_moved = False
     if prog == "git":
         i = 0
         while i < len(args) and args[i].startswith("-"):
             name, eq, val = args[i].partition("=")
+            git_moved = git_moved or name in ("--git-dir", "--work-tree")
             if name in GIT_VALUE_OPTS and not eq and i + 1 < len(args):
                 if name == "-C":
                     bases = [expand(args[i + 1], b) or b for b in bases]
@@ -2472,6 +2553,7 @@ def search_targets(part, cwd, command="", folders=None):
         prog, args = "git-grep", args[i + 1 :]
     if prog not in SEARCH_TOOLS:
         return []
+    grep_family = prog in ("grep", "egrep", "fgrep", "zgrep", "ugrep")
     value_opts = {"rg": RG_VALUE_OPTS, "ag": AG_VALUE_OPTS, "git-grep": GIT_GREP_VALUE_OPTS}.get(
         prog, GREP_VALUE_OPTS
     )
@@ -2482,8 +2564,13 @@ def search_targets(part, cwd, command="", folders=None):
     readings = [pos, pos2]
     opts = opts + [o for o in opts2 if o not in opts]
     names = {n for n, _ in opts}
+    # S1: forms that read no file contents are not searches
+    if prog == "rg" and names & {"--files", "--type-list", "--help", "-h", "--version", "-V"}:
+        return []
+    if prog == "ag" and names & {"-g", "--list-file-types", "--help", "-h", "--version", "-V"}:
+        return []
     includes, excludes, exclude_dirs = [], [], []
-    if prog in ("grep", "egrep", "fgrep", "zgrep", "ugrep"):
+    if grep_family:
         dir_recurse = any(
             (n == "-d" or _abbrev(n, "--directories")) and v == "recurse" for n, v in opts
         )
@@ -2509,9 +2596,18 @@ def search_targets(part, cwd, command="", folders=None):
         for p in (words if pattern_in_opts else words[1:]) or ["."]:
             if p not in paths:
                 paths.append(p)
-    if via_xargs:  # its folders come from input the hook cannot see
-        return [Search(bases[0], reason=XARGS_SEARCH)]
+    # S2: deny when the folders cannot be told: names from xargs or a file, or a path that is
+    # not a readable literal
+    undetermined = (
+        via_xargs
+        or (prog == "ack" and ("-x" in names or _any_abbrev(names, ("--files-from",))))
+        or any(c in p for p in paths for c in "$`")
+    )
+    if undetermined:
+        return [Search(bases[0], reason=TREE_UNDETERMINED)]
     if prog == "git-grep":
+        if git_moved or _sets_git_place(assigned, command):
+            return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
         # git reads committed files for a revision and the index for --cached, which the walk
         # cannot list. Words before `--` (after the pattern) are revisions; a word that is
         # neither a folder nor a file is a revision or a pattern path.
@@ -2521,19 +2617,29 @@ def search_targets(part, cwd, command="", folders=None):
             before = _split_options(args[: args.index("--")], value_opts)[1]
             if before if pattern_in_opts else before[1:]:
                 return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
+            # a pathspec with magic (`:(glob)`, `:!`, `:/`) or a wildcard
+            if any(
+                w.startswith(":") or any(c in w for c in "*?[")
+                for w in args[args.index("--") + 1 :]
+            ):
+                return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
         for p in paths:
             if p != "." and not any(os.path.exists(expand(p, b) or "") for b in bases):
                 return [Search(bases[0], reason=GIT_GREP_UNCHECKED)]
     out = []
     for p in paths:
         found = [expand(p, b) for b in bases]
-        if any(c in p for c in "*?["):  # grep -r foo *: search what the pattern matches
+        if any(c in p for c in "*?[{"):  # grep -r foo *: search what the pattern matches
             w = Word()
-            w.chars = [(c, U if c in "*?[]" else Q) for c in p]
+            w.chars = [(c, U if c in "*?[]{}," else Q) for c in p]
             found += word_paths(w, bases)
-        for full in found:
+        globby = any(c in p for c in "*?[{")
+        for full in dict.fromkeys(found):
             if full and not is_network(full) and os.path.isdir(full):
-                out.append(Search(full, includes, excludes, exclude_dirs))
+                shown = os.path.relpath(full, bases[0]) if globby else p
+                out.append(
+                    Search(full, includes, excludes, exclude_dirs, shown=shown, grep=grep_family)
+                )
     return out
 
 
@@ -2757,11 +2863,9 @@ def check_command(command, cwd, rules, deadline, depth=0, extra=(), globs=True, 
                         if hidden:
                             return hidden
                     return reason_for(path, "names")
-    for part in parts:
-        for search in search_targets(part, cwd, command, folders):
-            reason = search_tree(search, rules, deadline)
-            if reason:
-                return reason
+    searches = [x for part in parts for x in search_targets(part, cwd, command, folders)]
+    if searches:
+        return search_trees(searches, rules, deadline)
     return None
 
 
@@ -2878,14 +2982,14 @@ def decide(event, rules):
             base = s.split("**", 1)[0] if "**" in s else s
             folder = expand(base or ".", cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
-                reason = search_tree(Search(folder), rules, deadline)
+                reason = search_tree(Search(folder, shown=base or "."), rules, deadline)
                 if reason:
                     return reason
         if tool in GREP_TOOLS and key in ("path", "dir_path"):
             folder = expand(s, cwd)
             if folder and not is_network(folder) and os.path.isdir(folder):
                 # T1: the agents' own search tools are class I until their defaults are known
-                reason = search_tree(Search(folder), rules, deadline)
+                reason = search_tree(Search(folder, shown=s), rules, deadline)
                 if reason:
                     return reason
     if (
@@ -2906,10 +3010,10 @@ def deny_output(agent, event_name, reason):
     """(stdout, exit code) that each agent reads as a denial."""
     msg = f"denypeek blocked this: {reason}."
     if (
-        reason not in (HIDDEN_GLOB_REASON, TREE_TOO_BIG)
+        reason != HIDDEN_GLOB_REASON
         and "denypeek protects" not in reason
         and not reason.endswith(TIMEOUT_ADVICE)
-        and not reason.startswith(TREE_SECRET)
+        and not reason.startswith((TREE_TOO_BIG, TREE_UNDETERMINED, GIT_GREP_UNCHECKED))
     ):
         msg += " If this is wrong, edit ~/.denypeek/secretfiles."
     if agent == "cursor":

@@ -74,12 +74,12 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: "0.11.32"
-      - name: Install zsh (Linux)
+      - name: Install zsh and ripgrep (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zsh
-      - name: Install bash 5 (macOS; /bin/bash is 3.2)
+        run: sudo apt-get update && sudo apt-get install -y zsh ripgrep
+      - name: Install bash 5 and ripgrep (macOS; /bin/bash is 3.2)
         if: runner.os == 'macOS'
-        run: brew install bash
+        run: brew install bash ripgrep
       - run: uv python install ${{ matrix.hook-python }}
       - id: py
         run: echo "path=$(uv python find ${{ matrix.hook-python }})" >> "$GITHUB_OUTPUT"
@@ -106,3 +106,12 @@ jobs:
           assert ' 0 failed' in r[-1] and 'skipped cases: 0' in r[-1] and 'skipped modes: none' in r[-1]"
       - name: Oracle self-test
         run: '"${{ steps.py.outputs.path }}" tests/oracle/glob_oracle.py --self-test --quick'
+      # SPEC 3b A26 to A28, with the A27 tool tier: real grep (GNU on Linux, BSD on macOS) and
+      # real ripgrep run first; a missing ripgrep fails here instead of skipping.
+      - run: uv sync --locked --python "${{ steps.py.outputs.path }}"
+      - name: Tree rule and tool tier
+        env:
+          DENYPEEK_TREE_REQUIRE: "1"
+        run: uv run --python "${{ steps.py.outputs.path }}" pytest -rs tests/test_tree_rule.py
+      - name: Walk speed (SPEC 3b T7)
+        run: uv run --python "${{ steps.py.outputs.path }}" python tools/measure_walk.py

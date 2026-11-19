@@ -275,17 +275,24 @@ How a blocked `.env` read works:
 8. **A recursive search is allowed only if it would read no secret file: the tree rule.** For
    `grep -r` and `-d recurse`, `rg`, `ag`, `ack`, `git grep`, the agents' own search tools and
    Gemini's `read_many_files`, the guard finds the folders the search reads and walks everything
-   under them by name: hidden files, ignored files and `node_modules` included, whatever the tool
-   would skip. If any name matches the pattern list, the search is denied. Only grep's own
-   `--include`, `--exclude` and `--exclude-dir`, written as plain text, narrow the walk. The deny
-   message names the first secret files it found and lists the folders directly under the start
-   that are clear, so the agent can search one of those instead. A file named
-   `certifi/cacert.pem` (the public list of certificate authorities in Python virtualenvs) does
-   not count. Wrapper commands (`env`, `nice`, `timeout`, `sudo` and similar) and `cd` do not
-   hide a search. A search whose folders or files cannot be told is denied: one fed by `xargs`,
-   and `git grep` over a revision, the index (`--cached`) or a pattern path. A search that
-   covers your home folder, or a folder above denypeek's or an agent's folder, is denied at
-   once; a walk of more than 100,000 entries or a second is denied as too big to check.
+   under them by name, for every tool: hidden files, ignored files, `node_modules`, virtualenvs
+   and `.git` included. If any name matches the pattern list, the search is denied. Only grep's
+   own `--include`, `--exclude` and `--exclude-dir`, written as plain text, narrow the walk.
+   - The deny message names up to two secret files it found and lists up to eight folders
+     directly under the start that are clear, so the agent can search one of those instead.
+   - A file `cacert.pem` directly in a folder `certifi` under `site-packages` or
+     `dist-packages` (the public list of certificate authorities in Python virtualenvs) does not
+     count, unless it is a symbolic link. Naming it, as in `cat …/certifi/cacert.pem`, is still
+     denied.
+   - Wrapper commands (`env`, `nice`, `timeout`, `sudo` and similar) and `cd` do not hide a
+     search. A search whose folders cannot be told from the command is denied: one fed by
+     `xargs` or a file list, or with a path that holds a variable or command substitution. So is
+     `git grep` over a revision, the index (`--cached`), a pattern path or another git folder
+     (`--git-dir`, `GIT_DIR=`): only files on disk can be checked.
+   - A search that covers your home folder, or a folder above denypeek's or an agent's folder, is
+     denied at once. A walk of more than 100,000 entries or a second, for all its folders
+     together, is denied as too big to check. `rg --files` and other forms that read no file
+     contents are not searches.
 9. **The answer goes back in the agent's own format.** A deny carries a reason the agent shows.
    An allow is an empty JSON object with no decision (Cursor gets an explicit `allow`, because it
    blocks empty output), so the
@@ -613,18 +620,21 @@ in-place `.bak` files.
   - a pattern inside `[[ … ]]`;
   - a pattern part starting with `.` when the parent folder holds a secret file: `ls .*`;
   - as before, `ls .e*`;
-  - a recursive search from a folder that holds a secret file anywhere below it, which in most
-    projects is the project root: a `.env`, a key, or a `*.pem` file in a virtualenv or in
-    `node_modules`. Search `src/` or another folder the deny message lists as clear, or leave the
-    files out with grep's `--exclude` and `--exclude-dir`. This holds for every tool, even ones
-    that would skip hidden or ignored files themselves, because what they skip depends on files
-    and settings an agent can change;
-  - a recursive search fed by `xargs`, and `git grep` over a revision (`git grep foo HEAD`), the
-    index (`--cached`) or a pattern path: name folders instead (`git grep foo -- src`);
-  - a recursive search over more than 100,000 entries, or that takes over a second, such as
-    `grep -r` over a project with a big `node_modules`: add `--exclude-dir=node_modules`. The
-    first search of a large tree after a restart, when the disk cache is cold, may run out of
-    time and be denied this way; the same search usually passes when repeated;
+  - a recursive search from a folder that holds a secret file anywhere below it. In a project
+    with a `.env` that is every search from the top, with every tool: `rg foo`, `grep -r foo .`,
+    and an agent's built-in search with no folder. Name folders instead (`rg foo src tests`);
+    the deny message lists the clear ones, so it is usually one extra turn. `rg foo` beside a
+    `.env` is denied although ripgrep would skip the file, because what a tool skips depends on
+    files and settings an agent can change. Other packages' certificate and test key files in a
+    virtualenv or `node_modules` count too; only `certifi`'s is excepted;
+  - a recursive search fed by `xargs` or a file list, or with a path that holds a variable, and
+    `git grep` over a revision (`git grep foo HEAD`), the index (`--cached`), a pattern path or
+    another git folder: name folders instead (`git grep foo -- src`);
+  - a recursive search over more than 100,000 entries, or that takes over a second: a tree with
+    a big `node_modules` cannot be searched from its top by any tool. With grep,
+    `--exclude-dir=node_modules` makes the walk smaller; with `rg` and the built-in tools, name
+    folders. The first search of a large tree after a restart, when the disk cache is cold, may
+    run out of time and be denied this way; the same search usually passes when repeated;
   - a pattern that has to look at more than 20,000 entries, such as `ls **/*` in a big tree;
   - anywhere, a command that holds one of the delete, move or lock verbs above and names your
     home folder or a folder above it: `chmod 700 ~`, `grep -r rm ~`.
@@ -661,11 +671,12 @@ in-place `.bak` files.
     into such a folder so that a protected file is replaced (`cp -r tmpl/. ~`,
     `tar xf x.tar -C ~`, `rsync` without a delete flag);
   - MCP tools, and a user who approves a read the hook did not see;
-  - recursive searches (the tree rule): a folder reached only through a symbolic link that
-    `grep -R` or `rg -L` follows; a wrapper command not in the guard's list (`busybox grep -r`,
-    `watch grep -r`), and an alias or function under another name (`f(){ grep -r "$@"; }; f KEY
-    .`); `find . -exec grep` (see above); a secret file created by another process between the
-    check and the search; and search tools not on the list above;
+  - recursive searches (the tree rule): a search tool not on the list above, including an alias
+    or function under another name and wrappers outside the guard's list (`busybox grep -r`,
+    `find . -exec grep`); a folder reached only through a symbolic link that the tool follows
+    (`grep -R`, `rg -L`); a file made or renamed by an earlier background job between the
+    guard's walk and the search; and a real secret that you keep as `cacert.pem` in a folder
+    named `certifi` under `site-packages` or `dist-packages`;
   - with the experimental `auto` setting, ways to make a bare `*` reach `.env` that the guard
     allows:
     - hidden-name matching that is on although neither the command nor a startup file names it:
